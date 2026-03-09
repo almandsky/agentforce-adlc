@@ -1,0 +1,349 @@
+---
+name: adlc-scaffold
+description: Generate Flow XML and Apex stubs for missing action targets in .agent files
+allowed-tools: Bash Read Write Edit Glob Grep
+argument-hint: "<org-alias> [--agent-file <path>] [--output-dir <path>]"
+---
+
+# ADLC Scaffold
+
+Generate stub metadata files (Flow XML, Apex classes) for Agent Script targets that don't exist in the org, with SObject-aware field discovery when connected.
+
+## Overview
+
+This skill automatically generates Salesforce metadata stubs for missing action targets referenced in `.agent` files. It creates properly structured Flow XML files and Apex InvocableMethod classes based on the input/output schemas defined in your Agent Script, with intelligent field mapping when connected to an org.
+
+## Usage
+
+```bash
+# Scaffold missing targets (runs discover first)
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent
+
+# Scaffold all targets without checking org
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --skip-discover
+
+# Specify output directory
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --output-dir force-app/main/default
+
+# Dry run to preview what would be generated
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --dry-run
+```
+
+## What it does
+
+### 1. Discovery Phase (unless --skip-discover)
+- Runs the discover workflow to identify missing targets
+- Extracts input/output schemas from the `.agent` file for each action
+- Maps Agent Script types to Salesforce data types
+
+### 2. Metadata Generation
+
+#### For `flow://` Targets
+
+Generates a complete Flow XML file with:
+- **Input variables** based on action `inputs:` definition
+- **Output variables** based on action `outputs:` definition
+- **Assignment elements** as placeholder logic
+- **Start element** properly configured
+- **API version** matching project settings
+
+Example generated Flow structure:
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>66.0</apiVersion>
+    <description>Scaffolded flow for Get_Order_Status action</description>
+    <label>Get Order Status</label>
+
+    <!-- Input variables from .agent file -->
+    <variables>
+        <name>orderId</name>
+        <dataType>String</dataType>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+
+    <!-- Output variables from .agent file -->
+    <variables>
+        <name>orderStatus</name>
+        <dataType>String</dataType>
+        <isInput>false</isInput>
+        <isOutput>true</isOutput>
+    </variables>
+
+    <!-- Placeholder logic -->
+    <assignments>
+        <name>Set_Output</name>
+        <label>Set Output Values</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <assignmentItems>
+            <assignToReference>orderStatus</assignToReference>
+            <operator>Assign</operator>
+            <value>
+                <stringValue>TODO: Implement Get_Order_Status logic</stringValue>
+            </value>
+        </assignmentItems>
+    </assignments>
+
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Set_Output</targetReference>
+        </connector>
+    </start>
+
+    <status>Draft</status>
+    <processType>AutoLaunchedFlow</processType>
+</Flow>
+```
+
+#### For `apex://` Targets
+
+Generates Apex class with @InvocableMethod:
+- **Input wrapper class** with @InvocableVariable properties
+- **Output wrapper class** for return values
+- **@InvocableMethod** with proper annotations
+- **Test class** with 75% coverage boilerplate
+
+Example generated Apex class:
+```apex
+public with sharing class OrderProcessor {
+
+    public class InputWrapper {
+        @InvocableVariable(label='Order ID' required=true)
+        public String orderId;
+
+        @InvocableVariable(label='Action Type' required=false)
+        public String actionType;
+    }
+
+    public class OutputWrapper {
+        @InvocableVariable(label='Success')
+        public Boolean success;
+
+        @InvocableVariable(label='Message')
+        public String message;
+
+        @InvocableVariable(label='Order Data')
+        public Order orderData;
+    }
+
+    @InvocableMethod(
+        label='Process Order'
+        description='Processes order based on action type'
+        category='Order Management'
+    )
+    public static List<OutputWrapper> processOrder(List<InputWrapper> inputs) {
+        List<OutputWrapper> outputs = new List<OutputWrapper>();
+
+        for (InputWrapper input : inputs) {
+            OutputWrapper output = new OutputWrapper();
+
+            // TODO: Implement actual business logic
+            output.success = true;
+            output.message = 'Order processed: ' + input.orderId;
+
+            outputs.add(output);
+        }
+
+        return outputs;
+    }
+}
+```
+
+### 3. SObject-Aware Generation
+
+When connected to an org, the scaffold tool:
+- **Queries SObject metadata** for referenced object types
+- **Validates field existence** for complex data types
+- **Generates accurate SOQL queries** in Apex stubs
+- **Creates proper field mappings** in Flow Get Records elements
+
+Example with SObject awareness:
+```apex
+// If .agent file references Order object fields
+Order orderRecord = [
+    SELECT Id, OrderNumber, Status, TotalAmount, AccountId
+    FROM Order
+    WHERE Id = :input.orderId
+    LIMIT 1
+];
+```
+
+### 4. Type Mapping
+
+Agent Script to Salesforce type conversion:
+
+| Agent Script Type | Flow Variable Type | Apex Type |
+|-------------------|-------------------|-----------|
+| `string` | `String` | `String` |
+| `number` | `Number` | `Decimal` |
+| `boolean` | `Boolean` | `Boolean` |
+| `date` | `Date` | `Date` |
+| `datetime` | `DateTime` | `DateTime` |
+| `id` | `String` | `Id` |
+| `object` | `Apex` (SObject) | `SObject` or custom class |
+| `list[string]` | `String` (multipicklist) | `List<String>` |
+| `list[object]` | `Apex` (SObject collection) | `List<SObject>` |
+
+### 5. Complex Data Type Handling
+
+For Agent Script complex data types:
+```yaml
+# In .agent file
+outputs:
+  order_data:
+    type: object
+    complex_data_type_name: Order
+    fields:
+      - OrderNumber
+      - Status
+      - Account.Name
+```
+
+Generates appropriate metadata:
+- **Flow**: Creates SObject variable with proper field references
+- **Apex**: Generates SOQL with relationship queries
+
+## Output Structure
+
+Generated files follow Salesforce DX project structure:
+
+```
+force-app/main/default/
+├── flows/
+│   ├── Get_Order_Status.flow-meta.xml
+│   └── Process_Return.flow-meta.xml
+├── classes/
+│   ├── OrderProcessor.cls
+│   ├── OrderProcessor.cls-meta.xml
+│   ├── OrderProcessorTest.cls
+│   └── OrderProcessorTest.cls-meta.xml
+└── promptTemplates/
+    ├── Customer_Response.promptTemplate-meta.xml
+    └── Order_Summary.promptTemplate-meta.xml
+```
+
+## Integration Workflow
+
+### Complete ADLC Pipeline
+
+1. **Discover** missing targets:
+```bash
+python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
+```
+
+2. **Scaffold** stub metadata:
+```bash
+python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
+```
+
+3. **Edit** generated stubs to add business logic
+
+4. **Deploy** to org:
+```bash
+sf project deploy start --source-dir force-app/main/default -o myorg
+```
+
+5. **Verify** all targets now exist:
+```bash
+python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
+# Should show 100% targets found
+```
+
+6. **Publish** agent:
+```bash
+sf agent publish authoring-bundle --api-name MyAgent -o myorg
+```
+
+## Advanced Features
+
+### Incremental Scaffolding
+
+Only generates stubs for missing targets:
+```bash
+# First run: generates 5 missing flows
+python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
+
+# After deploying 3 flows, second run only generates remaining 2
+python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
+```
+
+### Template Customization
+
+Use custom templates for generated code:
+```bash
+python3 scripts/scaffold.py -o myorg \
+  --agent-file MyAgent.agent \
+  --flow-template templates/flow-template.xml \
+  --apex-template templates/apex-template.cls
+```
+
+### Validation Mode
+
+Check what would be generated without creating files:
+```bash
+python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent --validate-only
+```
+
+## Error Handling
+
+| Error | Cause | Resolution |
+|-------|-------|------------|
+| `Invalid I/O schema` | Malformed inputs/outputs in .agent | Fix Agent Script syntax |
+| `Unknown SObject type` | Referenced object doesn't exist | Create custom object first |
+| `Field not found on SObject` | Invalid field reference | Check field API names |
+| `Permission denied` | Can't write to output directory | Check file permissions |
+
+## Best Practices
+
+### Post-Scaffolding Steps
+
+1. **Review generated code** - Stubs contain TODO comments marking where to add logic
+2. **Add business logic** - Replace placeholder assignments with actual implementation
+3. **Update test classes** - Scaffold generates basic tests; add meaningful assertions
+4. **Handle errors** - Add try-catch blocks and proper error handling
+5. **Add security** - Implement FLS/CRUD checks in Apex code
+
+### Flow Best Practices
+
+Generated flows are in Draft status. Before activation:
+- Add error handling with fault paths
+- Implement proper record locking
+- Add decision elements for conditional logic
+- Set up logging/debugging as needed
+
+### Apex Best Practices
+
+Generated Apex classes need:
+- Bulkification for collection processing
+- Governor limit management
+- Sharing rules enforcement (`with sharing`)
+- Comprehensive test coverage (aim for >85%)
+
+## Performance Optimization
+
+- Caches SObject describe calls to minimize API requests
+- Generates files in parallel when multiple targets exist
+- Reuses templates to avoid repeated parsing
+- Typical generation time: <1 second per target
+
+## Script Requirements
+
+Located at: `/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py`
+
+Dependencies:
+- `simple-salesforce` - Org connection and metadata queries
+- `pyyaml` - Parse .agent files
+- `lxml` - Generate valid Flow XML
+- `jinja2` - Template engine for code generation
+
+## Exit Codes
+
+| Code | Meaning | Next Step |
+|------|---------|-----------|
+| 0 | Successfully generated all stubs | Review and customize generated code |
+| 1 | Some stubs failed to generate | Check error messages, fix issues |
+| 2 | Critical failure | Verify org connection and file permissions |

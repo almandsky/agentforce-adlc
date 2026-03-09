@@ -1,0 +1,113 @@
+"""Tests for hook scripts — agent-validator.py syntax checks."""
+
+import pytest
+import sys
+from pathlib import Path
+
+# Add hooks scripts to path for testing
+sys.path.insert(0, str(Path(__file__).parent.parent / "shared" / "hooks" / "scripts"))
+
+
+class TestAgentValidator:
+    """Test the AgentScriptValidator class."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        # Import here to avoid path issues
+        sys.path.insert(0, str(Path(__file__).parent.parent / "shared" / "hooks" / "scripts"))
+        from importlib import import_module
+        # Use importlib to handle the hyphenated filename
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "agent_validator",
+            str(Path(__file__).parent.parent / "shared" / "hooks" / "scripts" / "agent-validator.py"),
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.AgentScriptValidator = module.AgentScriptValidator
+
+    def _validate(self, content: str, file_path: str = "/tmp/TestAgent/TestAgent.agent"):
+        validator = self.AgentScriptValidator(file_path, content)
+        return validator.validate()
+
+    def test_valid_agent(self):
+        content = "system:\n\tinstructions: \"Hello\"\nconfig:\n\tagent_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n\tagent_label: \"Test\"\nstart_agent entry:\n\tdescription: \"Entry\"\n"
+        result = self._validate(content)
+        assert result["success"]
+
+    def test_mixed_indentation(self):
+        content = "system:\n\tinstructions: \"Hello\"\nconfig:\n    agent_name: \"TestAgent\"\n"
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("Mixed tabs and spaces" in e for e in errors)
+
+    def test_lowercase_boolean(self):
+        content = "system:\n\tinstructions: \"Hello\"\nconfig:\n\tagent_name: \"T\"\n\tdefault_agent_user: \"u@t.com\"\n\tagent_label: \"T\"\nvariables:\n\tx: mutable boolean = false\n\t\tdescription: \"test\"\nstart_agent e:\n\tdescription: \"E\"\n"
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("false" in e and "False" in e for e in errors)
+
+    def test_missing_required_blocks(self):
+        content = "# Just a comment\n"
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("system" in e for e in errors)
+        assert any("config" in e for e in errors)
+        assert any("start_agent" in e for e in errors)
+
+    def test_undefined_topic_reference(self):
+        content = "system:\n\tinstructions: \"Hello\"\nconfig:\n\tagent_name: \"T\"\n\tdefault_agent_user: \"u@t.com\"\n\tagent_label: \"T\"\nstart_agent entry:\n\tdescription: \"E\"\n\treasoning:\n\t\tactions:\n\t\t\tgo: @utils.transition to @topic.nonexistent\n"
+        result = self._validate(content)
+        warnings = [w[2] for w in result["warnings"]]
+        assert any("nonexistent" in w for w in warnings)
+
+    def test_folder_name_mismatch(self):
+        content = "system:\n\tinstructions: \"Hello\"\nconfig:\n\tagent_name: \"WrongName\"\n\tdefault_agent_user: \"u@t.com\"\n\tagent_label: \"T\"\nstart_agent e:\n\tdescription: \"E\"\n"
+        result = self._validate(content, "/tmp/TestAgent/TestAgent.agent")
+        warnings = [w[2] for w in result["warnings"]]
+        assert any("doesn't match folder" in w for w in warnings)
+
+    def test_placeholder_detection(self):
+        content = "config:\n\tdefault_agent_user: \"REPLACE_WITH_EINSTEIN_AGENT_USER\"\n\tagent_name: \"T\"\n\tagent_label: \"T\"\nsystem:\n\tinstructions: \"H\"\nstart_agent e:\n\tdescription: \"E\"\n"
+        result = self._validate(content)
+        warnings = [w[2] for w in result["warnings"]]
+        assert any("REPLACE_WITH_EINSTEIN_AGENT_USER" in w for w in warnings)
+
+
+class TestGuardrails:
+    """Test the guardrails.py PreToolUse hook patterns."""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location(
+            "guardrails",
+            str(Path(__file__).parent.parent / "shared" / "hooks" / "scripts" / "guardrails.py"),
+        )
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.guardrails = module
+
+    def test_delete_without_where_blocked(self):
+        import re
+        for rule in self.guardrails.CRITICAL_PATTERNS:
+            if "DELETE" in rule["message"]:
+                assert re.search(rule["pattern"], "DELETE FROM Account;", re.IGNORECASE)
+                break
+
+    def test_sf_publish_without_json_blocked(self):
+        import re
+        for rule in self.guardrails.CRITICAL_PATTERNS:
+            if "sf agent publish" in rule.get("pattern", ""):
+                assert re.search(rule["pattern"], "sf agent publish authoring-bundle --api-name X", re.IGNORECASE)
+                assert not re.search(rule["pattern"], "sf agent publish authoring-bundle --api-name X --json", re.IGNORECASE)
+                break
+
+    def test_is_sf_context(self):
+        assert self.guardrails.is_sf_context("sf data query --query 'SELECT Id FROM Account'")
+        assert self.guardrails.is_sf_context("sf project deploy start")
+        assert not self.guardrails.is_sf_context("ls -la")
+
+    def test_output_command_not_blocked(self):
+        assert self.guardrails.is_output_only_command("echo 'DELETE FROM Account'")
+        assert not self.guardrails.is_output_only_command("sf data query --query 'DELETE FROM Account'")

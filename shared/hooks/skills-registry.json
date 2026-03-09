@@ -1,0 +1,49 @@
+{
+  "version": "0.1.0",
+  "skills": {
+    "adlc-author": {
+      "path": "skills/adlc-author",
+      "triggers": ["build agent", "create agent", "write .agent", "author agent"],
+      "description": "Generate .agent files directly from requirements"
+    },
+    "adlc-discover": {
+      "path": "skills/adlc-discover",
+      "triggers": ["discover", "check org", "what targets exist", "find targets"],
+      "description": "Check org for Flow/Apex/Retriever targets"
+    },
+    "adlc-scaffold": {
+      "path": "skills/adlc-scaffold",
+      "triggers": ["scaffold", "generate stubs", "create flow", "create apex"],
+      "description": "Generate Flow XML / Apex stubs for missing targets"
+    },
+    "adlc-deploy": {
+      "path": "skills/adlc-deploy",
+      "triggers": ["deploy", "publish", "activate"],
+      "description": "Deploy, publish, and activate agent bundles"
+    },
+    "adlc-run": {
+      "path": "skills/adlc-run",
+      "triggers": ["run action", "execute", "test action", "invoke"],
+      "description": "Execute individual actions against live org"
+    },
+    "adlc-test": {
+      "path": "skills/adlc-test",
+      "triggers": ["test agent", "preview", "smoke test", "batch test"],
+      "description": "Agent preview + batch testing"
+    },
+    "adlc-optimize": {
+      "path": "skills/adlc-optimize",
+      "triggers": ["optimize", "analyze sessions", "STDM", "session traces"],
+      "description": "Session trace analysis + improvement loop"
+    }
+  },
+  "hooks": {
+    "PreToolUse": {
+      "Bash": "shared/hooks/scripts/guardrails.py"
+    },
+    "PostToolUse": {
+      "Write|Edit": "shared/hooks/scripts/agent-validator.py"
+    },
+    "SessionStart": "shared/hooks/scripts/session-init.py"
+  }
+}

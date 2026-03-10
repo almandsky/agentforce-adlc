@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-agentforce-adlc Installer for Claude Code
+agentforce-adlc Installer
 
 Usage:
     curl -sSL https://raw.githubusercontent.com/Authoring-Agent/agentforce-adlc/main/tools/install.py | python3
@@ -13,10 +13,11 @@ Usage:
     python3 install.py --status       # Show installation status
     python3 install.py --dry-run      # Preview changes without writing
     python3 install.py --force        # Skip confirmations
+    python3 install.py --target cursor  # Install for Cursor instead of Claude Code
 
 Requirements:
     - Python 3.10+ (standard library only)
-    - Claude Code installed (~/.claude/ directory exists)
+    - Claude Code (~/.claude/) or Cursor (~/.cursor/) installed
 """
 
 import argparse
@@ -46,7 +47,7 @@ GITHUB_REPO = "agentforce-adlc"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/main"
 
-# Installation paths
+# Legacy module-level constants (for backward compat with self-updater)
 CLAUDE_DIR = Path.home() / ".claude"
 SKILLS_DIR = CLAUDE_DIR / "skills"
 AGENTS_DIR = CLAUDE_DIR / "agents"
@@ -88,6 +89,61 @@ HOOK_SCRIPTS = [
 ]
 
 HOOK_REGISTRY = "shared/hooks/skills-registry.json"
+
+# Supported installation targets
+TARGETS = ["claude", "cursor", "both"]
+
+
+def get_target_dirs(target: str) -> list:
+    """Return list of target config dicts per target."""
+    configs = []
+    if target in ("claude", "both"):
+        base = Path.home() / ".claude"
+        configs.append({
+            "name": "claude",
+            "base_dir": base,
+            "skills_dir": base / "skills",
+            "agents_dir": base / "agents",
+            "hooks_dir": base / "hooks",
+            "hooks_scripts_dir": base / "hooks" / "scripts",
+            "install_dir": base / "adlc",
+            "meta_file": base / ".adlc.json",
+            "installer_dest": base / "adlc-install.py",
+            "settings_file": base / "settings.json",
+            "supports_agents": True,
+            "supports_hooks": True,
+        })
+    if target in ("cursor", "both"):
+        base = Path.home() / ".cursor"
+        configs.append({
+            "name": "cursor",
+            "base_dir": base,
+            "skills_dir": base / "skills",
+            "agents_dir": None,
+            "hooks_dir": None,
+            "hooks_scripts_dir": None,
+            "install_dir": base / "adlc",
+            "meta_file": base / ".adlc.json",
+            "installer_dest": base / "adlc-install.py",
+            "settings_file": None,
+            "supports_agents": False,
+            "supports_hooks": False,
+        })
+    return configs
+
+
+def auto_detect_target() -> str:
+    """Auto-detect target based on which IDE directories exist."""
+    claude_exists = (Path.home() / ".claude").exists()
+    cursor_exists = (Path.home() / ".cursor").exists()
+    if claude_exists and cursor_exists:
+        return "both"
+    if cursor_exists:
+        return "cursor"
+    if claude_exists:
+        return "claude"
+    # Neither exists — default to claude (will error later on prereq check)
+    return "claude"
 
 
 # ============================================================================
@@ -220,27 +276,30 @@ def _handle_ssl_error(e: Exception) -> bool:
 # METADATA
 # ============================================================================
 
-def write_metadata(version: str, skills: List[str], agents: List[str],
+def write_metadata(tgt: Dict, version: str, skills: List[str], agents: List[str],
                    hooks: List[str], commit_sha: Optional[str] = None):
-    """Write install metadata to ~/.claude/.adlc.json."""
-    META_FILE.write_text(json.dumps({
+    """Write install metadata to the target's meta file."""
+    meta_file = tgt["meta_file"]
+    meta_file.write_text(json.dumps({
         "method": "unified",
         "version": version,
         "commit_sha": commit_sha,
         "installed_at": datetime.now().isoformat(),
         "installer_version": INSTALLER_VERSION,
-        "install_dir": str(INSTALL_DIR),
+        "install_dir": str(tgt["install_dir"]),
+        "target": tgt["name"],
         "skills": skills,
         "agents": agents,
         "hooks": hooks,
     }, indent=2) + "\n")
 
 
-def read_metadata() -> Optional[Dict[str, Any]]:
-    """Read install metadata."""
-    if META_FILE.exists():
+def read_metadata(tgt: Dict) -> Optional[Dict[str, Any]]:
+    """Read install metadata for a target."""
+    meta_file = tgt["meta_file"]
+    if meta_file.exists():
         try:
-            return json.loads(META_FILE.read_text())
+            return json.loads(meta_file.read_text())
         except (json.JSONDecodeError, IOError):
             return None
     return None
@@ -328,10 +387,11 @@ def get_local_commit_sha(repo_root: Path) -> Optional[str]:
 # SKILL INSTALLATION
 # ============================================================================
 
-def install_skills(source_dir: Path, dry_run: bool = False) -> List[str]:
-    """Copy skills from source to ~/.claude/skills/adlc-*/."""
+def install_skills(source_dir: Path, tgt: Dict, dry_run: bool = False) -> List[str]:
+    """Copy skills from source to target skills dir."""
     installed = []
-    SKILLS_DIR.mkdir(parents=True, exist_ok=True)
+    skills_dir = tgt["skills_dir"]
+    skills_dir.mkdir(parents=True, exist_ok=True)
 
     for skill_rel in SKILL_DIRS:
         src = source_dir / skill_rel
@@ -341,7 +401,7 @@ def install_skills(source_dir: Path, dry_run: bool = False) -> List[str]:
             print_warn(f"Skill not found: {skill_rel}")
             continue
 
-        target = SKILLS_DIR / skill_name
+        target = skills_dir / skill_name
         if dry_run:
             print_info(f"Would install skill: {skill_name}")
         else:
@@ -354,10 +414,14 @@ def install_skills(source_dir: Path, dry_run: bool = False) -> List[str]:
     return installed
 
 
-def install_agents(source_dir: Path, dry_run: bool = False) -> List[str]:
-    """Copy agent definitions from source to ~/.claude/agents/."""
+def install_agents(source_dir: Path, tgt: Dict, dry_run: bool = False) -> List[str]:
+    """Copy agent definitions to target agents dir."""
+    if not tgt["supports_agents"]:
+        return []
+
     installed = []
-    AGENTS_DIR.mkdir(parents=True, exist_ok=True)
+    agents_dir = tgt["agents_dir"]
+    agents_dir.mkdir(parents=True, exist_ok=True)
 
     for agent_rel in AGENT_FILES:
         src = source_dir / agent_rel
@@ -365,7 +429,7 @@ def install_agents(source_dir: Path, dry_run: bool = False) -> List[str]:
             print_warn(f"Agent not found: {agent_rel}")
             continue
 
-        target = AGENTS_DIR / src.name
+        target = agents_dir / src.name
         if dry_run:
             print_info(f"Would install agent: {src.name}")
         else:
@@ -377,10 +441,14 @@ def install_agents(source_dir: Path, dry_run: bool = False) -> List[str]:
     return installed
 
 
-def install_hooks(source_dir: Path, dry_run: bool = False) -> List[str]:
-    """Copy hook scripts from source to ~/.claude/hooks/scripts/."""
+def install_hooks(source_dir: Path, tgt: Dict, dry_run: bool = False) -> List[str]:
+    """Copy hook scripts to target hooks dir."""
+    if not tgt["supports_hooks"]:
+        return []
+
     installed = []
-    HOOKS_SCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
+    hooks_scripts_dir = tgt["hooks_scripts_dir"]
+    hooks_scripts_dir.mkdir(parents=True, exist_ok=True)
 
     for hook_rel in HOOK_SCRIPTS:
         src = source_dir / hook_rel
@@ -393,7 +461,7 @@ def install_hooks(source_dir: Path, dry_run: bool = False) -> List[str]:
         if not dest_name.startswith("adlc-") and not dest_name.startswith("stdin_"):
             dest_name = f"adlc-{dest_name}"
 
-        target = HOOKS_SCRIPTS_DIR / dest_name
+        target = hooks_scripts_dir / dest_name
         if dry_run:
             print_info(f"Would install hook: {dest_name}")
         else:
@@ -403,9 +471,10 @@ def install_hooks(source_dir: Path, dry_run: bool = False) -> List[str]:
         installed.append(dest_name)
 
     # Copy skills registry
+    hooks_dir = tgt["hooks_dir"]
     registry_src = source_dir / HOOK_REGISTRY
     if registry_src.exists():
-        registry_dest = HOOKS_DIR / "skills-registry.json"
+        registry_dest = hooks_dir / "skills-registry.json"
         if dry_run:
             print_info("Would install skills-registry.json")
         else:
@@ -416,14 +485,15 @@ def install_hooks(source_dir: Path, dry_run: bool = False) -> List[str]:
     return installed
 
 
-def prune_orphan_skills(current_skills: List[str], dry_run: bool = False) -> int:
+def prune_orphan_skills(tgt: Dict, current_skills: List[str], dry_run: bool = False) -> int:
     """Remove adlc-* skills that are no longer in the repo."""
     pruned = 0
-    if not SKILLS_DIR.exists():
+    skills_dir = tgt["skills_dir"]
+    if not skills_dir.exists():
         return pruned
 
     current_set = set(current_skills)
-    for item in sorted(SKILLS_DIR.iterdir()):
+    for item in sorted(skills_dir.iterdir()):
         if item.is_dir() and item.name.startswith(SKILL_PREFIX) and item.name not in current_set:
             if dry_run:
                 print_info(f"Would remove orphan skill: {item.name}")
@@ -449,10 +519,16 @@ def _find_adlc_hook_index(hooks_list: list, marker: str) -> int:
     return -1
 
 
-def configure_hooks(dry_run: bool = False) -> bool:
-    """Merge ADLC hook config into ~/.claude/settings.json."""
-    guardrail_cmd = f"python3 {HOOKS_SCRIPTS_DIR / 'adlc-guardrails.py'}"
-    validator_cmd = f"python3 {HOOKS_SCRIPTS_DIR / 'adlc-agent-validator.py'}"
+def configure_hooks(tgt: Dict, dry_run: bool = False) -> bool:
+    """Merge ADLC hook config into settings.json."""
+    if not tgt["supports_hooks"]:
+        return True
+
+    hooks_scripts_dir = tgt["hooks_scripts_dir"]
+    settings_file = tgt["settings_file"]
+
+    guardrail_cmd = f"python3 {hooks_scripts_dir / 'adlc-guardrails.py'}"
+    validator_cmd = f"python3 {hooks_scripts_dir / 'adlc-agent-validator.py'}"
 
     adlc_pre_hook = {
         "matcher": "Bash",
@@ -469,9 +545,9 @@ def configure_hooks(dry_run: bool = False) -> bool:
 
     # Read existing settings
     settings: Dict[str, Any] = {}
-    if SETTINGS_FILE.exists():
+    if settings_file.exists():
         try:
-            settings = json.loads(SETTINGS_FILE.read_text())
+            settings = json.loads(settings_file.read_text())
         except (json.JSONDecodeError, IOError):
             settings = {}
 
@@ -493,13 +569,17 @@ def configure_hooks(dry_run: bool = False) -> bool:
     else:
         post_hooks.append(adlc_post_hook)
 
-    SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n")
+    settings_file.write_text(json.dumps(settings, indent=2) + "\n")
     return True
 
 
-def remove_hooks_from_settings(dry_run: bool = False) -> bool:
-    """Remove ADLC hooks from ~/.claude/settings.json."""
-    if not SETTINGS_FILE.exists():
+def remove_hooks_from_settings(tgt: Dict, dry_run: bool = False) -> bool:
+    """Remove ADLC hooks from settings.json."""
+    if not tgt["supports_hooks"]:
+        return True
+
+    settings_file = tgt["settings_file"]
+    if not settings_file.exists():
         return True
 
     if dry_run:
@@ -507,7 +587,7 @@ def remove_hooks_from_settings(dry_run: bool = False) -> bool:
         return True
 
     try:
-        settings = json.loads(SETTINGS_FILE.read_text())
+        settings = json.loads(settings_file.read_text())
     except (json.JSONDecodeError, IOError):
         return True
 
@@ -532,7 +612,7 @@ def remove_hooks_from_settings(dry_run: bool = False) -> bool:
         del settings["hooks"]
 
     if changed:
-        SETTINGS_FILE.write_text(json.dumps(settings, indent=2) + "\n")
+        settings_file.write_text(json.dumps(settings, indent=2) + "\n")
 
     return True
 
@@ -541,65 +621,73 @@ def remove_hooks_from_settings(dry_run: bool = False) -> bool:
 # VALIDATION
 # ============================================================================
 
-def validate_installation() -> List[str]:
+def validate_installation(tgt: Dict) -> List[str]:
     """Validate that installation completed correctly. Returns list of issues."""
     issues = []
+    install_dir = tgt["install_dir"]
+    skills_dir = tgt["skills_dir"]
+    meta_file = tgt["meta_file"]
 
     # Check install dir
-    if not INSTALL_DIR.exists():
-        issues.append(f"Install directory missing: {INSTALL_DIR}")
+    if not install_dir.exists():
+        issues.append(f"Install directory missing: {install_dir}")
         return issues
 
     # Check skills
-    if SKILLS_DIR.exists():
+    if skills_dir.exists():
         for skill_rel in SKILL_DIRS:
             skill_name = Path(skill_rel).name
-            skill_md = SKILLS_DIR / skill_name / "SKILL.md"
+            skill_md = skills_dir / skill_name / "SKILL.md"
             if not skill_md.exists():
                 issues.append(f"SKILL.md missing: {skill_name}")
     else:
-        issues.append(f"Skills directory missing: {SKILLS_DIR}")
+        issues.append(f"Skills directory missing: {skills_dir}")
 
-    # Check agents
-    for agent_rel in AGENT_FILES:
-        agent_name = Path(agent_rel).name
-        if not (AGENTS_DIR / agent_name).exists():
-            issues.append(f"Agent missing: {agent_name}")
+    # Check agents (Claude Code only)
+    if tgt["supports_agents"]:
+        agents_dir = tgt["agents_dir"]
+        for agent_rel in AGENT_FILES:
+            agent_name = Path(agent_rel).name
+            if not (agents_dir / agent_name).exists():
+                issues.append(f"Agent missing: {agent_name}")
 
-    # Check hooks
-    for hook_rel in HOOK_SCRIPTS:
-        hook_name = Path(hook_rel).name
-        dest_name = hook_name
-        if not dest_name.startswith("adlc-") and not dest_name.startswith("stdin_"):
-            dest_name = f"adlc-{dest_name}"
-        if not (HOOKS_SCRIPTS_DIR / dest_name).exists():
-            issues.append(f"Hook missing: {dest_name}")
+    # Check hooks (Claude Code only)
+    if tgt["supports_hooks"]:
+        hooks_scripts_dir = tgt["hooks_scripts_dir"]
+        for hook_rel in HOOK_SCRIPTS:
+            hook_name = Path(hook_rel).name
+            dest_name = hook_name
+            if not dest_name.startswith("adlc-") and not dest_name.startswith("stdin_"):
+                dest_name = f"adlc-{dest_name}"
+            if not (hooks_scripts_dir / dest_name).exists():
+                issues.append(f"Hook missing: {dest_name}")
 
-    # Check hooks in settings.json
-    if SETTINGS_FILE.exists():
-        try:
-            settings = json.loads(SETTINGS_FILE.read_text())
-            hooks = settings.get("hooks", {})
-            pre = hooks.get("PreToolUse", [])
-            post = hooks.get("PostToolUse", [])
-            has_guardrail = any(
-                "adlc-guardrails" in h.get("command", "")
-                for entry in pre for h in entry.get("hooks", [])
-            )
-            has_validator = any(
-                "adlc-agent-validator" in h.get("command", "")
-                for entry in post for h in entry.get("hooks", [])
-            )
-            if not has_guardrail:
-                issues.append("Guardrail hook not configured in settings.json")
-            if not has_validator:
-                issues.append("Validator hook not configured in settings.json")
-        except (json.JSONDecodeError, IOError):
-            issues.append("Could not read settings.json for hook validation")
+        # Check hooks in settings.json
+        settings_file = tgt["settings_file"]
+        if settings_file.exists():
+            try:
+                settings = json.loads(settings_file.read_text())
+                hooks = settings.get("hooks", {})
+                pre = hooks.get("PreToolUse", [])
+                post = hooks.get("PostToolUse", [])
+                has_guardrail = any(
+                    "adlc-guardrails" in h.get("command", "")
+                    for entry in pre for h in entry.get("hooks", [])
+                )
+                has_validator = any(
+                    "adlc-agent-validator" in h.get("command", "")
+                    for entry in post for h in entry.get("hooks", [])
+                )
+                if not has_guardrail:
+                    issues.append("Guardrail hook not configured in settings.json")
+                if not has_validator:
+                    issues.append("Validator hook not configured in settings.json")
+            except (json.JSONDecodeError, IOError):
+                issues.append("Could not read settings.json for hook validation")
 
     # Check metadata
-    if not META_FILE.exists():
-        issues.append(f"Metadata file missing: {META_FILE}")
+    if not meta_file.exists():
+        issues.append(f"Metadata file missing: {meta_file}")
 
     return issues
 
@@ -608,13 +696,14 @@ def validate_installation() -> List[str]:
 # REMOVE HELPERS
 # ============================================================================
 
-def remove_skills(dry_run: bool = False) -> int:
-    """Remove all installed adlc-* skills from ~/.claude/skills/."""
+def remove_skills(tgt: Dict, dry_run: bool = False) -> int:
+    """Remove all installed adlc-* skills."""
     removed = 0
-    if not SKILLS_DIR.exists():
+    skills_dir = tgt["skills_dir"]
+    if not skills_dir.exists():
         return removed
 
-    for item in sorted(SKILLS_DIR.iterdir()):
+    for item in sorted(skills_dir.iterdir()):
         if item.is_dir() and item.name.startswith(SKILL_PREFIX):
             if dry_run:
                 print_info(f"Would remove skill: {item.name}")
@@ -626,13 +715,17 @@ def remove_skills(dry_run: bool = False) -> int:
     return removed
 
 
-def remove_agents(dry_run: bool = False) -> int:
-    """Remove all installed adlc-* agents from ~/.claude/agents/."""
+def remove_agents(tgt: Dict, dry_run: bool = False) -> int:
+    """Remove all installed adlc-* agents."""
+    if not tgt["supports_agents"]:
+        return 0
+
     removed = 0
-    if not AGENTS_DIR.exists():
+    agents_dir = tgt["agents_dir"]
+    if not agents_dir.exists():
         return removed
 
-    for item in sorted(AGENTS_DIR.iterdir()):
+    for item in sorted(agents_dir.iterdir()):
         if item.is_file() and item.name.startswith(SKILL_PREFIX) and item.suffix == ".md":
             if dry_run:
                 print_info(f"Would remove agent: {item.name}")
@@ -644,13 +737,18 @@ def remove_agents(dry_run: bool = False) -> int:
     return removed
 
 
-def remove_hooks(dry_run: bool = False) -> int:
-    """Remove ADLC hook scripts from ~/.claude/hooks/."""
+def remove_hooks(tgt: Dict, dry_run: bool = False) -> int:
+    """Remove ADLC hook scripts."""
+    if not tgt["supports_hooks"]:
+        return 0
+
     removed = 0
+    hooks_scripts_dir = tgt["hooks_scripts_dir"]
+    hooks_dir = tgt["hooks_dir"]
 
     # Remove scripts
-    if HOOKS_SCRIPTS_DIR.exists():
-        for item in sorted(HOOKS_SCRIPTS_DIR.iterdir()):
+    if hooks_scripts_dir.exists():
+        for item in sorted(hooks_scripts_dir.iterdir()):
             if item.is_file() and item.name.startswith("adlc-"):
                 if dry_run:
                     print_info(f"Would remove hook: {item.name}")
@@ -660,7 +758,7 @@ def remove_hooks(dry_run: bool = False) -> int:
                 removed += 1
 
         # Remove stdin_utils.py (shared helper)
-        stdin_utils = HOOKS_SCRIPTS_DIR / "stdin_utils.py"
+        stdin_utils = hooks_scripts_dir / "stdin_utils.py"
         if stdin_utils.exists():
             if dry_run:
                 print_info("Would remove hook: stdin_utils.py")
@@ -670,7 +768,7 @@ def remove_hooks(dry_run: bool = False) -> int:
             removed += 1
 
     # Remove registry
-    registry = HOOKS_DIR / "skills-registry.json"
+    registry = hooks_dir / "skills-registry.json"
     if registry.exists():
         if dry_run:
             print_info("Would remove skills-registry.json")
@@ -686,20 +784,115 @@ def remove_hooks(dry_run: bool = False) -> int:
 # COMMANDS
 # ============================================================================
 
+def _install_for_target(tgt: Dict, source_dir: Path, version: str,
+                        commit_sha: Optional[str], dry_run: bool) -> Dict:
+    """Install for a single target. Returns summary dict."""
+    tgt_name = tgt["name"]
+    install_dir = tgt["install_dir"]
+
+    print_step(f"Installing for {tgt_name}")
+
+    # Copy repo to install dir
+    if dry_run:
+        print_info(f"Would copy repo to {install_dir}")
+    else:
+        safe_rmtree(install_dir)
+        shutil.copytree(source_dir, install_dir, ignore=shutil.ignore_patterns(
+            ".git", "__pycache__", "*.pyc", ".venv", "force-app",
+        ))
+        print_substep(f"Copied to {install_dir}")
+
+    # Install skills (always)
+    skills = install_skills(install_dir if not dry_run else source_dir, tgt, dry_run)
+    if skills:
+        print_substep(f"{len(skills)} skill(s) installed")
+    else:
+        print_warn("No skills found to install")
+
+    pruned = prune_orphan_skills(tgt, skills, dry_run)
+    if pruned:
+        print_substep(f"{pruned} orphan skill(s) removed")
+
+    # Agents (Claude Code only)
+    agents = []
+    if tgt["supports_agents"]:
+        agents = install_agents(install_dir if not dry_run else source_dir, tgt, dry_run)
+        if agents:
+            print_substep(f"{len(agents)} agent(s) installed")
+
+    # Hooks (Claude Code only)
+    hooks = []
+    if tgt["supports_hooks"]:
+        hooks = install_hooks(install_dir if not dry_run else source_dir, tgt, dry_run)
+        if hooks:
+            print_substep(f"{len(hooks)} hook(s) installed")
+
+        if configure_hooks(tgt, dry_run):
+            if not dry_run:
+                print_substep("Hooks configured in settings.json")
+        else:
+            print_warn("Could not configure hooks in settings.json")
+
+    # Copy installer for self-update
+    installer_src = (install_dir if not dry_run else source_dir) / "tools" / "install.py"
+    installer_dest = tgt["installer_dest"]
+    if installer_src.exists():
+        if dry_run:
+            print_info(f"Would copy installer to {installer_dest}")
+        else:
+            shutil.copy2(installer_src, installer_dest)
+            print_substep(f"Installer copied to {installer_dest}")
+    else:
+        print_warn("Installer source not found; self-update won't work")
+
+    # Write metadata
+    write_metadata(tgt, version, skills, agents, hooks, commit_sha=commit_sha)
+    if not dry_run:
+        print_substep(f"Metadata written to {tgt['meta_file']}")
+    else:
+        print_info(f"Would write metadata to {tgt['meta_file']}")
+
+    # Validate
+    if not dry_run:
+        issues = validate_installation(tgt)
+        if issues:
+            for issue in issues:
+                print_warn(issue)
+        else:
+            print_substep("All checks passed")
+
+    return {"skills": skills, "agents": agents, "hooks": hooks}
+
+
 def cmd_install(dry_run: bool = False, force: bool = False,
-                called_from_bash: bool = False) -> int:
-    """Install agentforce-adlc to ~/.claude/."""
+                called_from_bash: bool = False, target: str = "claude") -> int:
+    """Install agentforce-adlc."""
     if not called_from_bash:
         print(f"\n{c('agentforce-adlc installer', Colors.BOLD)}")
 
-    # Check prerequisites
-    if not CLAUDE_DIR.exists():
-        print_error(f"Claude Code directory not found: {CLAUDE_DIR}")
-        print_info("Install Claude Code first: https://docs.anthropic.com/en/docs/claude-code")
+    targets = get_target_dirs(target)
+
+    # Check prerequisites — at least one target dir must exist
+    valid_targets = [t for t in targets if t["base_dir"].exists()]
+    if not valid_targets:
+        names = [t["name"] for t in targets]
+        dirs = [str(t["base_dir"]) for t in targets]
+        print_error(f"No supported IDE found for target '{target}'")
+        for name, d in zip(names, dirs):
+            print_info(f"  {name}: {d} not found")
+        if "claude" in names:
+            print_info("Install Claude Code: https://docs.anthropic.com/en/docs/claude-code")
+        if "cursor" in names:
+            print_info("Install Cursor: https://www.cursor.com/")
         return 1
 
-    # Check existing installation
-    meta = read_metadata()
+    # Warn about missing targets when using "both"
+    for t in targets:
+        if not t["base_dir"].exists():
+            print_warn(f"{t['name']} not found ({t['base_dir']}), skipping")
+
+    # Check existing installation (check first valid target)
+    meta = read_metadata(valid_targets[0])
     if meta and not force:
         version = meta.get("version", "unknown")
         print_info(f"agentforce-adlc v{version} is already installed.")
@@ -720,26 +913,13 @@ def cmd_install(dry_run: bool = False, force: bool = False,
         source_dir = repo_root
 
         if dry_run:
-            print_info(f"Would install v{version} from {repo_root}")
-            print_info(f"Would copy repo to {INSTALL_DIR}")
-            install_skills(source_dir, dry_run=True)
-            install_agents(source_dir, dry_run=True)
-            install_hooks(source_dir, dry_run=True)
-            configure_hooks(dry_run=True)
-            print_info(f"Would copy installer to {INSTALLER_DEST}")
-            print_info(f"Would write metadata to {META_FILE}")
+            print_info(f"Version: {version}" + (f" ({commit_sha})" if commit_sha else ""))
+            for t in valid_targets:
+                _install_for_target(t, source_dir, version, commit_sha, dry_run=True)
             print(f"\n{c('Dry run complete — no changes made.', Colors.DIM)}")
             return 0
 
         print_info(f"Version: {version}" + (f" ({commit_sha})" if commit_sha else ""))
-
-        # Copy repo to install dir
-        print_step("Copying repo to install directory")
-        safe_rmtree(INSTALL_DIR)
-        shutil.copytree(repo_root, INSTALL_DIR, ignore=shutil.ignore_patterns(
-            ".git", "__pycache__", "*.pyc", ".venv", "force-app",
-        ))
-        print_substep(f"Copied to {INSTALL_DIR}")
 
     else:
         # Remote install (curl | python3)
@@ -750,106 +930,82 @@ def cmd_install(dry_run: bool = False, force: bool = False,
             return 1
         version = version_str
         commit_sha = fetch_remote_commit_sha()
-        source_dir = INSTALL_DIR  # Will be populated by download
 
         if dry_run:
-            print_info(f"Would install v{version} from GitHub")
-            print_info(f"Would download repo to {INSTALL_DIR}")
-            print_info(f"Would install skills to {SKILLS_DIR}")
-            print_info(f"Would install agents to {AGENTS_DIR}")
-            print_info(f"Would install hooks to {HOOKS_SCRIPTS_DIR}")
-            print_info("Would configure hooks in settings.json")
-            print_info(f"Would copy installer to {INSTALLER_DEST}")
-            print_info(f"Would write metadata to {META_FILE}")
+            print_info(f"Version: {version}" + (f" ({commit_sha})" if commit_sha else ""))
+            for t in valid_targets:
+                print_info(f"Would download repo to {t['install_dir']}")
+                print_info(f"Would install skills to {t['skills_dir']}")
+                if t["supports_agents"]:
+                    print_info(f"Would install agents to {t['agents_dir']}")
+                if t["supports_hooks"]:
+                    print_info(f"Would install hooks to {t['hooks_scripts_dir']}")
+                    print_info("Would configure hooks in settings.json")
+                print_info(f"Would copy installer to {t['installer_dest']}")
+                print_info(f"Would write metadata to {t['meta_file']}")
             print(f"\n{c('Dry run complete — no changes made.', Colors.DIM)}")
             return 0
 
         print_info(f"Version: {version}" + (f" ({commit_sha})" if commit_sha else ""))
 
-        if not download_repo_zip(INSTALL_DIR):
+        # Download to first target's install dir, then copy to others
+        first_install_dir = valid_targets[0]["install_dir"]
+        if not download_repo_zip(first_install_dir):
             return 1
-        print_substep(f"Extracted to {INSTALL_DIR}")
+        print_substep(f"Extracted to {first_install_dir}")
+        source_dir = first_install_dir
 
-    # Install skills
-    print_step("Installing skills")
-    skills = install_skills(source_dir)
-    if skills:
-        print_substep(f"{len(skills)} skill(s) installed")
-    else:
-        print_warn("No skills found to install")
-
-    pruned = prune_orphan_skills(skills)
-    if pruned:
-        print_substep(f"{pruned} orphan skill(s) removed")
-
-    # Install agents
-    print_step("Installing agents")
-    agents = install_agents(source_dir)
-    if agents:
-        print_substep(f"{len(agents)} agent(s) installed")
-
-    # Install hooks
-    print_step("Installing hooks")
-    hooks = install_hooks(source_dir)
-    if hooks:
-        print_substep(f"{len(hooks)} hook(s) installed")
-
-    # Auto-configure hooks in settings.json
-    print_step("Configuring hooks in settings.json")
-    if configure_hooks():
-        print_substep("Hooks configured in settings.json")
-    else:
-        print_warn("Could not configure hooks in settings.json")
-
-    # Copy installer for self-update
-    print_step("Setting up self-updater")
-    installer_src = INSTALL_DIR / "tools" / "install.py"
-    if installer_src.exists():
-        shutil.copy2(installer_src, INSTALLER_DEST)
-        print_substep(f"Installer copied to {INSTALLER_DEST}")
-    else:
-        print_warn("Installer source not found; self-update won't work")
-
-    # Write metadata
-    write_metadata(version, skills, agents, hooks, commit_sha=commit_sha)
-    print_substep(f"Metadata written to {META_FILE}")
-
-    # Post-install validation
-    print_step("Validating installation")
-    issues = validate_installation()
-    if issues:
-        for issue in issues:
-            print_warn(issue)
-        print_warn("Installation completed with warnings")
-    else:
-        print_substep("All checks passed")
+    # Install for each valid target
+    all_skills = []
+    all_agents = []
+    all_hooks = []
+    for t in valid_targets:
+        result = _install_for_target(t, source_dir, version, commit_sha, dry_run=False)
+        all_skills = result["skills"]  # Same for all targets
+        if result["agents"]:
+            all_agents = result["agents"]
+        if result["hooks"]:
+            all_hooks = result["hooks"]
 
     # Summary
+    target_names = [t["name"] for t in valid_targets]
     print(f"\n{c('Installation complete!', Colors.GREEN)}")
     print()
     print(f"  Version:  {version}" + (f" ({commit_sha})" if commit_sha else ""))
-    print(f"  Skills:   {', '.join(skills) if skills else 'none'}")
-    print(f"  Agents:   {', '.join(agents) if agents else 'none'}")
-    print(f"  Hooks:    {len(hooks)} script(s) + settings.json configured")
+    print(f"  Targets:  {', '.join(target_names)}")
+    print(f"  Skills:   {', '.join(all_skills) if all_skills else 'none'}")
+    if all_agents:
+        print(f"  Agents:   {', '.join(all_agents)}")
+    if all_hooks:
+        print(f"  Hooks:    {len(all_hooks)} script(s) + settings.json configured")
     print()
-    print(f"  Update:   python3 {INSTALLER_DEST} --update")
-    print(f"  Status:   python3 {INSTALLER_DEST} --status")
-    print(f"  Remove:   python3 {INSTALLER_DEST} --uninstall")
+    first_dest = valid_targets[0]["installer_dest"]
+    print(f"  Update:   python3 {first_dest} --update")
+    print(f"  Status:   python3 {first_dest} --status")
+    print(f"  Remove:   python3 {first_dest} --uninstall")
     print()
-    print_info("Restart Claude Code for skills to take effect.")
+    print_info("Restart your IDE for skills to take effect.")
     print()
 
     return 0
 
 
-def cmd_update(dry_run: bool = False, force_update: bool = False) -> int:
+def cmd_update(dry_run: bool = False, force_update: bool = False,
+               target: str = "claude") -> int:
     """Check for updates and apply if available."""
     print(f"\n{c('agentforce-adlc updater', Colors.BOLD)}")
 
-    meta = read_metadata()
+    targets = get_target_dirs(target)
+    valid_targets = [t for t in targets if t["base_dir"].exists()]
+
+    if not valid_targets:
+        print_info("agentforce-adlc is not installed. Running install...")
+        return cmd_install(dry_run=dry_run, target=target)
+
+    meta = read_metadata(valid_targets[0])
     if not meta:
         print_info("agentforce-adlc is not installed. Running install...")
-        return cmd_install(dry_run=dry_run)
+        return cmd_install(dry_run=dry_run, target=target)
 
     local_version = meta.get("version", "unknown")
     local_sha = meta.get("commit_sha")
@@ -884,27 +1040,44 @@ def cmd_update(dry_run: bool = False, force_update: bool = False) -> int:
     elif content_changed:
         print_info(f"Content update available: {local_sha} -> {remote_sha}")
 
-    return cmd_install(dry_run=dry_run, force=True)
+    return cmd_install(dry_run=dry_run, force=True, target=target)
 
 
-def cmd_uninstall(dry_run: bool = False, force: bool = False) -> int:
+def cmd_uninstall(dry_run: bool = False, force: bool = False,
+                  target: str = "claude") -> int:
     """Remove agentforce-adlc installation."""
     print(f"\n{c('agentforce-adlc uninstaller', Colors.BOLD)}")
 
-    meta = read_metadata()
-    if not meta and not INSTALL_DIR.exists():
+    targets = get_target_dirs(target)
+    valid_targets = [t for t in targets if t["base_dir"].exists()]
+
+    if not valid_targets:
+        print_info("agentforce-adlc is not installed.")
+        return 0
+
+    # Check if anything is actually installed
+    any_installed = False
+    for t in valid_targets:
+        if read_metadata(t) or t["install_dir"].exists():
+            any_installed = True
+            break
+    if not any_installed:
         print_info("agentforce-adlc is not installed.")
         return 0
 
     if not force:
         print()
         print("  This will remove:")
-        print(f"    - {INSTALL_DIR}")
-        print(f"    - {SKILLS_DIR}/adlc-* skills")
-        print(f"    - {AGENTS_DIR}/adlc-* agents")
-        print(f"    - Hook scripts + settings.json entries")
-        print(f"    - {META_FILE}")
-        print(f"    - {INSTALLER_DEST}")
+        for t in valid_targets:
+            print(f"    [{t['name']}]")
+            print(f"    - {t['install_dir']}")
+            print(f"    - {t['skills_dir']}/adlc-* skills")
+            if t["supports_agents"]:
+                print(f"    - {t['agents_dir']}/adlc-* agents")
+            if t["supports_hooks"]:
+                print(f"    - Hook scripts + settings.json entries")
+            print(f"    - {t['meta_file']}")
+            print(f"    - {t['installer_dest']}")
         print()
         try:
             answer = input("  Proceed? [y/N] ").strip().lower()
@@ -915,53 +1088,64 @@ def cmd_uninstall(dry_run: bool = False, force: bool = False) -> int:
             print_info("Cancelled.")
             return 0
 
-    # Remove install dir
-    if INSTALL_DIR.exists():
-        if dry_run:
-            print_info(f"Would remove {INSTALL_DIR}")
-        else:
-            safe_rmtree(INSTALL_DIR)
-            print_substep(f"Removed {INSTALL_DIR}")
+    for t in valid_targets:
+        tgt_name = t["name"]
+        install_dir = t["install_dir"]
+        meta_file = t["meta_file"]
+        installer_dest = t["installer_dest"]
 
-    # Remove skills
-    removed_skills = remove_skills(dry_run=dry_run)
-    if removed_skills:
-        print_substep(f"Removed {removed_skills} skill(s)")
+        if not read_metadata(t) and not install_dir.exists():
+            continue
 
-    # Remove agents
-    removed_agents = remove_agents(dry_run=dry_run)
-    if removed_agents:
-        print_substep(f"Removed {removed_agents} agent(s)")
+        print_step(f"Uninstalling from {tgt_name}")
 
-    # Remove hooks
-    removed_hooks = remove_hooks(dry_run=dry_run)
-    if removed_hooks:
-        print_substep(f"Removed {removed_hooks} hook(s)")
+        # Remove install dir
+        if install_dir.exists():
+            if dry_run:
+                print_info(f"Would remove {install_dir}")
+            else:
+                safe_rmtree(install_dir)
+                print_substep(f"Removed {install_dir}")
 
-    # Remove hooks from settings.json
-    remove_hooks_from_settings(dry_run=dry_run)
-    if not dry_run:
-        print_substep("Removed ADLC hooks from settings.json")
+        # Remove skills
+        removed_skills = remove_skills(t, dry_run=dry_run)
+        if removed_skills:
+            print_substep(f"Removed {removed_skills} skill(s)")
 
-    # Remove metadata
-    if META_FILE.exists():
-        if dry_run:
-            print_info(f"Would remove {META_FILE}")
-        else:
-            META_FILE.unlink()
-            print_substep(f"Removed {META_FILE}")
+        # Remove agents
+        removed_agents = remove_agents(t, dry_run=dry_run)
+        if removed_agents:
+            print_substep(f"Removed {removed_agents} agent(s)")
 
-    # Remove self-updater (but not if we're running from it)
-    if INSTALLER_DEST.exists():
-        running_from_dest = Path(__file__).resolve() == INSTALLER_DEST.resolve()
-        if dry_run:
-            print_info(f"Would remove {INSTALLER_DEST}")
-        elif not running_from_dest:
-            INSTALLER_DEST.unlink()
-            print_substep(f"Removed {INSTALLER_DEST}")
-        else:
-            print_info(f"Skipping removal of running installer: {INSTALLER_DEST}")
-            print_info("You can delete it manually.")
+        # Remove hooks
+        removed_hooks = remove_hooks(t, dry_run=dry_run)
+        if removed_hooks:
+            print_substep(f"Removed {removed_hooks} hook(s)")
+
+        # Remove hooks from settings.json
+        remove_hooks_from_settings(t, dry_run=dry_run)
+        if not dry_run and t["supports_hooks"]:
+            print_substep("Removed ADLC hooks from settings.json")
+
+        # Remove metadata
+        if meta_file.exists():
+            if dry_run:
+                print_info(f"Would remove {meta_file}")
+            else:
+                meta_file.unlink()
+                print_substep(f"Removed {meta_file}")
+
+        # Remove self-updater (but not if we're running from it)
+        if installer_dest.exists():
+            running_from_dest = Path(__file__).resolve() == installer_dest.resolve()
+            if dry_run:
+                print_info(f"Would remove {installer_dest}")
+            elif not running_from_dest:
+                installer_dest.unlink()
+                print_substep(f"Removed {installer_dest}")
+            else:
+                print_info(f"Skipping removal of running installer: {installer_dest}")
+                print_info("You can delete it manually.")
 
     if dry_run:
         print(f"\n{c('Dry run complete — no changes made.', Colors.DIM)}")
@@ -971,94 +1155,116 @@ def cmd_uninstall(dry_run: bool = False, force: bool = False) -> int:
     return 0
 
 
-def cmd_status() -> int:
+def cmd_status(target: str = "claude") -> int:
     """Show installation status."""
     print(f"\n{c('agentforce-adlc status', Colors.BOLD)}")
 
-    meta = read_metadata()
-    if not meta:
-        print_info("agentforce-adlc is not installed.")
+    targets = get_target_dirs(target)
+    valid_targets = [t for t in targets if t["base_dir"].exists()]
+
+    if not valid_targets:
+        print_info("No supported IDE directories found.")
         return 1
 
-    commit_sha = meta.get("commit_sha")
-    print()
-    print(f"  Version:      {meta.get('version', 'unknown')}" +
-          (f" ({commit_sha})" if commit_sha else ""))
-    print(f"  Installed at: {meta.get('installed_at', 'unknown')}")
-    print(f"  Install dir:  {INSTALL_DIR}")
-    print(f"  Metadata:     {META_FILE}")
+    any_installed = False
 
-    # List installed skills
-    print()
-    print(f"  {c('Skills:', Colors.BOLD)}")
-    if SKILLS_DIR.exists():
-        found = False
-        for item in sorted(SKILLS_DIR.iterdir()):
-            if item.is_dir() and item.name.startswith(SKILL_PREFIX):
-                skill_md = item / "SKILL.md"
-                status = "ok" if skill_md.exists() else "MISSING SKILL.md"
-                print(f"    - {item.name} ({status})")
-                found = True
-        if not found:
-            print("    (none)")
-    else:
-        print("    (skills directory not found)")
+    for t in valid_targets:
+        tgt_name = t["name"]
+        meta = read_metadata(t)
 
-    # List installed agents
-    print()
-    print(f"  {c('Agents:', Colors.BOLD)}")
-    if AGENTS_DIR.exists():
-        found = False
-        for item in sorted(AGENTS_DIR.iterdir()):
-            if item.is_file() and item.name.startswith(SKILL_PREFIX) and item.suffix == ".md":
-                print(f"    - {item.name}")
-                found = True
-        if not found:
-            print("    (none)")
-    else:
-        print("    (agents directory not found)")
+        print_step(f"{tgt_name}")
 
-    # List hooks
-    print()
-    print(f"  {c('Hooks:', Colors.BOLD)}")
-    if HOOKS_SCRIPTS_DIR.exists():
-        found = False
-        for item in sorted(HOOKS_SCRIPTS_DIR.iterdir()):
-            if item.is_file() and item.name.startswith("adlc-"):
-                print(f"    - {item.name}")
-                found = True
-        if not found:
-            print("    (none)")
-    else:
-        print("    (hooks directory not found)")
+        if not meta:
+            print_info(f"agentforce-adlc is not installed for {tgt_name}.")
+            continue
 
-    # Check settings.json hooks
-    print()
-    print(f"  {c('Hook configuration:', Colors.BOLD)}")
-    if SETTINGS_FILE.exists():
-        try:
-            settings = json.loads(SETTINGS_FILE.read_text())
-            hooks = settings.get("hooks", {})
-            pre = hooks.get("PreToolUse", [])
-            post = hooks.get("PostToolUse", [])
-            has_guardrail = any(
-                "adlc-guardrails" in h.get("command", "")
-                for entry in pre for h in entry.get("hooks", [])
-            )
-            has_validator = any(
-                "adlc-agent-validator" in h.get("command", "")
-                for entry in post for h in entry.get("hooks", [])
-            )
-            print(f"    PreToolUse (guardrails):  {'configured' if has_guardrail else 'NOT configured'}")
-            print(f"    PostToolUse (validator):  {'configured' if has_validator else 'NOT configured'}")
-        except (json.JSONDecodeError, IOError):
-            print("    Could not read settings.json")
-    else:
-        print("    settings.json not found")
+        any_installed = True
+        commit_sha = meta.get("commit_sha")
+        print()
+        print(f"  Version:      {meta.get('version', 'unknown')}" +
+              (f" ({commit_sha})" if commit_sha else ""))
+        print(f"  Installed at: {meta.get('installed_at', 'unknown')}")
+        print(f"  Install dir:  {t['install_dir']}")
+        print(f"  Metadata:     {t['meta_file']}")
+
+        # List installed skills
+        skills_dir = t["skills_dir"]
+        print()
+        print(f"  {c('Skills:', Colors.BOLD)}")
+        if skills_dir.exists():
+            found = False
+            for item in sorted(skills_dir.iterdir()):
+                if item.is_dir() and item.name.startswith(SKILL_PREFIX):
+                    skill_md = item / "SKILL.md"
+                    status = "ok" if skill_md.exists() else "MISSING SKILL.md"
+                    print(f"    - {item.name} ({status})")
+                    found = True
+            if not found:
+                print("    (none)")
+        else:
+            print("    (skills directory not found)")
+
+        # List installed agents (Claude Code only)
+        if t["supports_agents"]:
+            agents_dir = t["agents_dir"]
+            print()
+            print(f"  {c('Agents:', Colors.BOLD)}")
+            if agents_dir.exists():
+                found = False
+                for item in sorted(agents_dir.iterdir()):
+                    if item.is_file() and item.name.startswith(SKILL_PREFIX) and item.suffix == ".md":
+                        print(f"    - {item.name}")
+                        found = True
+                if not found:
+                    print("    (none)")
+            else:
+                print("    (agents directory not found)")
+
+        # List hooks (Claude Code only)
+        if t["supports_hooks"]:
+            hooks_scripts_dir = t["hooks_scripts_dir"]
+            print()
+            print(f"  {c('Hooks:', Colors.BOLD)}")
+            if hooks_scripts_dir.exists():
+                found = False
+                for item in sorted(hooks_scripts_dir.iterdir()):
+                    if item.is_file() and item.name.startswith("adlc-"):
+                        print(f"    - {item.name}")
+                        found = True
+                if not found:
+                    print("    (none)")
+            else:
+                print("    (hooks directory not found)")
+
+            # Check settings.json hooks
+            settings_file = t["settings_file"]
+            print()
+            print(f"  {c('Hook configuration:', Colors.BOLD)}")
+            if settings_file.exists():
+                try:
+                    settings = json.loads(settings_file.read_text())
+                    hooks = settings.get("hooks", {})
+                    pre = hooks.get("PreToolUse", [])
+                    post = hooks.get("PostToolUse", [])
+                    has_guardrail = any(
+                        "adlc-guardrails" in h.get("command", "")
+                        for entry in pre for h in entry.get("hooks", [])
+                    )
+                    has_validator = any(
+                        "adlc-agent-validator" in h.get("command", "")
+                        for entry in post for h in entry.get("hooks", [])
+                    )
+                    print(f"    PreToolUse (guardrails):  {'configured' if has_guardrail else 'NOT configured'}")
+                    print(f"    PostToolUse (validator):  {'configured' if has_validator else 'NOT configured'}")
+                except (json.JSONDecodeError, IOError):
+                    print("    Could not read settings.json")
+            else:
+                print("    settings.json not found")
 
     # Check for coexistence
-    sf_meta = CLAUDE_DIR / ".sf-skills.json"
-    md_meta = CLAUDE_DIR / ".agentforce-md.json"
+    claude_dir = Path.home() / ".claude"
+    sf_meta = claude_dir / ".sf-skills.json"
+    md_meta = claude_dir / ".agentforce-md.json"
     coexist = []
     if sf_meta.exists():
         coexist.append("sf-skills")
@@ -1069,7 +1275,7 @@ def cmd_status() -> int:
         print_info(f"Also installed: {', '.join(coexist)} (no conflicts expected)")
 
     print()
-    return 0
+    return 0 if any_installed else 1
 
 
 # ============================================================================
@@ -1078,7 +1284,7 @@ def cmd_status() -> int:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="agentforce-adlc installer for Claude Code",
+        description="agentforce-adlc installer",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--update", action="store_true",
@@ -1093,20 +1299,25 @@ def main():
                         help="Preview changes without writing")
     parser.add_argument("--force", action="store_true",
                         help="Skip confirmations")
+    parser.add_argument("--target", choices=TARGETS, default=None,
+                        help="Install target: claude, cursor, or both (default: auto-detect)")
     parser.add_argument("--called-from-bash", action="store_true",
                         help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 
+    # Resolve target
+    target = args.target if args.target else auto_detect_target()
+
     if args.status:
-        sys.exit(cmd_status())
+        sys.exit(cmd_status(target=target))
     elif args.uninstall:
-        sys.exit(cmd_uninstall(dry_run=args.dry_run, force=args.force))
+        sys.exit(cmd_uninstall(dry_run=args.dry_run, force=args.force, target=target))
     elif args.update or args.force_update:
-        sys.exit(cmd_update(dry_run=args.dry_run, force_update=args.force_update))
+        sys.exit(cmd_update(dry_run=args.dry_run, force_update=args.force_update, target=target))
     else:
         sys.exit(cmd_install(dry_run=args.dry_run, force=args.force,
-                             called_from_bash=args.called_from_bash))
+                             called_from_bash=args.called_from_bash, target=target))
 
 
 if __name__ == "__main__":

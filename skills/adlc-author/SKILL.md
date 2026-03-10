@@ -68,6 +68,48 @@ sf data query -q "SELECT Username FROM User WHERE Profile.Name = 'Einstein Agent
 If multiple users exist, ask which one to use. If none exist, tell the user to create one
 in Setup > Einstein Agent Service Accounts.
 
+### Phase 2b: Discover Existing Targets
+
+Before generating action definitions, query the target org for existing Flows and Apex classes
+that the agent might use. This prevents generating references to non-existent targets and
+ensures correct parameter names.
+
+```bash
+# Find active autolaunched flows in the org
+sf data query -q "SELECT ApiName, IsActive, Description FROM FlowDefinitionView WHERE IsActive = true AND ProcessType = 'AutoLaunchedFlow'" -o <org> --json
+
+# For each candidate flow, check its actual input/output parameters
+sf api request rest "/services/data/v63.0/actions/custom/flow/<FlowApiName>" -o <org>
+```
+
+NOTE: `FlowDefinitionView` does NOT have a `Status` column. Use `IsActive` (boolean):
+```bash
+# WRONG: Status column doesn't exist
+sf data query -q "SELECT ApiName, Status FROM FlowDefinitionView" -o <org> --json
+
+# CORRECT: Use IsActive
+sf data query -q "SELECT ApiName, IsActive FROM FlowDefinitionView WHERE IsActive = true" -o <org> --json
+```
+
+The REST endpoint returns the exact input/output parameter schema:
+```json
+{
+  "inputs": [
+    { "name": "customerId", "type": "STRING", "required": true }
+  ],
+  "outputs": [
+    { "name": "caseId", "type": "STRING" }
+  ]
+}
+```
+
+**Use the discovered parameters** in the Level 1 action definition's `inputs:` and `outputs:`
+blocks. Do NOT guess parameter names.
+
+If no suitable existing targets are found, generate action definitions with descriptive
+target names (e.g., `flow://ATT_Check_Area_Outage`). These will need to be scaffolded
+by adlc-scaffold before deployment.
+
 ### Phase 3: Generate
 
 Write the `.agent` file and bundle metadata to the standard bundle directory:
@@ -99,6 +141,11 @@ The PostToolUse hook auto-validates on Write. Additionally, run the CLI validato
 sf agent validate authoring-bundle --api-name <AgentName> -o <org> --json
 ```
 
+Before running the CLI validator, manually verify:
+- [ ] Every `@actions.X` reference in `reasoning > actions:` has a corresponding `X:` definition in `topic > actions:`
+- [ ] Every Level 1 action has `target:`, `inputs:`, and `outputs:`
+- [ ] Indentation is consistent throughout (3-space default)
+
 If validation fails, read the error output, fix the `.agent` file, and re-validate.
 
 ### Phase 5: Review
@@ -124,6 +171,45 @@ language:         # 6. Optional: Locale settings
 start_agent:      # 7. REQUIRED: Entry point (exactly one)
 topic:            # 8. REQUIRED: Conversation topics (one or more)
 ```
+
+### 3.1b Indentation
+
+Agent Script uses **3-space indentation** (three literal space characters per level).
+This is a compiler requirement — the validator will reject files with tabs, 2-space,
+or 4-space indentation.
+
+```
+# Level 0 (no indent)
+config:
+   # Level 1 (3 spaces)
+   developer_name: "MyAgent"
+
+topic my_topic:
+   # Level 1
+   description: "Topic description"
+
+   actions:
+      # Level 2 (6 spaces)
+      my_action:
+         # Level 3 (9 spaces)
+         description: "Action description"
+         target: "flow://My_Flow"
+         inputs:
+            # Level 4 (12 spaces)
+            param: string
+               # Level 5 (15 spaces)
+               description: "Parameter"
+```
+
+**CRITICAL:** Before generating, read any existing `.agent` file in the project to match
+its indentation style exactly. Different compiler versions may use different indentation:
+
+```bash
+# Check existing agent file indentation
+find force-app -name "*.agent" -exec head -20 {} \;
+```
+
+If no existing file, default to 3-space indentation.
 
 ### 3.2 Config Block
 
@@ -515,6 +601,17 @@ Use `after_reasoning` when:
 IMPORTANT: Content inside `after_reasoning:` goes directly under the block. There is
 NO `instructions:` wrapper. Do NOT write `after_reasoning: instructions:`.
 
+Valid content inside `after_reasoning:`:
+- `if @variables.X == value:` blocks with executable statements inside
+- `run @actions.X` with optional `with`/`set` clauses
+- `transition to @topic.X`
+- `set @variables.X = @outputs.Y` (ONLY after a `run @actions` statement)
+
+NOT valid (causes SyntaxError):
+- Standalone `set @variables.X = "value"` (not preceded by `run @actions`)
+- `| literal text` lines
+- `instructions:` wrapper
+
 ### 3.15 Available When Guards
 
 Control when actions are visible to the LLM:
@@ -620,6 +717,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Avoid reserved field names as variables | `description: mutable string` | `desc_text: mutable string` |
 | Always use `@actions.` prefix | `run set_user_name` | `run @actions.set_user_name` |
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
+| Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent: topic_name` |
 | No comment-only if bodies | `if @variables.x:` with only `# comment` | Add executable statement: `\| text`, `run`, `set`, or `transition` |
 | `connection` not `connections` | `connections messaging:` | `connection messaging:` |
@@ -692,7 +790,7 @@ Score every generated agent against this rubric before presenting to the user.
 
 | Category | Points | Key Criteria |
 |----------|--------|--------------|
-| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Clean indentation. No mixed tabs/spaces. Valid field names. |
+| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent 3-space indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. |
 | Deterministic Logic | 25 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
 | Instruction Resolution | 20 | Clear, actionable instructions. Procedural mode (`->`) where conditionals are needed. Literal mode (`\|`) where static text suffices. Variable injection where dynamic. Conditional instructions based on state. |
 | FSM Architecture | 15 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
@@ -1129,37 +1227,39 @@ planner prompt.
 
 ## 12. REFERENCE DOC MAP
 
-For advanced cases beyond this skill's inline syntax, consult:
+> **Note:** The reference documents listed below are planned but not yet available.
+> All syntax and patterns needed for common agent authoring tasks are covered inline
+> in Sections 3-11 above. This section will be updated when external references are published.
 
 | Need | Reference |
 |------|-----------|
-| Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` |
-| Which properties work in which contexts | `references/feature-validity.md` |
-| Agent Script to Lightning type mapping | `references/complex-data-types.md` |
-| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` |
-| Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` |
-| How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` |
-| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` |
-| Tracked platform issues and workarounds | `references/known-issues.md` |
+| Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` (planned) |
+| Which properties work in which contexts | `references/feature-validity.md` (planned) |
+| Agent Script to Lightning type mapping | `references/complex-data-types.md` (planned) |
+| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` (planned) |
+| Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` (planned) |
+| How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` (planned) |
+| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` (planned) |
+| Tracked platform issues and workarounds | `references/known-issues.md` (planned) |
 
 ---
 
 ## 13. TEMPLATE ASSETS
 
-Pre-built templates in `assets/` for common patterns:
+> **Note:** The template files listed below are planned but not yet available.
+> Use the complete examples in Sections 9 and 10 as starting points for new agents.
 
 | Template | Description | File |
 |----------|-------------|------|
-| Hello World | Minimal single-topic agent | `assets/hello-world.agent` |
-| Multi-Topic | Two topics with routing | `assets/multi-topic.agent` |
-| Verification Gate | Identity verification before protected topics | `assets/verification-gate.agent` |
-| Hub-and-Spoke | Central router with specialized spokes | `assets/hub-and-spoke.agent` |
-| Lennar Home Search | Complex real-world agent with flows | `assets/lennar-home-search.agent` |
-| Bundle Metadata | Companion XML template | `assets/metadata/bundle-meta.xml` |
+| Hello World | Minimal single-topic agent | `assets/hello-world.agent` (planned) |
+| Multi-Topic | Two topics with routing | `assets/multi-topic.agent` (planned) |
+| Verification Gate | Identity verification before protected topics | `assets/verification-gate.agent` (planned) |
+| Hub-and-Spoke | Central router with specialized spokes | `assets/hub-and-spoke.agent` (planned) |
+| Lennar Home Search | Complex real-world agent with flows | `assets/lennar-home-search.agent` (planned) |
+| Bundle Metadata | Companion XML template | `assets/metadata/bundle-meta.xml` (planned) |
 
-When generating a new agent, start from the template closest to the user's requirements,
-then customize. Always read the template file before generating to ensure you follow
-the latest syntax patterns.
+When generating a new agent, use the inline examples in Sections 9 (Minimal Service Agent)
+and 10 (Multi-Topic Agent with Actions) as starting points, then customize.
 
 ---
 

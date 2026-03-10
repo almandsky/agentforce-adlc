@@ -7,10 +7,10 @@ argument-hint: "<org-alias> [--agent-file <path>] [--session-id <id>] [--days <n
 
 # Agentforce Optimize (ADLC)
 
-Improve Agentforce agents using real conversation data from the Session Trace Data Model (STDM) in Data Cloud.
+Improve Agentforce agents using session trace data and live preview testing.
 
 **Three-phase workflow:**
-- **Observe** -- Deploy helper class, query STDM sessions, reconstruct conversations, identify issues
+- **Observe** -- Query STDM sessions from Data Cloud (if available), OR run test suites + preview with local traces as fallback
 - **Reproduce** -- Use `sf agent preview` to simulate problematic conversations live
 - **Improve** -- Edit the `.agent` file directly, validate, publish, verify
 
@@ -146,18 +146,170 @@ APEX
 
 **If the debug log contains `STDM_CHECK:FAIL` or a `404 NOT_FOUND` error mentioning `ssot__AiAgentSession__dlm`:**
 
-The Session Trace Data Model is **not activated** in this org. This is a prerequisite for the optimize workflow. Inform the user:
+The Session Trace Data Model is **not activated** in this org. Inform the user and **automatically switch to the STDM-less fallback path (Phase 1-ALT)**:
 
 > STDM (Session Trace Data Model) is not available in this org. The `ssot__AiAgentSession__dlm` DMO was not found in Data Cloud.
 >
-> To enable it:
+> To enable STDM (optional):
 > 1. Go to **Setup -> Data Cloud -> Data Streams** and verify "Agentforce Activity" data stream is active
 > 2. Or go to **Setup -> Einstein -> Agentforce -> Settings** and enable "Session Trace Data"
 > 3. After enabling, wait ~15 minutes for DMOs to be provisioned
 >
-> Without STDM, Phase 1 (Observe) cannot query session traces. You can still use Phase 2 (Reproduce) with `sf agent preview` to manually test the agent, and Phase 3 (Improve) to edit the `.agent` file directly.
+> **Proceeding with fallback: using test suites + `sf agent preview` with local traces instead of STDM.**
 
-**If `STDM_CHECK:OK`**, proceed to Phase 1.
+Then skip Phase 1 entirely and proceed to **Phase 1-ALT**.
+
+**If `STDM_CHECK:OK`**, proceed to Phase 1 (STDM path).
+
+---
+
+## Phase 1-ALT: Observe Without STDM (Fallback Path)
+
+When STDM is not available, use test suites and `sf agent preview --authoring-bundle` with local trace analysis to identify issues. This provides the same diagnostic power as STDM for development iteration.
+
+### Data source comparison
+
+| Data source | When to use | Pros | Cons |
+|---|---|---|---|
+| STDM (Phase 1) | Historical production analysis | Real user data, volume | Requires Data Cloud, 15-min lag, no LLM prompt |
+| Test suites + local traces (Phase 1-ALT) | Dev iteration, orgs without STDM | Instant, full LLM prompt, variable state | Preview only, no real user data |
+
+### 1-ALT.1 Run existing test suite (if available)
+
+Check if a Testing Center test suite exists for this agent:
+
+```bash
+sf agent test list -o <org> --json
+```
+
+If a test suite exists, run it:
+
+```bash
+sf agent test run \
+  --api-name <TestSuiteName> \
+  --wait 10 \
+  --result-format json \
+  -o <org> --json | tee /tmp/test_run.json
+
+JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/test_run.json'))['result']['runId'])")
+sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json | tee /tmp/test_results.json
+```
+
+Parse failures:
+
+```bash
+python3 -c "
+import json
+data = json.load(open('/tmp/test_results.json'))
+for tc in data['result']['testCases']:
+    utterance = tc['inputs']['utterance'][:50]
+    results = {r['name']: r['result'] for r in tc.get('testResults', [])}
+    topic_pass = results.get('topic_assertion', 'N/A')
+    action_pass = results.get('action_assertion', 'N/A')
+    outcome_pass = results.get('output_validation', 'N/A')
+    if 'FAILURE' in (topic_pass, action_pass, outcome_pass):
+        actual_topic = tc.get('generatedData', {}).get('topic', '?')
+        actual_actions = tc.get('generatedData', {}).get('actionsSequence', '?')
+        print(f'FAIL: {utterance}')
+        print(f'  topic={topic_pass} (actual: {actual_topic})')
+        print(f'  action={action_pass} (actual: {actual_actions})')
+        print(f'  outcome={outcome_pass}')
+"
+```
+
+### 1-ALT.2 Derive test utterances from .agent file (if no test suite)
+
+If no test suite exists, derive utterances from the `.agent` file structure:
+
+1. **One utterance per non-entry topic** -- from topic `description:` keywords
+2. **One utterance per key action** -- from action `description:` text
+3. **One guardrail test** -- off-topic utterance
+4. **One multi-turn test** -- if topic transitions exist
+
+### 1-ALT.3 Preview with `--authoring-bundle` (local traces)
+
+Run each test utterance through preview with `--authoring-bundle` to generate local trace files:
+
+```bash
+touch /tmp/test_start_marker
+
+# Start session with authoring bundle (enables local traces)
+sf agent preview start \
+  --authoring-bundle <BundleName> \
+  -o <org> --json | tee /tmp/preview_start.json
+
+SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
+
+# Send each test utterance
+for UTT in "${TEST_UTTERANCES[@]}"; do
+  echo "--- Sending: $UTT ---"
+  sf agent preview send \
+    --session-id "$SESSION_ID" \
+    --authoring-bundle <BundleName> \
+    --utterance "$UTT" \
+    -o <org> --json | tee /tmp/preview_response.json
+
+  # Extract planId for trace lookup
+  PLAN_ID=$(python3 -c "import json; d=json.load(open('/tmp/preview_response.json')); print(d['result']['messages'][-1]['planId'])")
+  TRACE=".sfdx/agents/<BundleName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
+  echo "Trace: $TRACE"
+done
+
+# End session (--authoring-bundle required on end too)
+sf agent preview end \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <BundleName> \
+  -o <org> --json
+```
+
+**Trace file location:**
+```
+.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json
+```
+
+### 1-ALT.4 Local trace diagnosis
+
+For each trace file, run these diagnostic checks:
+
+| Issue type | Trace command |
+|---|---|
+| Topic misroute | `jq -r '.topic' "$TRACE"` + `jq -r '.plan[] \| select(.type=="NodeEntryStateStep") \| .data.agent_name' "$TRACE"` |
+| Action not called | `jq -r '.plan[] \| select(.type=="EnabledToolsStep") \| .data.enabled_tools[]' "$TRACE"` |
+| LOW adherence / grounding | `jq -r '.plan[] \| select(.type=="ReasoningStep") \| {category, reason}' "$TRACE"` |
+| Variable capture fail | `jq -r '.plan[] \| select(.type=="VariableUpdateStep") \| .data.variable_updates[] \| "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"' "$TRACE"` |
+| Vague/wrong instructions | `jq -r '.plan[] \| select(.type=="LLMStep") \| .data.messages_sent[0].content' "$TRACE"` |
+| Action tool visibility | `jq -r '.plan[] \| select(.type=="LLMStep") \| .data.tools_sent[]' "$TRACE"` |
+| Execution latency | `jq -r '.plan[] \| select(.type=="LLMStep") \| .data.execution_latency' "$TRACE"` |
+
+**UNGROUNDED retry detection:** When grounding returns UNGROUNDED, the system retries: UNGROUNDED → error injection → second LLMStep → second ReasoningStep. Count `ReasoningStep` entries (>1 = retry happened):
+```bash
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+```
+
+### 1-ALT.5 Identify issues and present findings
+
+Classify issues using the same categories as Phase 1.4 (Agent Configuration Gap, Knowledge Gap, Platform/Runtime Issue). Present findings with trace evidence:
+
+```
+## Issues from Test Suite + Local Traces
+
+### Agent Configuration Gap
+- [P1] Topic misroute: "<utterance>" routed to `<actual_topic>` instead of `<expected_topic>`
+  Trace: NodeEntryStateStep.data.agent_name = "<actual_topic>"
+
+- [P1] Action not invoked: "<utterance>" did not call `<expected_action>`
+  Trace: EnabledToolsStep.data.enabled_tools[] does not include "<expected_action>"
+
+- [P2] UNGROUNDED response: "<utterance>" failed grounding
+  Trace: ReasoningStep.category = "UNGROUNDED", reason = "<reason>"
+  ReasoningStep count: 2 (retry detected)
+
+### Knowledge Gap
+- [P2] Knowledge miss: "<utterance>" returned generic response
+  Trace: LLMStep.data.messages_sent[0].content shows no knowledge context
+```
+
+After presenting findings, **automatically proceed to Phase 1.5b** (Agent Config Evidence) — same as the STDM path. The `.agent` file analysis is the same regardless of how issues were discovered.
 
 ---
 
@@ -257,6 +409,8 @@ The result is a JSON array of `SessionSummary` objects:
 
 - `end_time` and `duration_ms` may be `null` when the session has no recorded end event -- this is a normal STDM data quality gap, not an error.
 - `end_type` values: `USER_ENDED`, `AGENT_ENDED`, or `null` (in-progress or not recorded). A `null` `end_type` may indicate an abandoned session.
+
+**Session quality filter:** Before selecting sessions for `getMultipleConversationDetails`, prefer sessions from real channels over builder previews. `"Builder: Voice Preview"` and `"Builder: Text Preview"` sessions are often empty (zero turns) because they are quick test pings from Agent Builder. Prioritize `SCRT2 - EmbeddedMessaging`, `Runtime API`, or other production channels. If only builder sessions exist, use them but note the limitation.
 
 **How agent filtering works** -- `findSessions` tries two strategies in order:
 
@@ -401,6 +555,8 @@ Check each session for these patterns and classify by root cause category:
 | Specialized topic appears for exactly 1 turn then session returns to entry permanently | **Handoff topic with no post-collection routing** -- topic collects input but has no instruction for what to do after | `Agent Configuration Gap` -- topic instructions missing the "after this, transition to X" step |
 | A topic has zero sessions over the analysis window despite the agent being designed to handle those intents | **Dead topic** -- topic exists in `.agent` file but is never entered | `Agent Configuration Gap` -- entry topic handles the intent directly instead of routing |
 | Agent responds with generic behavior despite the `.agent` file having rich per-topic instructions | **Publish drift** -- bundle was deployed but never properly published/activated | `Platform / Runtime Issue` -- re-publish the `.agent` file (Phase 3.5) |
+| Local trace shows `topic: "DefaultTopic"` and `BeforeReasoningIterationStep.data.action_names[]` contains only `__state_update_action__` entries | **No actions in topic** -- topic has no `reasoning: actions:` block, so LLM has zero tools after routing | `Agent Configuration Gap` -- add `reasoning: actions:` with transition and/or invocation actions to each topic |
+| Publish fails with `duplicate value found: GenAiPluginDefinition` | **Name collision** -- `start_agent` and a `topic` share the same name, both creating `GenAiPluginDefinition` metadata records | `Platform / Runtime Issue` -- rename `start_agent` or the colliding topic so they have different names (see known-issues.md Issue 13) |
 
 **Root cause categories:**
 - `Knowledge Gap -- Infrastructure` -- no `DataKnowledgeSpace`, no sources indexed, or knowledge action not deployed
@@ -442,6 +598,12 @@ Priority: P1 = action errors, topic misroutes, LOW adherence; P2 = missing actio
 | Agent Configuration Gap | N | N | +N sessions fully resolved |
 | Knowledge Gap | N | N | +N sessions partially resolved |
 
+**If all queried sessions have `turn_count == 0`** (common when only builder preview sessions exist), STDM data is insufficient for analysis. Inform the user:
+
+> STDM sessions found but contain no conversation data (likely builder previews or abandoned sessions). Supplementing with local trace testing to generate actionable diagnostic data.
+
+Then run **Phase 1-ALT.3** (preview with `--authoring-bundle`) to generate local traces with real test utterances. Combine any STDM findings with the local trace results before proceeding.
+
 After presenting findings, **automatically proceed to Phase 1.5b** -- do not wait for the user to ask. The `.agent` file analysis is needed to confirm root causes before any fix can be proposed. Ask about Phase 2/3 only after 1.5b is complete.
 
 ### 1.5b Agent Config Evidence
@@ -467,6 +629,22 @@ if [ -d "force-app/main/default/main/default/aiAuthoringBundles" ]; then
   rm -rf force-app/main/default/main
 fi
 ```
+
+**Step 1b -- Quick automated checks:**
+
+```bash
+# Count topics vs action blocks — every topic should have a reasoning: actions: block
+TOPIC_COUNT=$(grep -c "^topic " "$AGENT_FILE")
+ACTION_BLOCK_COUNT=$(grep -c "actions:" "$AGENT_FILE")
+echo "Topics: $TOPIC_COUNT, Action blocks: $ACTION_BLOCK_COUNT"
+# If ACTION_BLOCK_COUNT < TOPIC_COUNT + 1 (start_agent also has actions), flag missing actions
+
+# Check for system: instructions: (agent-level persona)
+grep -c "^    instructions:" "$AGENT_FILE" | head -1
+# If 0, flag "Missing system: instructions: block"
+```
+
+If any topic lacks an `actions:` block, flag it immediately — the LLM will have zero tools in that topic.
 
 **Step 2 -- Analyze the `.agent` file structure:**
 
@@ -562,6 +740,15 @@ Root cause: Agent Configuration Gap -- <topic_name>
 
 Use `sf agent preview` to simulate conversations in an isolated session (no production data affected).
 
+### Preview mode selection
+
+| Flag | Compiles from | Local traces? | Use when |
+|------|---------------|---------------|----------|
+| `--authoring-bundle <BundleName>` | Local `.agent` file | YES | Development iteration (recommended) |
+| `--api-name <name>` | Last published version | NO | Testing activated agent |
+
+When using `--authoring-bundle`, the same flag must appear on all three subcommands (`start`, `send`, `end`). Local traces are written to `.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json`.
+
 ### 2.1 Build test scenarios from Phase 1 findings
 
 Before opening a preview session, define one test scenario per confirmed issue:
@@ -617,6 +804,53 @@ sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <or
 ```
 
 For multi-turn scenarios (e.g. handoff routing), repeat the `send` step for each follow-up utterance before ending the session.
+
+### 2.2b Preview with `--authoring-bundle` (with local traces)
+
+For deeper diagnosis, use `--authoring-bundle` to get full local trace files with LLM prompt, variable state, and grounding details:
+
+```bash
+# Start with authoring bundle (enables local traces)
+sf agent preview start \
+  --authoring-bundle <BundleName> \
+  -o <org> --json | tee /tmp/preview_start.json
+
+SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
+
+# Send test utterance
+sf agent preview send \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <BundleName> \
+  --utterance "your test utterance here" \
+  -o <org> --json | tee /tmp/preview_response.json
+
+# Extract planId and read the trace
+PLAN_ID=$(python3 -c "import json; d=json.load(open('/tmp/preview_response.json')); print(d['result']['messages'][-1]['planId'])")
+TRACE=".sfdx/agents/<BundleName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
+
+# End session (--authoring-bundle required on end too)
+sf agent preview end \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <BundleName> \
+  -o <org> --json
+```
+
+### 2.2c Local trace diagnosis
+
+For each Phase 1 issue type, diagnose from the local trace:
+
+| Phase 1 Issue | Local Trace Command |
+|---|---|
+| Topic misroute | `jq -r '.topic' "$TRACE"` + `jq -r '.plan[] \| select(.type=="NodeEntryStateStep") \| .data.agent_name' "$TRACE"` |
+| Action not called | `jq -r '.plan[] \| select(.type=="EnabledToolsStep") \| .data.enabled_tools[]' "$TRACE"` |
+| LOW adherence | `jq -r '.plan[] \| select(.type=="ReasoningStep") \| {category, reason}' "$TRACE"` |
+| Variable capture fail | `jq -r '.plan[] \| select(.type=="VariableUpdateStep") \| .data.variable_updates[] \| "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"' "$TRACE"` |
+| Vague/wrong instructions | `jq -r '.plan[] \| select(.type=="LLMStep") \| .data.messages_sent[0].content' "$TRACE"` |
+
+**UNGROUNDED retry detection:** When grounding returns UNGROUNDED, you'll see the retry pattern: UNGROUNDED → error injection → second LLMStep → second ReasoningStep. Count `ReasoningStep` entries (>1 = retry happened):
+```bash
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+```
 
 ### 2.3 Classify each scenario
 
@@ -871,7 +1105,11 @@ sf agent publish authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
 
 A successful publish returns a JSON result with `status: "Success"`. The agent is now live with the updated configuration.
 
-**If publish fails** (common with agents that have many versions or orphaned drafts), use the deploy + activate fallback:
+**If publish fails with `duplicate value found: GenAiPluginDefinition`:**
+
+This usually means `start_agent` and a `topic` share the same name (both create `GenAiPluginDefinition` records). Fix the `.agent` file to give them different names, then retry publish. See `known-issues.md` Issue 13 for details.
+
+**If publish fails for other reasons**, use the deploy + activate fallback:
 
 ```bash
 # Step 3a: Deploy the bundle to the metadata store
@@ -881,7 +1119,7 @@ sf project deploy start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org>
 sf agent activate --api-name <AGENT_API_NAME> -o <org>
 ```
 
-> **Important:** `sf project deploy start` stores the bundle but does NOT always propagate instruction changes to live `GenAiPluginInstructionDef` records. The `sf agent activate` step is required to create an active version. If instructions still don't match after deploy + activate, try publish again -- the deploy may have resolved the underlying metadata conflict.
+> **Warning: deploy + activate is an incomplete fallback.** `sf project deploy start` stores the bundle metadata but does **NOT** propagate topic-level `reasoning: actions:` blocks to live `GenAiPluginDefinition` records. After deploy + activate, the agent may have instructions but zero enabled tools in its topics. Always verify with `--authoring-bundle` preview and check `EnabledToolsStep` in the trace. If topics show only guardrail tools (no transition or invocation actions), publish is required — deploy + activate alone is insufficient for action changes.
 
 **Verification after deploy:**
 
@@ -907,20 +1145,42 @@ If the agent still exhibits old behavior after deploy + activate, the publish di
 
 ### 3.7 Verify
 
-**Immediate** -- run the Phase 2 scenarios that returned `[CONFIRMED]` before the fix. All should now return `[NOT REPRODUCED]`.
+**Immediate** -- run the Phase 2 scenarios that returned `[CONFIRMED]` before the fix. All should now return `[NOT REPRODUCED]`. Use `--authoring-bundle` to get trace-level verification:
 
 ```bash
-# Quick smoke test after publish
-sf agent preview start --api-name <AgentApiName> -o <org> --json | tee /tmp/verify_start.json
+# Quick smoke test after publish (with local traces)
+sf agent preview start --authoring-bundle <BundleName> -o <org> --json | tee /tmp/verify_start.json
 SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/verify_start.json'))['result']['sessionId'])")
 
 sf agent preview send \
   --session-id "$SESSION_ID" \
   --utterance "<test utterance from Phase 2 scenario>" \
-  --api-name <AgentApiName> \
+  --authoring-bundle <BundleName> \
   -o <org> --json | tee /tmp/verify_response.json
 
-sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
+# Extract planId and read the verification trace
+PLAN_ID=$(python3 -c "import json; d=json.load(open('/tmp/verify_response.json')); print(d['result']['messages'][-1]['planId'])")
+TRACE=".sfdx/agents/<BundleName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
+
+sf agent preview end --session-id "$SESSION_ID" --authoring-bundle <BundleName> -o <org> --json
+```
+
+**Trace-based verification checklist:**
+```bash
+# 1. Correct topic routing
+jq -r '.topic' "$TRACE"
+
+# 2. Grounding passed (no UNGROUNDED)
+jq -r '.plan[] | select(.type == "ReasoningStep") | .category' "$TRACE"
+
+# 3. No UNGROUNDED retries (count should be 1)
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+
+# 4. Correct tools visible
+jq -r '.plan[] | select(.type == "EnabledToolsStep") | .data.enabled_tools[]' "$TRACE"
+
+# 5. Variable state updated correctly
+jq -r '.plan[] | select(.type == "VariableUpdateStep") | .data.variable_updates[] | "\(.variable_name): \(.variable_new_value)"' "$TRACE"
 ```
 
 **At scale** -- after 24-48 hours of new live sessions, re-run Phase 1 over the new date range and compare against the pre-fix baseline:

@@ -89,12 +89,19 @@ topic returns:
 
 ### Phase 2: Preview Execution
 
-Execute tests using `sf agent preview` programmatically:
+Execute tests using `sf agent preview` programmatically. Use `--authoring-bundle` to compile from the local `.agent` file (enables local trace files):
+
+| Flag | Compiles from | Local traces? | Use when |
+|------|---------------|---------------|----------|
+| `--authoring-bundle <BundleName>` | Local `.agent` file | YES | Development iteration (recommended) |
+| `--api-name <name>` | Last published version | NO | Testing activated agent |
+
+> **Note:** When using `--authoring-bundle`, the same flag must appear on all three subcommands (`start`, `send`, `end`).
 
 ```bash
-# Start preview session
+# Start preview session (--authoring-bundle for local traces)
 SESSION_ID=$(sf agent preview start \
-  --api-name MyAgent \
+  --authoring-bundle MyAgent \
   --target-org <org> --json 2>/dev/null \
   | jq -r '.result.sessionId')
 
@@ -102,7 +109,7 @@ SESSION_ID=$(sf agent preview start \
 for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
   RESPONSE=$(sf agent preview send \
     --session-id "$SESSION_ID" \
-    --api-name MyAgent \
+    --authoring-bundle MyAgent \
     --utterance "$UTTERANCE" \
     --target-org <org> --json 2>/dev/null)
 
@@ -111,53 +118,101 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
   PLAN_IDS+=("$PLAN_ID")
 done
 
-# End session and get traces (--api-name is required)
+# End session and get traces (--authoring-bundle is required on end too)
 TRACES_PATH=$(sf agent preview end \
   --session-id "$SESSION_ID" \
-  --api-name MyAgent \
+  --authoring-bundle MyAgent \
   --target-org <org> --json 2>/dev/null \
   | jq -r '.result.tracesPath')
 ```
 
+### Trace File Location
+
+When using `--authoring-bundle`, traces are written to:
+
+```
+.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json
+```
+
+Find the latest trace:
+```bash
+TRACE=$(find .sfdx/agents -name "*.json" -path "*/traces/*" -newer /tmp/test_start_marker | head -1)
+```
+
+Each trace is a `PlanSuccessResponse` JSON with this root structure:
+- `type` — always `"PlanSuccessResponse"`
+- `planId` — unique plan ID for this turn
+- `sessionId` — the preview session ID
+- `topic` — which topic handled this turn
+- `plan[]` — array of step objects (the execution trace)
+
 ### Phase 3: Trace Analysis
 
-Analyze execution traces for 6 key aspects:
+Analyze execution traces for 8 key aspects:
 
 #### 1. Topic Routing Verification
 ```bash
-jq '[.steps[] | select(.stepType == "TransitionStep") | .data.to]' "$TRACE"
+# Which topic handled this turn (root-level field)
+jq -r '.topic' "$TRACE"
+# Detailed: which agent/topic was entered
+jq -r '.plan[] | select(.type == "NodeEntryStateStep") | .data.agent_name' "$TRACE"
 ```
-Expected: Correct topic name in array
+Expected: Correct topic name matches the expected topic for the utterance.
 
 #### 2. Action Invocation Check
 ```bash
-jq '[.steps[] | select(.stepType == "FunctionStep") | .data.function]' "$TRACE"
+# Which actions were available for this reasoning iteration
+jq -r '.plan[] | select(.type == "BeforeReasoningIterationStep") | .data.action_names[]' "$TRACE"
 ```
-Expected: Target action name present
+Expected: Target action name present in the list.
 
 #### 3. Grounding Assessment
 ```bash
-jq '[.steps[] | select(.stepType == "ReasoningStep") | .data.groundingAssessment]' "$TRACE"
+# Check grounding category and reason
+jq -r '.plan[] | select(.type == "ReasoningStep") | {category: .category, reason: .reason}' "$TRACE"
 ```
-Expected: "GROUNDED" (not "UNGROUNDED")
+Expected: `.category` is `"GROUNDED"` (not `"UNGROUNDED"`). If UNGROUNDED, `.reason` explains why.
+
+**UNGROUNDED retry detection:** When grounding returns UNGROUNDED, the system retries by injecting an error message and running a second LLM+Reasoning cycle. You'll see 2+ `ReasoningStep` entries in the same trace — count them to detect retries:
+```bash
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+# 1 = normal, 2+ = UNGROUNDED retry happened
+```
 
 #### 4. Safety Score Validation
 ```bash
-jq '.steps[] | select(.stepType == "PlannerResponseStep") | .data.safetyScore.overall' "$TRACE"
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .safetyScore.safetyScore.safety_score' "$TRACE"
 ```
 Expected: >= 0.9
 
 #### 5. Tool Visibility
 ```bash
-jq '[.steps[] | select(.stepType == "EnabledToolsStep") | .data.enabled_tools]' "$TRACE"
+# List all tools/actions offered to the LLM
+jq -r '.plan[] | select(.type == "EnabledToolsStep") | .data.enabled_tools[]' "$TRACE"
 ```
-Expected: Required actions present in array
+Expected: Required actions present in the list.
 
 #### 6. Response Quality
 ```bash
-jq '.steps[] | select(.stepType == "PlannerResponseStep") | .data.responseText' "$TRACE"
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .message' "$TRACE"
 ```
-Expected: Relevant, coherent response
+Expected: Relevant, coherent response text.
+
+#### 7. LLM Prompt Inspection
+```bash
+# See the full system prompt the LLM received
+jq -r '.plan[] | select(.type == "LLMStep") | .data.messages_sent[0].content' "$TRACE"
+# See what tools/actions were offered to the LLM
+jq -r '.plan[] | select(.type == "LLMStep") | .data.tools_sent[]' "$TRACE"
+# Check execution latency (ms)
+jq -r '.plan[] | select(.type == "LLMStep") | .data.execution_latency' "$TRACE"
+```
+
+#### 8. Variable State Tracking
+```bash
+# See all variable changes with reasons
+jq -r '.plan[] | select(.type == "VariableUpdateStep") | .data.variable_updates[] | "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"' "$TRACE"
+```
 
 ### Handling Empty Traces
 
@@ -199,8 +254,22 @@ If issues are detected, the system enters an automated fix loop (max 3 iteration
    - `UNGROUNDED_RESPONSE` - Missing data references
    - `LOW_SAFETY_SCORE` - Inadequate safety instructions
    - `TOOL_NOT_VISIBLE` - Available when conditions not met
+   - `DEFAULT_TOPIC` - Trace shows `topic: "DefaultTopic"` — no real topic matched the utterance
+   - `NO_ACTIONS_IN_TOPIC` - `EnabledToolsStep` shows only guardrail tools; `BeforeReasoningIterationStep.data.action_names[]` shows only `__state_update_action__` entries — topic has no `reasoning: actions:` block
 
-2. **Apply targeted fix**:
+2. **Diagnose from trace** (when using `--authoring-bundle` with local traces):
+
+| Failure | Trace step to inspect | What to look for |
+|---------|----------------------|------------------|
+| TOPIC_NOT_MATCHED | `NodeEntryStateStep` | `.data.agent_name` shows wrong topic |
+| ACTION_NOT_INVOKED | `EnabledToolsStep` | Action missing from `.data.enabled_tools[]` |
+| UNGROUNDED_RESPONSE | `ReasoningStep` | `.category == "UNGROUNDED"`, read `.reason` |
+| Variable not set | `VariableUpdateStep` | No update for expected variable |
+| Wrong LLM behavior | `LLMStep` | Read `.data.messages_sent[0].content` to see what prompt was sent |
+| DEFAULT_TOPIC | Root `.topic` field | Value is `"DefaultTopic"` instead of a real topic name — no topic matched |
+| NO_ACTIONS_IN_TOPIC | `BeforeReasoningIterationStep` | `.data.action_names[]` shows only `__state_update_action__` — topic has no `reasoning: actions:` block |
+
+3. **Apply targeted fix**:
 
 | Failure Type | Fix Location | Fix Strategy |
 |--------------|--------------|--------------|
@@ -209,6 +278,8 @@ If issues are detected, the system enters an automated fix loop (max 3 iteration
 | WRONG_ACTION | Action descriptions | Add exclusion language |
 | UNGROUNDED | `instructions: ->` | Add `{!@variables.x}` references |
 | LOW_SAFETY | `system: instructions:` | Add safety guidelines |
+| DEFAULT_TOPIC | `topic: description:` or `start_agent: actions:` | No topic matched — add keywords to topic descriptions or add transition actions to `start_agent` |
+| NO_ACTIONS_IN_TOPIC | `topic: reasoning: actions:` | Topic has zero actions — add `reasoning: actions:` block with transition and/or invocation actions |
 
 3. **Validate fix** - LSP auto-validates on save
 

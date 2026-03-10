@@ -350,10 +350,18 @@ knowledge:
 
 Exactly one `start_agent` entry point per agent:
 ```
-start_agent: topic_selector
+start_agent router:
 ```
 
-This names the topic that handles the first user message.
+This names the entry point that handles the first user message and routes to topics.
+
+**CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both `start_agent` and `topic` blocks create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. This error leaves orphaned metadata that blocks all future publishes until the name collision is fixed.
+
+| Pattern | WRONG | CORRECT |
+|---------|-------|---------|
+| Hub-and-spoke | `start_agent: router` + `topic router:` | `start_agent router:` + `topic main_menu:` |
+| Verification gate | `start_agent: entry` + `topic entry:` | `start_agent router:` + `topic welcome:` |
+| Linear | `start_agent: greeting` + `topic greeting:` | `start_agent router:` + `topic greeting:` |
 
 ### 3.9 Topic Block
 
@@ -820,6 +828,7 @@ Common mistakes that cause deployment failures:
 | `sf agent validate --source-dir` | `sf agent validate authoring-bundle --api-name X -o Org` |
 | Query Einstein Agent User from wrong org | Query the TARGET org specifically with `-o` flag |
 | Publish and assume active | Publish does NOT activate. Run `sf agent activate` separately |
+| `start_agent` and `topic` share the same name | Use different names — both create `GenAiPluginDefinition` records that collide on publish |
 
 ### Bundle Directory Structure
 
@@ -868,7 +877,7 @@ A central `topic_selector` routes to specialized spoke topics. Each spoke has a
 "back to hub" transition. Use when users may have multiple distinct intents.
 
 ```
-start_agent: topic_selector
+start_agent hub_router:
 
 topic topic_selector:
    description: "Route based on user intent"
@@ -893,15 +902,17 @@ topic order_support:
             description: "Return to main menu"
 ```
 
+> Note: `start_agent hub_router:` uses a different name from `topic topic_selector:` to avoid `GenAiPluginDefinition` name collision on publish.
+
 ### Verification Gate
 
 Users must pass through identity verification before accessing protected topics.
 Use when handling sensitive data, payments, or PII.
 
 ```
-start_agent: entry
+start_agent gate_router:
 
-topic entry:
+topic welcome:
    description: "Entry - routes through verification"
    reasoning:
       instructions: |
@@ -1003,7 +1014,7 @@ language:
    additional_locales: ""
    all_additional_locales: False
 
-start_agent: greeting
+start_agent linear_router:
 
 topic greeting:
    label: "Greeting"
@@ -1070,9 +1081,9 @@ language:
    additional_locales: ""
    all_additional_locales: False
 
-start_agent: router
+start_agent multi_router:
 
-topic router:
+topic main_menu:
    label: "Main Router"
    description: "Determine customer intent and route to the right topic"
    reasoning:
@@ -1122,7 +1133,7 @@ topic order_support:
             set @variables.order_id = @outputs.order_id
             set @variables.order_status = @outputs.status
 
-         back: @utils.transition to @topic.router
+         back: @utils.transition to @topic.main_menu
             description: "Return to main menu"
 
 topic return_support:
@@ -1155,7 +1166,7 @@ topic return_support:
             with reason = ...
             set @variables.case_id = @outputs.return_id
 
-         back: @utils.transition to @topic.router
+         back: @utils.transition to @topic.main_menu
             description: "Return to main menu"
 
    after_reasoning:
@@ -1172,7 +1183,7 @@ topic general_support:
       actions:
          escalate_now: @utils.escalate
             description: "Transfer to human agent"
-         back: @utils.transition to @topic.router
+         back: @utils.transition to @topic.main_menu
             description: "Return to main menu"
 
 topic confirmation:
@@ -1183,7 +1194,7 @@ topic confirmation:
          | Your request has been processed. Reference: {!@variables.case_id}
          | Is there anything else I can help with?
       actions:
-         new_request: @utils.transition to @topic.router
+         new_request: @utils.transition to @topic.main_menu
             description: "Start a new request"
          end_chat: @actions.end_conversation
             description: "End the conversation"
@@ -1227,19 +1238,15 @@ planner prompt.
 
 ## 12. REFERENCE DOC MAP
 
-> **Note:** The reference documents listed below are planned but not yet available.
-> All syntax and patterns needed for common agent authoring tasks are covered inline
-> in Sections 3-11 above. This section will be updated when external references are published.
-
 | Need | Reference |
 |------|-----------|
 | Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` (planned) |
 | Which properties work in which contexts | `references/feature-validity.md` (planned) |
 | Agent Script to Lightning type mapping | `references/complex-data-types.md` (planned) |
-| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` (planned) |
+| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` |
 | Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` (planned) |
 | How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` (planned) |
-| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` (planned) |
+| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` |
 | Tracked platform issues and workarounds | `references/known-issues.md` (planned) |
 
 ---

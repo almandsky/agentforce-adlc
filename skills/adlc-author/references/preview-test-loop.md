@@ -13,7 +13,7 @@
 
 **API used**: `/einstein/ai-agent/v1.1/preview/` endpoint (separate from the Runtime API used in testing). Traces are saved locally by the `sf` CLI.
 
-**Trace location**: `~/.sf/sfdx/agents/{agent}/sessions/{sid}/traces/{planId}.json`
+**Trace location**: `.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json`
 
 ---
 
@@ -35,15 +35,14 @@
 
 ```bash
 SESSION_ID=$(sf agent preview start \
-  --api-name MyAgent \
-  --authoring-bundle \
+  --authoring-bundle MyAgent \
   -o TargetOrg --json 2>/dev/null \
   | jq -r '.result.sessionId')
 
 echo "Session: $SESSION_ID"
 ```
 
-The `--authoring-bundle` flag tells the server to compile the local `.agent` file instead of using the last-published version. This is the key to the ~15s iteration cycle.
+The `--authoring-bundle <BundleName>` flag tells the server to compile the local `.agent` file instead of using the last-published version. This is the key to the ~15s iteration cycle. **The same flag must appear on all three subcommands** (`start`, `send`, `end`).
 
 ### 3.2 Send Utterances
 
@@ -56,7 +55,7 @@ do
   echo "--- Sending: $UTT ---"
   RESPONSE=$(sf agent preview send \
     --session-id "$SESSION_ID" \
-    --api-name MyAgent \
+    --authoring-bundle MyAgent \
     --utterance "$UTT" \
     -o TargetOrg --json 2>/dev/null)
 
@@ -74,7 +73,7 @@ done
 ```bash
 TRACES=$(sf agent preview end \
   --session-id "$SESSION_ID" \
-  --api-name MyAgent \
+  --authoring-bundle MyAgent \
   -o TargetOrg --json 2>/dev/null)
 
 TRACES_PATH=$(echo "$TRACES" | jq -r '.result.tracesPath')
@@ -103,72 +102,133 @@ Run these 6 checks against each trace file to classify pass/fail.
 Did the correct topic handle the utterance?
 
 ```bash
-# Extract the topic name from the trace
-jq -r '.planTrace.steps[] | select(.type == "TOPIC_STEP") | .name' "$TRACE"
+# Root-level topic field
+jq -r '.topic' "$TRACE"
+# Detailed: which agent/topic was entered
+jq -r '.plan[] | select(.type == "NodeEntryStateStep") | .data.agent_name' "$TRACE"
 ```
 
 **Pass**: Topic name matches the expected topic for the utterance.
-**Fail**: Wrong topic or no `TOPIC_STEP` found.
+**Fail**: Wrong topic or no `NodeEntryStateStep` found.
 
 ### Check 2: Action Invocation
 
 Did the expected action fire?
 
 ```bash
-# List all actions invoked in this turn
-jq -r '.planTrace.steps[] | select(.type == "ACTION_STEP") | .name' "$TRACE"
+# Which actions were available for this reasoning iteration
+jq -r '.plan[] | select(.type == "BeforeReasoningIterationStep") | .data.action_names[]' "$TRACE"
 ```
 
 **Pass**: Expected action name appears in the list.
-**Fail**: No `ACTION_STEP` or wrong action name.
+**Fail**: Action not listed or wrong action invoked.
 
-### Check 3: Wrong Action Selected
+### Check 3: Grounding
 
-Did an *unintended* action fire instead of the expected one?
-
-```bash
-# Check if any unexpected actions were called
-jq -r '[.planTrace.steps[] | select(.type == "ACTION_STEP") | .name] | join(", ")' "$TRACE"
-```
-
-**Pass**: Only expected actions appear.
-**Fail**: An action from a different topic or domain appears.
-
-### Check 4: Grounding
-
-Did the response reference actual data (variables, action outputs) rather than hallucinating?
+Did the response pass grounding assessment?
 
 ```bash
-# Check if the LLM response references variable values
-jq -r '.planTrace.steps[] | select(.type == "LLM_STEP") | .output' "$TRACE" | head -20
+# Check grounding category and reason
+jq -r '.plan[] | select(.type == "ReasoningStep") | {category: .category, reason: .reason}' "$TRACE"
 ```
 
-**Pass**: Response includes variable values or action output data.
-**Fail**: Response contains generic text with no data references.
+**Pass**: `.category` is `"GROUNDED"`.
+**Fail**: `.category` is `"UNGROUNDED"` -- read `.reason` for details.
 
-### Check 5: Safety
+**UNGROUNDED retry detection:** When grounding returns UNGROUNDED, the system retries by injecting an error message and running a second LLM+Reasoning cycle. You'll see 2+ `ReasoningStep` entries:
+```bash
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+# 1 = normal, 2+ = UNGROUNDED retry happened
+```
+
+### Check 4: Safety Score
 
 Did the content safety check pass?
 
 ```bash
-# Check the safety flag from the send response (not from trace)
-echo "$RESPONSE" | jq -r '.result.messages[0].isContentSafe'
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .safetyScore.safetyScore.safety_score' "$TRACE"
 ```
 
-**Pass**: `true` for all utterances.
-**Fail**: `false` for any utterance -- review the agent's safety instructions.
+**Pass**: Score >= 0.9.
+**Fail**: Score < 0.9 -- review agent safety instructions.
 
-### Check 6: Tool Visibility
+### Check 5: Tool Visibility
 
 Were the correct actions visible to the planner (respecting `available when` guards)?
 
 ```bash
-# List all actions that were available to the planner
-jq -r '.planTrace.availableActions[]' "$TRACE" 2>/dev/null
+jq -r '.plan[] | select(.type == "EnabledToolsStep") | .data.enabled_tools[]' "$TRACE"
 ```
 
 **Pass**: Only actions whose `available when` conditions are met appear.
 **Fail**: A guarded action appears when its condition is false, or a needed action is missing.
+
+### Check 6: Response Quality
+
+Was the response relevant and coherent?
+
+```bash
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .message' "$TRACE"
+```
+
+**Pass**: Relevant, coherent response.
+**Fail**: Generic or off-topic text.
+
+### Check 7: LLM Prompt Inspection
+
+What prompt did the LLM actually receive?
+
+```bash
+# See the full system prompt the LLM received
+jq -r '.plan[] | select(.type == "LLMStep") | .data.messages_sent[0].content' "$TRACE"
+# See what tools/actions were offered to the LLM
+jq -r '.plan[] | select(.type == "LLMStep") | .data.tools_sent[]' "$TRACE"
+# Check execution latency (ms)
+jq -r '.plan[] | select(.type == "LLMStep") | .data.execution_latency' "$TRACE"
+```
+
+### Check 8: Variable State
+
+Did variables update correctly?
+
+```bash
+# See all variable changes with reasons
+jq -r '.plan[] | select(.type == "VariableUpdateStep") | .data.variable_updates[] | "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"' "$TRACE"
+```
+
+**Pass**: Expected variables were updated with correct values.
+**Fail**: Variable not updated, or updated with wrong value.
+
+---
+
+## 4b. Local Preview Trace Format Reference
+
+The `--authoring-bundle` preview writes `PlanSuccessResponse` JSON files. This is the authoritative format reference.
+
+**Root structure:**
+```json
+{
+  "type": "PlanSuccessResponse",
+  "planId": "...",
+  "sessionId": "...",
+  "topic": "order_support",
+  "plan": [ /* array of step objects */ ]
+}
+```
+
+**Step types in `plan[]`:**
+
+| Step type | Key fields | What it represents |
+|---|---|---|
+| `UserInputStep` | `.data.utterance` | The user's input message |
+| `SessionInitialStateStep` | `.data` | Initial session state (variables, config) at session start |
+| `NodeEntryStateStep` | `.data.agent_name` | Which topic/agent was entered |
+| `VariableUpdateStep` | `.data.variable_updates[]` with `.variable_name`, `.variable_past_value`, `.variable_new_value`, `.variable_change_reason` | Variable state transitions |
+| `BeforeReasoningIterationStep` | `.data.action_names[]` | Which actions are available for this iteration |
+| `EnabledToolsStep` | `.data.enabled_tools[]` | Tools/actions offered to the LLM |
+| `LLMStep` | `.data.messages_sent[]`, `.data.tools_sent[]`, `.data.execution_latency` | Full LLM prompt, tools, and latency |
+| `ReasoningStep` | `.category`, `.reason` | Grounding assessment (GROUNDED / UNGROUNDED) |
+| `PlannerResponseStep` | `.message`, `.safetyScore.safetyScore.safety_score` | Final response text and safety score |
 
 ---
 
@@ -177,6 +237,8 @@ jq -r '.planTrace.availableActions[]' "$TRACE" 2>/dev/null
 | Failure Type | Fix Location in `.agent` | Strategy |
 |---|---|---|
 | `TOPIC_NOT_MATCHED` | `topic: description:` | Add keywords from the utterance that failed routing. Make the topic description more specific about its domain. |
+| `DEFAULT_TOPIC` | `topic: reasoning: actions:` | When trace shows `topic: "DefaultTopic"`, no topic matched. If `BeforeReasoningIterationStep.data.action_names[]` shows only `__state_update_action__` entries, the topic has zero real actions defined — add `reasoning: actions:` with transition actions. |
+| `NO_ACTIONS_IN_TOPIC` | `topic: reasoning: actions:` | When `EnabledToolsStep.data.enabled_tools[]` shows only guardrail tools (no transition or invocation actions), the topic has no `reasoning: actions:` block. Add transition actions so the LLM can route between topics. |
 | `ACTION_NOT_INVOKED` | `reasoning: actions:` and `available when:` | Check that the action invocation exists in `reasoning: actions:`. Relax `available when` guards if too restrictive. Verify the action description matches the user's intent. |
 | `WRONG_ACTION_SELECTED` | Action `description:` fields | Add exclusion language to differentiate similar actions: "Use this for X but NOT for Y." |
 | `UNGROUNDED_RESPONSE` | `reasoning: instructions: ->` | Add `{!@variables.field_name}` references to inject actual data into the LLM prompt. Use `run @actions.load_data` to pre-load data before instructions. |
@@ -194,13 +256,13 @@ This example shows the complete inner loop: test, analyze, fix, re-test.
 ```bash
 # Start session with authoring bundle
 SESSION_ID=$(sf agent preview start \
-  --api-name AcmeAgent --authoring-bundle \
+  --authoring-bundle AcmeAgent \
   -o DevOrg --json 2>/dev/null | jq -r '.result.sessionId')
 
 # Send test utterance
 RESPONSE=$(sf agent preview send \
   --session-id "$SESSION_ID" \
-  --api-name AcmeAgent \
+  --authoring-bundle AcmeAgent \
   --utterance "I want to return my order" \
   -o DevOrg --json 2>/dev/null)
 
@@ -216,14 +278,17 @@ echo "$RESPONSE" | jq '.result.messages[0].message'
 # End session and get traces
 TRACES=$(sf agent preview end \
   --session-id "$SESSION_ID" \
-  --api-name AcmeAgent -o DevOrg --json 2>/dev/null)
+  --authoring-bundle AcmeAgent -o DevOrg --json 2>/dev/null)
 
 TRACES_PATH=$(echo "$TRACES" | jq -r '.result.tracesPath')
 
 # Check which topic handled the utterance
-jq -r '.planTrace.steps[] | select(.type == "TOPIC_STEP") | .name' \
-  "$TRACES_PATH"/traces/*.json
+jq -r '.topic' "$TRACES_PATH"/traces/*.json
 # Output: order_support  <-- WRONG! Should be return_support
+
+# Get more detail from the trace
+jq -r '.plan[] | select(.type == "NodeEntryStateStep") | .data.agent_name' "$TRACES_PATH"/traces/*.json
+# Output: order_support
 ```
 
 ### Step 3: Fix the Agent File
@@ -247,13 +312,13 @@ Use the Edit tool to update the `.agent` file.
 ```bash
 # New session (authoring bundle picks up the edited file)
 SESSION_ID=$(sf agent preview start \
-  --api-name AcmeAgent --authoring-bundle \
+  --authoring-bundle AcmeAgent \
   -o DevOrg --json 2>/dev/null | jq -r '.result.sessionId')
 
 # Same utterance
 RESPONSE=$(sf agent preview send \
   --session-id "$SESSION_ID" \
-  --api-name AcmeAgent \
+  --authoring-bundle AcmeAgent \
   --utterance "I want to return my order" \
   -o DevOrg --json 2>/dev/null)
 

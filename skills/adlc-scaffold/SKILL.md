@@ -300,6 +300,27 @@ python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent --validate-only
 
 ## Best Practices
 
+### I/O Variable Matching
+
+Scaffolded Flow and Apex stubs MUST have input/output variable names that **exactly match** the `.agent` file's action I/O definitions. A mismatch causes `ACTION_ERROR` at runtime because the agent passes inputs and reads outputs by exact API name.
+
+```
+# .agent file defines these I/O names:
+get_order_status:
+   inputs:
+      order_id: string          # Flow variable must be named "order_id"
+   outputs:
+      status: string            # Flow variable must be named "status"
+      tracking_number: string   # Flow variable must be named "tracking_number"
+```
+
+When scaffolding:
+- **Flow XML**: `<variables>` elements must use the exact `name` from `.agent` inputs/outputs, with `isInput`/`isOutput` set correctly
+- **Apex InvocableMethod**: `@InvocableVariable` names must match exactly
+- **Case sensitivity matters**: `order_id` ≠ `Order_Id` ≠ `orderId`
+
+If you rename I/O variables in the `.agent` file after scaffolding, update the Flow/Apex stubs to match — or re-scaffold.
+
 ### Post-Scaffolding Steps
 
 1. **Review generated code** - Stubs contain TODO comments marking where to add logic

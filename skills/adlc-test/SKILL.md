@@ -519,6 +519,32 @@ Derive a Testing Center spec from the `.agent` file:
 4. **`expectedTopic`** from topic name in `.agent` file
 5. **`expectedActions`** from action names under `reasoning: actions:` (only `@actions.*`, not `@utils.transition`)
 
+**IMPORTANT -- Level 1 vs Level 2 action names:**
+
+The `.agent` file has two levels of action definitions:
+- **Level 1** (definition): under `topic > actions:` — defines target, inputs, outputs (e.g. `get_order_status:`)
+- **Level 2** (invocation): under `topic > reasoning > actions:` — wires actions to the LLM (e.g. `check_order: @actions.get_order_status`)
+
+Testing Center reports **Level 2 invocation names** (e.g. `check_order`), NOT Level 1 definition names (e.g. `get_order_status`). Using Level 1 names in `expectedActions` causes action assertions to FAIL even when the agent correctly invokes the action. Always use the Level 2 name from `reasoning: actions:`.
+
+```
+# .agent file
+topic order_support:
+   actions:
+      get_order_status:           # <-- Level 1 (DON'T use this in expectedActions)
+         target: "flow://Get_Order_Status"
+   reasoning:
+      actions:
+         check_order: @actions.get_order_status   # <-- Level 2 (USE this in expectedActions)
+```
+
+```yaml
+# Test spec — use Level 2 name
+- utterance: "Where is my order?"
+  expectedActions: ["check_order"]    # CORRECT (Level 2)
+  # expectedActions: ["get_order_status"]  # WRONG (Level 1)
+```
+
 ### Known Bugs and Workarounds
 
 | Bug | Severity | Workaround |

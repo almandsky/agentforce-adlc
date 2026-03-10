@@ -355,6 +355,23 @@ start_agent router:
 
 This names the entry point that handles the first user message and routes to topics.
 
+**CRITICAL: `start_agent` MUST include `reasoning: instructions:` and `reasoning: actions:`.**
+Without these blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
+
+```
+start_agent router:
+   reasoning:
+      instructions: |
+         Determine the customer's intent and route to the appropriate topic.
+      actions:
+         to_orders: @utils.transition to @topic.order_support
+            description: "Route to order support"
+         to_returns: @utils.transition to @topic.return_support
+            description: "Route to returns"
+```
+
+A `start_agent` with only a name and no `reasoning:` block will compile but produce an agent that cannot route — all utterances land in `DefaultTopic` with zero actions.
+
 **CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both `start_agent` and `topic` blocks create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. This error leaves orphaned metadata that blocks all future publishes until the name collision is fixed.
 
 | Pattern | WRONG | CORRECT |
@@ -727,6 +744,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent: topic_name` |
+| `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
 | No comment-only if bodies | `if @variables.x:` with only `# comment` | Add executable statement: `\| text`, `run`, `set`, or `transition` |
 | `connection` not `connections` | `connections messaging:` | `connection messaging:` |
 | No `@inputs` in `set` clauses | `set @variables.x = @inputs.y` | Use `@outputs.y` or `@utils.setVariables` |
@@ -903,6 +921,8 @@ topic order_support:
 ```
 
 > Note: `start_agent hub_router:` uses a different name from `topic topic_selector:` to avoid `GenAiPluginDefinition` name collision on publish.
+
+> **Dead hub warning:** If `topic_selector` only contains transition actions and no real business logic, consider consolidating its routing into `start_agent > reasoning > actions:` directly. An intermediate routing-only topic adds an extra LLM hop (~3-5s latency) with no benefit. Use a separate `topic_selector` only when it performs real work (e.g., collecting disambiguation info, displaying a menu, or running a pre-routing action).
 
 ### Verification Gate
 

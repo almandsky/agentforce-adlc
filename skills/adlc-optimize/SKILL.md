@@ -913,42 +913,67 @@ If new issues surface in the post-fix Phase 1 run, repeat the cycle from Phase 1
 
 ### 3.7 Update Testing Center test cases (cross-skill with adlc-test)
 
-After fixing issues, update or create test cases that cover the scenarios that were broken. This ensures regressions are caught automatically in future runs.
+After fixing issues, create or update test cases in **Testing Center format** so they can be deployed directly to the org via `sf agent test create`. This ensures regressions are caught automatically.
 
 **Step 1 -- Derive test cases from confirmed issues:**
 
-For each `[CONFIRMED]` or `[INTERMITTENT]` issue from Phase 2, create a test case entry:
+For each `[CONFIRMED]` or `[INTERMITTENT]` issue from Phase 2, create a test case in Testing Center YAML format:
 
 ```yaml
-# test-cases.yaml (append to existing or create new)
-test_cases:
-  - id: "OPT-<issue_number>"
-    utterance: "<exact utterance from Phase 2 scenario>"
-    expected_topic: "<topic that should handle this>"
-    expected_action: "<action that should fire>"
-    source: "adlc-optimize run <date>"
+# tests/<AgentApiName>-regression.yaml
+name: "<AgentApiName> Regression Tests"
+subjectType: AGENT
+subjectName: <AgentApiName>
+
+testCases:
+  - utterance: "<exact utterance from Phase 2 scenario>"
+    expectedTopic: <topic_that_should_handle_this>
+    expectedActions:
+      - <action_that_should_fire>
+
+  - utterance: "<another failing utterance>"
+    expectedTopic: <expected_topic>
+    expectedOutcome: "Agent should <expected behavior description>"
 ```
+
+**Key format rules:**
+- `expectedActions` is a **flat string list**: `["action_a"]`, NOT objects
+- `subjectName` is the agent's `DeveloperName` (API name without `_vN` suffix)
+- `expectedOutcome` uses LLM-as-judge evaluation -- describe the desired behavior in natural language
+- If a test case only needs topic routing validation, omit `expectedActions`
 
 **Step 2 -- Write the test file:**
 
-Save the test cases to the project directory alongside the `.agent` file:
-
 ```bash
-# Convention: tests/ directory next to force-app/
 mkdir -p <project-root>/tests
-# Write or append test cases to tests/<AgentApiName>-tests.yaml
+# Write tests/<AgentApiName>-regression.yaml
 ```
 
-**Step 3 -- Run the tests via adlc-test:**
+If a regression file already exists, append new test cases to the existing `testCases` array.
+
+**Step 3 -- Deploy and run tests via Testing Center:**
 
 ```bash
-python3 scripts/test.py \
-  -o <org> \
-  --api-name <AgentApiName> \
-  --test-suite tests/<AgentApiName>-tests.yaml
+# Deploy the test suite to the org
+sf agent test create \
+  --spec tests/<AgentApiName>-regression.yaml \
+  --api-name <AgentApiName>_Regression \
+  --force-overwrite \
+  -o <org> --json
+
+# Run and wait for results
+sf agent test run \
+  --api-name <AgentApiName>_Regression \
+  --wait 10 \
+  --result-format json \
+  -o <org> --json | tee /tmp/regression_run.json
+
+# Get results (ALWAYS use --job-id, NOT --use-most-recent which is broken)
+JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/regression_run.json'))['result']['runId'])")
+sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json
 ```
 
-Or invoke the adlc-test skill directly: `/adlc-test <org> --api-name <AgentApiName> --test-suite tests/<AgentApiName>-tests.yaml`
+Or invoke the adlc-test skill directly: `/adlc-test <org> --api-name <AgentApiName>`
 
 **Step 4 -- Verify all previously-broken scenarios now pass:**
 

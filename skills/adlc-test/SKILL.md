@@ -90,7 +90,13 @@ topic returns:
 
 ### Phase 2: Preview Execution
 
-Execute tests using `sf agent preview` programmatically:
+Execute tests using `sf agent preview` programmatically.
+
+**Important CLI flags:**
+- `sf agent preview start` requires `--api-name` and `-o <org>`
+- `sf agent preview send` requires `--session-id`, `--api-name`, `--utterance`, and `-o <org>`
+- `sf agent preview end` requires `--session-id`, `--api-name`, and `-o <org>`
+- All three commands support `--json` for machine-readable output
 
 ```bash
 # Start preview session
@@ -107,57 +113,84 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
     --utterance "$UTTERANCE" \
     -o <org> --json 2>/dev/null)
 
-  # Capture plan ID for trace analysis
-  PLAN_ID=$(echo "$RESPONSE" | jq -r '.result.messages[-1].planId')
-  PLAN_IDS+=("$PLAN_ID")
+  # Extract the agent's response
+  echo "$RESPONSE" | jq -r '.result.messages[0].message'
 done
 
-# End session and get traces
-TRACES_PATH=$(sf agent preview end \
+# End session (returns traces path)
+sf agent preview end \
   --session-id "$SESSION_ID" \
-  -o <org> --json 2>/dev/null \
-  | jq -r '.result.tracesPath')
+  --api-name MyAgent \
+  -o <org> --json 2>/dev/null | jq '.'
 ```
 
-### Phase 3: Trace Analysis
+### Phase 3: Analyze Results
 
-Analyze execution traces for 6 key aspects:
+The preview produces two types of output: **inline responses** (from send) and **session artifacts** (from end).
 
-#### 1. Topic Routing Verification
+#### 3.1 Inline Response Analysis
+
+Each `send` response contains actionable data:
+
 ```bash
-jq '[.steps[] | select(.stepType == "TransitionStep") | .data.to]' "$TRACE"
+# Extract response message and safety flag
+echo "$RESPONSE" | jq '{
+  message: .result.messages[0].message,
+  type: .result.messages[0].type,
+  isContentSafe: .result.messages[0].isContentSafe,
+  planId: .result.messages[0].planId
+}'
 ```
-Expected: Correct topic name in array
 
-#### 2. Action Invocation Check
-```bash
-jq '[.steps[] | select(.stepType == "FunctionStep") | .data.function]' "$TRACE"
-```
-Expected: Target action name present
+Check each response for:
+- **Topic routing** — Does the response content match the expected topic? (e.g., asking about orders should get order-related response)
+- **Action invocation** — Did the agent ask for action inputs or return action outputs? (slot-filling indicates the action was triggered)
+- **Guardrail behavior** — Did off-topic utterances get redirected appropriately?
+- **Content safety** — Is `isContentSafe` always `true`?
 
-#### 3. Grounding Assessment
-```bash
-jq '[.steps[] | select(.stepType == "ReasoningStep") | .data.groundingAssessment]' "$TRACE"
-```
-Expected: "GROUNDED" (not "UNGROUNDED")
+#### 3.2 Session Artifacts
 
-#### 4. Safety Score Validation
-```bash
-jq '.steps[] | select(.stepType == "PlannerResponseStep") | .data.safetyScore.overall' "$TRACE"
-```
-Expected: >= 0.9
+After `preview end`, trace files are saved locally:
 
-#### 5. Tool Visibility
-```bash
-jq '[.steps[] | select(.stepType == "EnabledToolsStep") | .data.enabled_tools]' "$TRACE"
 ```
-Expected: Required actions present in array
+<tracesPath>/
+├── metadata.json          # Session metadata (sessionId, agentId, planIds)
+├── transcript.jsonl       # Full conversation transcript (the primary analysis source)
+└── traces/
+    └── <planId>.json      # Per-turn trace files (currently empty {} in most orgs)
+```
 
-#### 6. Response Quality
+**The transcript.jsonl file is the primary source for analysis.** Each line is a JSON object representing a user or agent message:
+
 ```bash
-jq '.steps[] | select(.stepType == "PlannerResponseStep") | .data.responseText' "$TRACE"
+TRACES_PATH="<path from preview end result>"
+
+# Parse transcript into readable format
+python3 -c "
+import json
+with open('$TRACES_PATH/transcript.jsonl') as f:
+    for line in f:
+        entry = json.loads(line)
+        role = entry.get('role', '?')
+        text = entry.get('text', '')[:100]
+        ts = entry.get('timestamp', '')
+        print(f'[{ts}] {role}: {text}')
+"
 ```
-Expected: Relevant, coherent response
+
+**Note:** Individual trace files under `traces/<planId>.json` are typically empty `{}` in current API versions. Detailed step-level trace data (topics, actions, LLM steps) is available through Data Cloud STDM — use the `adlc-optimize` skill for deep trace analysis.
+
+#### 3.3 Pass/Fail Classification
+
+For each test utterance, classify the result:
+
+| Check | Pass Criteria | Fail Indicator |
+|-------|--------------|----------------|
+| Topic routing | Response content matches expected topic | Response about wrong domain |
+| Action invocation | Agent asks for action inputs or returns outputs | Generic conversational reply only |
+| Guardrail | Off-topic utterance gets redirected | Agent attempts to answer off-topic |
+| Error handling | No error messages in response | `type: "Error"` or error text |
+| Content safety | `isContentSafe: true` | `isContentSafe: false` |
 
 ### Phase 4: Fix Loop
 

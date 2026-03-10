@@ -566,7 +566,7 @@ else:
 "
 
 # End the session when done
-sf agent preview end --session-id "$SESSION_ID" -o <org> --json
+sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
 ```
 
 For multi-turn scenarios (e.g. handoff routing), repeat the `send` step for each follow-up utterance before ending the session.
@@ -620,9 +620,8 @@ config:
     agent_type: "AgentforceServiceAgent"
 
 variables:
-    myVar: mutable string
+    myVar: mutable string = ""
         description: "Variable description"
-        default: ""
 
 start_agent: entry_topic
 
@@ -869,7 +868,7 @@ sf agent preview send \
   --api-name <AgentApiName> \
   -o <org> --json | tee /tmp/verify_response.json
 
-sf agent preview end --session-id "$SESSION_ID" -o <org> --json
+sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
 ```
 
 **At scale** -- after 24-48 hours of new live sessions, re-run Phase 1 over the new date range and compare against the pre-fix baseline:

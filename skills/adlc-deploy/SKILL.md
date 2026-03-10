@@ -384,7 +384,7 @@ sf agent preview send \
   -o <org> --json
 
 # End session
-sf agent preview end --session-id "$SESSION_ID" -o <org> --json
+sf agent preview end --session-id "$SESSION_ID" --api-name MyAgent -o <org> --json
 ```
 
 ## Best Practices

@@ -78,14 +78,18 @@ force-app/main/default/aiAuthoringBundles/<AgentName>/
   <AgentName>.bundle-meta.xml
 ```
 
-Use the Write tool for both files. The bundle-meta.xml content is:
+Use the Write tool for both files. The bundle-meta.xml MUST be minimal — only `bundleType`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <AiAuthoringBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <developerName>{{AgentName}}</developerName>
-    <masterLabel>{{AgentLabel}}</masterLabel>
+  <bundleType>AGENT</bundleType>
 </AiAuthoringBundle>
 ```
+
+CRITICAL: Do NOT add `<developerName>`, `<masterLabel>`, `<description>`, `<target>`, or any
+other fields. The publish command (`sf agent publish authoring-bundle`) manages these
+automatically. Extra fields cause "Required fields are missing: [BundleType]" deploy errors
+because the Metadata API deploy step fails when unexpected fields are present.
 
 ### Phase 4: Validate
 
@@ -169,13 +173,19 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
 ```
+
+NOTE: `visibility: "External"` is recommended on linked variables for service agents.
+It ensures the variable is accessible to the messaging channel.
 
 #### Variable Type Reference
 
@@ -699,6 +709,7 @@ Common mistakes that cause deployment failures:
 | WRONG | CORRECT |
 |-------|---------|
 | `AgentName.aiAuthoringBundle-meta.xml` | `AgentName.bundle-meta.xml` |
+| bundle-meta.xml with `<developerName>`, `<masterLabel>`, or `<target>` | Minimal: only `<bundleType>AGENT</bundleType>` |
 | `sf project deploy start` for agents | `sf agent publish authoring-bundle --api-name X -o Org` |
 | `sf agent validate --source-dir` | `sf agent validate authoring-bundle --api-name X -o Org` |
 | Query Einstein Agent User from wrong org | Query the TARGET org specifically with `-o` flag |
@@ -871,12 +882,15 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
 
 language:
    default_locale: "en_US"
@@ -892,6 +906,14 @@ topic greeting:
       instructions: ->
          | Welcome the user warmly.
          | Ask how you can help them today.
+```
+
+Companion `bundle-meta.xml` (MUST be this exact content — no extra fields):
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<AiAuthoringBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+  <bundleType>AGENT</bundleType>
+</AiAuthoringBundle>
 ```
 
 ---
@@ -919,12 +941,15 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
    order_id: mutable string
       description: "Current order being discussed"
       default: ""

@@ -4,14 +4,14 @@
 Checks:
 1. Mixed tabs and spaces (compilation error)
 2. Lowercase booleans (must be True/False)
-3. Required blocks (system, config, topic, start_agent)
-4. Missing default_agent_user
-5. Invalid config field names
-6. Missing required config fields (agent_label)
-7. Variables declared as both mutable AND linked
-8. Undefined topic references in transitions
-9. Post-action checks not at top of instructions
-10. developer_name/agent_name matches folder name
+3. Required blocks (system, config, start_agent)
+4. Config fields: developer_name (preferred over agent_name), default_agent_user, agent_type
+5. Variables declared as both mutable AND linked
+6. Undefined topic references in transitions
+7. developer_name matches folder name
+8. Reserved field names used as variable names
+9. @inputs in set clauses (must use @outputs)
+10. bundle-meta.xml extra fields that break publish
 
 Also auto-resolves REPLACE_WITH_EINSTEIN_AGENT_USER placeholder by querying the org.
 """
@@ -62,6 +62,8 @@ class AgentScriptValidator:
         self._check_topic_references()
         self._check_folder_name_match()
         self._check_reserved_field_names()
+        self._check_inputs_in_set()
+        self._check_bundle_meta_xml()
         self._auto_resolve_placeholder()
 
         return {
@@ -109,7 +111,7 @@ class AgentScriptValidator:
                 required["system"] = True
             elif stripped.startswith("config:"):
                 required["config"] = True
-            elif stripped.startswith("start_agent "):
+            elif stripped.startswith("start_agent ") or stripped.startswith("start_agent:"):
                 required["start_agent"] = True
             elif stripped.startswith("topic "):
                 has_topic = True
@@ -122,7 +124,6 @@ class AgentScriptValidator:
         """Check config block for required fields."""
         in_config = False
         config_fields = set()
-        required_config = {"agent_name", "default_agent_user", "agent_label"}
 
         for line in self.lines:
             stripped = line.strip()
@@ -137,9 +138,19 @@ class AgentScriptValidator:
                 if field_match:
                     config_fields.add(field_match.group(1))
 
-        for field in required_config:
-            if field not in config_fields:
-                self.warnings.append((0, "WARN", f"Missing config field: {field}"))
+        # developer_name is preferred; agent_name is accepted as legacy
+        if "developer_name" not in config_fields:
+            if "agent_name" in config_fields:
+                self.warnings.append((0, "WARN",
+                    "Config uses 'agent_name' — prefer 'developer_name' (must match folder name)"))
+            else:
+                self.warnings.append((0, "WARN", "Missing config field: developer_name"))
+
+        if "default_agent_user" not in config_fields:
+            self.warnings.append((0, "WARN", "Missing config field: default_agent_user"))
+        if "agent_type" not in config_fields:
+            self.warnings.append((0, "WARN",
+                "Missing config field: agent_type (use 'AgentforceServiceAgent' or 'AgentforceEmployeeAgent')"))
 
     def _check_variable_modifiers(self):
         """Check that variables aren't declared as both mutable AND linked."""
@@ -164,19 +175,26 @@ class AgentScriptValidator:
                     self.warnings.append((i, "WARN", f"Undefined topic reference: @topic.{topic_name} (line {i})"))
 
     def _check_folder_name_match(self):
-        """Check that agent_name matches the folder name."""
-        # Extract agent_name from config
+        """Check that developer_name (or agent_name) matches the folder name."""
+        # Extract developer_name or agent_name from config
         agent_name = None
+        field_used = None
         for line in self.lines:
+            match = re.match(r'\s*developer_name:\s*"?([^"\s]+)"?', line.strip())
+            if match:
+                agent_name = match.group(1)
+                field_used = "developer_name"
+                break
             match = re.match(r'\s*agent_name:\s*"?([^"\s]+)"?', line.strip())
             if match:
                 agent_name = match.group(1)
+                field_used = "agent_name"
                 break
 
         if agent_name:
             folder_name = Path(self.file_path).parent.name
             if folder_name != agent_name:
-                self.warnings.append((0, "WARN", f"agent_name '{agent_name}' doesn't match folder name '{folder_name}'"))
+                self.warnings.append((0, "WARN", f"{field_used} '{agent_name}' doesn't match folder name '{folder_name}'"))
 
     def _check_reserved_field_names(self):
         """Check for reserved field names used as variable or action parameter names."""
@@ -193,6 +211,48 @@ class AgentScriptValidator:
                 var_match = re.match(r'(\w+):\s*(?:mutable|linked)', stripped)
                 if var_match and var_match.group(1) in RESERVED_NAMES:
                     self.errors.append((i, "ERROR", f"Reserved field name '{var_match.group(1)}' used as variable name (line {i})"))
+
+    def _check_inputs_in_set(self):
+        """Check for @inputs in set clauses (must use @outputs instead)."""
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if re.search(r'\bset\b.*@inputs\.', stripped):
+                self.errors.append((i, "ERROR",
+                    f"'@inputs' in set clause — use '@outputs' instead (line {i})"))
+
+    def _check_bundle_meta_xml(self):
+        """Check companion bundle-meta.xml for extra fields that break publish."""
+        meta_path = Path(self.file_path).with_suffix(".bundle-meta.xml")
+        if not meta_path.exists():
+            # Also check parent dir for <name>.bundle-meta.xml
+            parent = Path(self.file_path).parent
+            agent_stem = Path(self.file_path).stem
+            meta_path = parent / f"{agent_stem}.bundle-meta.xml"
+            if not meta_path.exists():
+                return
+
+        try:
+            meta_content = meta_path.read_text(encoding="utf-8")
+        except (IOError, OSError):
+            return
+
+        # Check for fields that cause "Required fields missing: [BundleType]" on publish
+        bad_fields = []
+        for field in ["<developerName>", "<masterLabel>", "<description>", "<label>"]:
+            if field in meta_content:
+                bad_fields.append(field)
+
+        if bad_fields:
+            self.errors.append((0, "ERROR",
+                f"bundle-meta.xml has extra fields {bad_fields} — "
+                f"MUST contain only <bundleType>AGENT</bundleType>. "
+                f"Extra fields cause 'Required fields missing: [BundleType]' on publish"))
+
+        if "<bundleType>" not in meta_content:
+            self.errors.append((0, "ERROR",
+                "bundle-meta.xml missing <bundleType>AGENT</bundleType> — required for publish"))
 
     def _auto_resolve_placeholder(self):
         """Auto-resolve REPLACE_WITH_EINSTEIN_AGENT_USER placeholder."""

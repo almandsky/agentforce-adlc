@@ -12,12 +12,12 @@
 #   - start_agent: Entry point topic (exactly one required)
 #
 # ★ Key Validation Points (from 100-point scoring):
-#   - [10 pts] config block with all 4 required fields
-#   - [10 pts] 3 linked variables (EndUserId, RoutableId, ContactId)
+#   - [10 pts] config block with all 5 required fields
+#   - [10 pts] 3 linked variables (EndUserId, RoutableId, ContactId) with visibility
 #   - [5 pts] language block present
 #   - [10 pts] At least one start_agent topic
 #
-# Deploy with: sf agent publish authoring-bundle --api-name Hello_World_Agent --target-org [alias]
+# Deploy with: sf agent publish authoring-bundle --api-name Hello_World_Agent -o <org-alias> --json
 
 system:
 	instructions: "You are a friendly assistant. Greet users warmly and help them."
@@ -26,22 +26,26 @@ system:
 		error: "I'm sorry, something went wrong. Please try again."
 
 config:
-	agent_name: "Hello_World_Agent"
-	default_agent_user: "your.user@company.com"
+	developer_name: "Hello_World_Agent"
 	agent_label: "Hello World Agent"
 	description: "A minimal example agent to learn Agent Script basics"
+	default_agent_user: "your.user@company.com"
+	agent_type: "AgentforceServiceAgent"
 
 variables:
 	# Linked variables (required) - Connect to Salesforce Messaging context
 	EndUserId: linked string
 		source: @MessagingSession.MessagingEndUserId
 		description: "Messaging End User ID"
+		visibility: "External"
 	RoutableId: linked string
 		source: @MessagingSession.Id
 		description: "Messaging Session ID"
+		visibility: "External"
 	ContactId: linked string
 		source: @MessagingEndUser.ContactId
 		description: "Contact ID"
+		visibility: "External"
 
 language:
 	default_locale: "en_US"

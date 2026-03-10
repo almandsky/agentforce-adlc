@@ -613,10 +613,11 @@ system:
         error: "Error fallback message"
 
 config:
-    agent_name: "AgentApiName"
+    developer_name: "AgentApiName"
     agent_label: "Agent Display Name"
     description: "Agent description"
     default_agent_user: "user@org.com"
+    agent_type: "AgentforceServiceAgent"
 
 variables:
     myVar: mutable string

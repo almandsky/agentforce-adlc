@@ -14,21 +14,36 @@ system:
    instructions: "You are a customer service agent for an e-commerce company."
 
 config:
-   agent_name: "HubAndSpokeAgent"
+   developer_name: "HubAndSpokeAgent"
    agent_label: "Customer Service Agent"
    description: "Multi-purpose agent with hub-and-spoke architecture"
    default_agent_user: "agent@yourorg.com"  # REQUIRED: Change to valid Einstein Agent User
+   agent_type: "AgentforceServiceAgent"
 
 variables:
-   customer_id: linked string
-      source: @session.customerId
-      description: "Customer ID from session"
+   EndUserId: linked string
+      source: @MessagingSession.MessagingEndUserId
+      description: "Messaging End User ID"
+      visibility: "External"
+   RoutableId: linked string
+      source: @MessagingSession.Id
+      description: "Messaging Session ID"
+      visibility: "External"
+   ContactId: linked string
+      source: @MessagingEndUser.ContactId
+      description: "Contact ID"
+      visibility: "External"
    order_id: mutable string
       description: "Current order being discussed"
       default: ""
    issue_resolved: mutable boolean
       description: "Whether the issue has been resolved"
       default: False
+
+language:
+   default_locale: "en_US"
+   additional_locales: ""
+   all_additional_locales: False
 
 # ============================================================
 # HUB: Central Router

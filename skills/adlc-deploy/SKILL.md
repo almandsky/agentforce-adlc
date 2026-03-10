@@ -267,7 +267,8 @@ if __name__ == '__main__':
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `Required fields missing: [BundleType]` | Using wrong deploy command | Use `sf agent publish authoring-bundle`, not `sf project deploy` |
+| `Required fields missing: [BundleType]` | Extra fields in bundle-meta.xml (`<developerName>`, `<masterLabel>`, `<description>`, `<target>`) | Use minimal bundle-meta.xml with ONLY `<bundleType>AGENT</bundleType>`. The publish command manages other fields automatically. |
+| `Not available for deploy for this API version` | Using `sf project deploy start` on AiAuthoringBundle | Use `sf agent publish authoring-bundle`, not `sf project deploy` for agent bundles |
 | `Internal Error, try again later` | Invalid default_agent_user | Query Einstein Agent Users and fix .agent file |
 | `Duplicate value found: GenAiPluginDefinition` | Previous failed publish left orphan | Deactivate and delete draft version |
 | `No .agent file found` | developer_name mismatch | Ensure folder name matches developer_name |

@@ -13,17 +13,26 @@ Validate that Agent Script `.agent` file targets actually exist in a Salesforce 
 
 This skill analyzes `.agent` files to extract action targets (`flow://`, `apex://`, `retriever://`, `externalService://`, `generatePromptResponse://`) and validates their existence in the target Salesforce org. It provides detailed reports including fuzzy matching suggestions when targets are missing.
 
+## Script Path
+
+The scripts live inside the installed repo copy. Resolve the path based on which IDE config directory exists:
+
+```bash
+# Auto-detect: prefer ~/.claude, fall back to ~/.cursor
+ADLC_SCRIPTS="$([ -d ~/.claude/adlc ] && echo ~/.claude/adlc/scripts || echo ~/.cursor/adlc/scripts)"
+```
+
 ## Usage
 
 ```bash
 # Discover targets in the default agent bundle location
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias>
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias>
 
 # Specify a particular .agent file
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
 
 # Auto-discover .agent files in project
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --auto-discover
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --auto-discover
 ```
 
 ## What it does
@@ -101,7 +110,7 @@ If targets are missing, suggest running the scaffold skill:
 
 ```bash
 # Generate stub metadata for missing targets
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file <path>
+python3 "$ADLC_SCRIPTS/scaffold.py" -o <org-alias> --agent-file <path>
 ```
 
 If all targets are found, suggest proceeding to deployment:
@@ -127,7 +136,7 @@ When multiple `.agent` files exist, the tool processes all of them:
 
 ```bash
 # Discover all agents in project
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --batch
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --batch
 ```
 
 ### CI/CD Integration
@@ -162,8 +171,9 @@ CUSTOM_TARGETS = {
 
 The discover script should be located at:
 ```
-/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py
+$ADLC_SCRIPTS/discover.py
 ```
+(see Script Path section above)
 
 Required Python packages:
 - `simple-salesforce` for SOQL queries

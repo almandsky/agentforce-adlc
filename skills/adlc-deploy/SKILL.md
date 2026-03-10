@@ -13,6 +13,15 @@ Full deployment lifecycle for Agentforce agents: validate, deploy metadata, publ
 
 This skill orchestrates the complete deployment pipeline for Agentforce agents, handling the complex multi-step process of getting an agent from development to production. It manages the proper sequencing of metadata deployment, bundle publishing, and agent activation.
 
+## Script Path
+
+The scripts live inside the installed repo copy. Resolve the path based on which IDE config directory exists:
+
+```bash
+# Auto-detect: prefer ~/.claude, fall back to ~/.cursor
+ADLC_SCRIPTS="$([ -d ~/.claude/adlc ] && echo ~/.claude/adlc/scripts || echo ~/.cursor/adlc/scripts)"
+```
+
 ## Usage
 
 ```bash
@@ -20,19 +29,19 @@ This skill orchestrates the complete deployment pipeline for Agentforce agents, 
 sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
 
 # Full deployment with activation
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 "$ADLC_SCRIPTS/deploy.py" \
   -o <org-alias> \
   --api-name MyAgent \
   --activate
 
 # Dry run to see what would be deployed
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 "$ADLC_SCRIPTS/deploy.py" \
   -o <org-alias> \
   --api-name MyAgent \
   --dry-run
 
 # Deploy with specific source directory
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 "$ADLC_SCRIPTS/deploy.py" \
   -o <org-alias> \
   --api-name MyAgent \
   --source-dir force-app \
@@ -177,7 +186,7 @@ The deployment script orchestrates all phases:
 
 ```python
 #!/usr/bin/env python3
-# /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py
+# $ADLC_SCRIPTS/deploy.py
 
 import subprocess
 import json
@@ -412,22 +421,24 @@ EOF
 
 ### Post-Deployment Testing
 
-Run smoke tests immediately after deployment:
+Run smoke tests immediately after deployment. Use `--authoring-bundle` to generate local trace files for verification:
 
 ```bash
-# Start preview session
-SESSION_ID=$(sf agent preview start --api-name MyAgent -o <org> --json | jq -r '.result.sessionId')
+# Start preview session (--authoring-bundle generates local traces)
+SESSION_ID=$(sf agent preview start --authoring-bundle MyAgent -o <org> --json | jq -r '.result.sessionId')
 
 # Send test utterance
 sf agent preview send \
   --session-id "$SESSION_ID" \
-  --api-name MyAgent \
+  --authoring-bundle MyAgent \
   --utterance "Hello, I need help" \
   -o <org> --json
 
 # End session
-sf agent preview end --session-id "$SESSION_ID" --api-name MyAgent -o <org> --json
+sf agent preview end --session-id "$SESSION_ID" --authoring-bundle MyAgent -o <org> --json
 ```
+
+> **Note:** Use `--api-name` instead of `--authoring-bundle` to test the last-published version (no local traces generated).
 
 ## Best Practices
 

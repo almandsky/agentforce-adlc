@@ -56,7 +56,14 @@ Each skill can be invoked independently. Run `/adlc-test` on an existing agent w
 ### One-command install (recommended)
 
 ```bash
+# Install for Claude Code (default if only ~/.claude/ exists)
 curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash
+
+# Install for Cursor
+curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash -s -- --target cursor
+
+# Install for both Claude Code and Cursor
+curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash -s -- --target both
 ```
 
 ### From local clone
@@ -64,7 +71,9 @@ curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools
 ```bash
 git clone https://github.com/almandsky/agentforce-adlc.git
 cd agentforce-adlc
-python3 tools/install.py
+python3 tools/install.py                # Auto-detects Claude Code / Cursor
+python3 tools/install.py --target cursor  # Cursor only
+python3 tools/install.py --target both    # Both IDEs
 ```
 
 ### Post-install management
@@ -81,15 +90,32 @@ python3 ~/.claude/adlc-install.py --force-update
 
 # Remove everything
 python3 ~/.claude/adlc-install.py --uninstall
+
+# Target-specific operations
+python3 ~/.claude/adlc-install.py --status --target cursor
+python3 ~/.claude/adlc-install.py --uninstall --target cursor
 ```
 
-After install, restart Claude Code. Skills are available in any project.
+After install, restart your IDE. Skills are available in any project.
+
+### What installs where
+
+| Component | Claude Code (`~/.claude/`) | Cursor (`~/.cursor/`) |
+|-----------|---------------------------|----------------------|
+| Skills (SKILL.md) | `skills/adlc-*/` | `skills/adlc-*/` |
+| Agents (.md) | `agents/adlc-*.md` | N/A (not supported) |
+| Hooks | `hooks/scripts/adlc-*.py` | N/A (not supported) |
+| Repo copy | `adlc/` | `adlc/` |
+| Metadata | `.adlc.json` | `.adlc.json` |
+| Self-updater | `adlc-install.py` | `adlc-install.py` |
+
+Skills are 100% portable — the same SKILL.md files work in both IDEs. Agents and hooks are Claude Code-specific features and are only installed there.
 
 ## Prerequisites
 
 - **Python 3.10+**
 - **Salesforce CLI** (`sf`) v2.x — [install guide](https://developer.salesforce.com/tools/salesforcecli)
-- **Claude Code** — `~/.claude/` directory must exist
+- **Claude Code** (`~/.claude/`) or **Cursor** (`~/.cursor/`) — at least one must be installed
 - **Salesforce org** with Agentforce enabled
 
 ## Quick start
@@ -215,8 +241,9 @@ agentforce-adlc/
 └── force-app/           # Example Salesforce DX output
 ```
 
-### Post-install layout (`~/.claude/`)
+### Post-install layout
 
+**Claude Code (`~/.claude/`)** — full installation:
 ```
 ~/.claude/
 ├── skills/
@@ -239,6 +266,22 @@ agentforce-adlc/
 │   │   ├── adlc-session-init.py
 │   │   └── stdin_utils.py
 │   └── skills-registry.json
+├── adlc/                    # Full repo copy
+├── adlc-install.py          # Self-updater
+└── .adlc.json               # Install metadata
+```
+
+**Cursor (`~/.cursor/`)** — skills only:
+```
+~/.cursor/
+├── skills/
+│   ├── adlc-author/SKILL.md
+│   ├── adlc-discover/SKILL.md
+│   ├── adlc-scaffold/SKILL.md
+│   ├── adlc-deploy/SKILL.md
+│   ├── adlc-run/SKILL.md
+│   ├── adlc-test/SKILL.md
+│   └── adlc-optimize/SKILL.md
 ├── adlc/                    # Full repo copy
 ├── adlc-install.py          # Self-updater
 └── .adlc.json               # Install metadata

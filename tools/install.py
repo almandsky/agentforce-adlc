@@ -41,7 +41,7 @@ from typing import Any, Dict, List, Optional
 INSTALLER_VERSION = "0.1.0"
 
 # GitHub repository
-GITHUB_OWNER = "Authoring-Agent"
+GITHUB_OWNER = "almandsky"
 GITHUB_REPO = "agentforce-adlc"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
 GITHUB_RAW_URL = f"https://raw.githubusercontent.com/{GITHUB_OWNER}/{GITHUB_REPO}/main"

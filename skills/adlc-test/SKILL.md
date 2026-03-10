@@ -41,6 +41,18 @@ python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
   --verbose
 ```
 
+## Prerequisites
+
+Before running tests, ensure:
+
+1. **Agent is published** — Run `sf agent publish authoring-bundle` first (see `adlc-deploy`)
+2. **Agent is activated** — Publishing creates an **inactive** version. You MUST activate before preview works:
+   ```bash
+   sf agent activate --api-name MyAgent -o <org-alias>
+   ```
+   Without activation, `sf agent preview start` fails with `"No valid version available"` (HTTP 404).
+3. **Action targets exist** — All flows/apex referenced by `target:` must be deployed to the org
+
 ## Testing Workflow
 
 ### Phase 1: Utterance Derivation
@@ -84,7 +96,7 @@ Execute tests using `sf agent preview` programmatically:
 # Start preview session
 SESSION_ID=$(sf agent preview start \
   --api-name MyAgent \
-  --target-org <org> --json 2>/dev/null \
+  -o <org> --json 2>/dev/null \
   | jq -r '.result.sessionId')
 
 # Send each test utterance
@@ -93,7 +105,7 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
     --session-id "$SESSION_ID" \
     --api-name MyAgent \
     --utterance "$UTTERANCE" \
-    --target-org <org> --json 2>/dev/null)
+    -o <org> --json 2>/dev/null)
 
   # Capture plan ID for trace analysis
   PLAN_ID=$(echo "$RESPONSE" | jq -r '.result.messages[-1].planId')
@@ -103,7 +115,7 @@ done
 # End session and get traces
 TRACES_PATH=$(sf agent preview end \
   --session-id "$SESSION_ID" \
-  --target-org <org> --json 2>/dev/null \
+  -o <org> --json 2>/dev/null \
   | jq -r '.result.tracesPath')
 ```
 
@@ -419,6 +431,7 @@ Recommendations:
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
+| `No valid version available` (404) | Agent not activated after publish | Run `sf agent activate --api-name MyAgent -o <org>` |
 | Session timeout | Long-running tests | Split into smaller batches |
 | Trace not found | CLI version issue | Update to sf CLI 2.121.7+ |
 | Action mock fails | Complex inputs | Use `--use-live-actions` flag |

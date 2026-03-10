@@ -123,7 +123,7 @@ Success response:
 }
 ```
 
-### Phase 4: Activate Agent (Optional)
+### Phase 4: Activate Agent
 
 ```bash
 # Activate the published agent version
@@ -131,8 +131,9 @@ sf agent activate --api-name MyAgent -o <org-alias>
 ```
 
 **Important**:
-- Publishing creates an **inactive** version
-- Activation makes it live for end users
+- Publishing creates an **inactive** version — the agent CANNOT be previewed or used until activated
+- Without activation, `sf agent preview start` fails with `"No valid version available"` (HTTP 404)
+- Activation makes it live for preview and end users
 - Only one version can be active at a time
 - `activate` command does NOT support `--json` flag
 

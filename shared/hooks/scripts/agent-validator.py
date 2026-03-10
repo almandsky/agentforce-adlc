@@ -8,12 +8,13 @@ Checks:
 4. Config fields: developer_name (preferred over agent_name), default_agent_user, agent_type
 5. Variables declared as both mutable AND linked
 6. Undefined topic references in transitions
-7. developer_name matches folder name
-8. Reserved field names used as variable names
-9. @inputs in set clauses (must use @outputs)
-10. bundle-meta.xml extra fields that break publish
-11. `default:` sub-property on variables (must use inline `= value`)
-12. `type:` sub-property on action I/O fields (must use inline type)
+7. start_agent target references a defined topic
+8. developer_name matches folder name
+9. Reserved field names used as variable names
+10. @inputs in set clauses (must use @outputs)
+11. bundle-meta.xml extra fields that break publish
+12. `default:` sub-property on variables (must use inline `= value`)
+13. `type:` sub-property on action I/O fields (must use inline type)
 
 Also auto-resolves REPLACE_WITH_EINSTEIN_AGENT_USER placeholder by querying the org.
 """
@@ -62,6 +63,7 @@ class AgentScriptValidator:
         self._check_config_fields()
         self._check_variable_modifiers()
         self._check_topic_references()
+        self._check_start_agent_target()
         self._check_folder_name_match()
         self._check_reserved_field_names()
         self._check_inputs_in_set()
@@ -177,6 +179,52 @@ class AgentScriptValidator:
                 topic_name = ref_match.group(1)
                 if topic_name not in defined_topics:
                     self.warnings.append((i, "WARN", f"Undefined topic reference: @topic.{topic_name} (line {i})"))
+
+    def _check_start_agent_target(self):
+        """Check that start_agent references a defined topic.
+
+        Two valid syntaxes:
+        - `start_agent: topic_name`  → references a separate topic (must exist)
+        - `start_agent name:`        → inline entry block definition (no separate topic needed)
+        """
+        start_target = None
+        start_line = 0
+        is_inline = False
+
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            # `start_agent: topic_name` — reference to a separate topic
+            ref_match = re.match(r'^start_agent\s*:\s*(\w+)\s*$', stripped)
+            if ref_match:
+                start_target = ref_match.group(1)
+                start_line = i
+                is_inline = False
+                break
+            # `start_agent name:` — inline entry block definition
+            inline_match = re.match(r'^start_agent\s+(\w+)\s*:', stripped)
+            if inline_match:
+                start_target = inline_match.group(1)
+                start_line = i
+                is_inline = True
+                break
+
+        if not start_target:
+            return  # Missing start_agent caught by _check_required_blocks
+
+        # Inline definitions don't need a separate topic
+        if is_inline:
+            return
+
+        # Reference-style must point to a defined topic
+        defined_topics = set()
+        for line in self.lines:
+            match = re.match(r'^topic\s+(\w+):', line.strip())
+            if match:
+                defined_topics.add(match.group(1))
+
+        if start_target not in defined_topics:
+            self.errors.append((start_line, "ERROR",
+                f"start_agent references '{start_target}' but no 'topic {start_target}:' is defined (line {start_line})"))
 
     def _check_folder_name_match(self):
         """Check that developer_name (or agent_name) matches the folder name."""

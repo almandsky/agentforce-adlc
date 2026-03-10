@@ -19,11 +19,11 @@ The script auto-configures `sys.path`, so it can be run from any directory:
 
 ```bash
 # Scaffold missing targets (runs discover first)
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py \
+python3 ~/.claude/adlc/scripts/scaffold.py \
   --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
 
 # Scaffold all targets without checking org (use --all flag)
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py \
+python3 ~/.claude/adlc/scripts/scaffold.py \
   --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
 
 # From the project root (also works)
@@ -354,7 +354,7 @@ Generated Apex classes need:
 
 ## Script Requirements
 
-Located at: `/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py`
+Located at: `~/.claude/adlc/scripts/scaffold.py`
 
 Dependencies:
 - `simple-salesforce` - Org connection and metadata queries

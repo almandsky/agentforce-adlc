@@ -20,19 +20,19 @@ This skill orchestrates the complete deployment pipeline for Agentforce agents, 
 sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
 
 # Full deployment with activation
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 ~/.claude/adlc/scripts/deploy.py \
   -o <org-alias> \
   --api-name MyAgent \
   --activate
 
 # Dry run to see what would be deployed
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 ~/.claude/adlc/scripts/deploy.py \
   -o <org-alias> \
   --api-name MyAgent \
   --dry-run
 
 # Deploy with specific source directory
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py \
+python3 ~/.claude/adlc/scripts/deploy.py \
   -o <org-alias> \
   --api-name MyAgent \
   --source-dir force-app \
@@ -177,7 +177,7 @@ The deployment script orchestrates all phases:
 
 ```python
 #!/usr/bin/env python3
-# /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/deploy.py
+# ~/.claude/adlc/scripts/deploy.py
 
 import subprocess
 import json

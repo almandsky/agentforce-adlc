@@ -17,13 +17,13 @@ This skill analyzes `.agent` files to extract action targets (`flow://`, `apex:/
 
 ```bash
 # Discover targets in the default agent bundle location
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias>
+python3 ~/.claude/adlc/scripts/discover.py -o <org-alias>
 
 # Specify a particular .agent file
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
+python3 ~/.claude/adlc/scripts/discover.py -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
 
 # Auto-discover .agent files in project
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --auto-discover
+python3 ~/.claude/adlc/scripts/discover.py -o <org-alias> --auto-discover
 ```
 
 ## What it does
@@ -101,7 +101,7 @@ If targets are missing, suggest running the scaffold skill:
 
 ```bash
 # Generate stub metadata for missing targets
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file <path>
+python3 ~/.claude/adlc/scripts/scaffold.py -o <org-alias> --agent-file <path>
 ```
 
 If all targets are found, suggest proceeding to deployment:
@@ -127,7 +127,7 @@ When multiple `.agent` files exist, the tool processes all of them:
 
 ```bash
 # Discover all agents in project
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py -o <org-alias> --batch
+python3 ~/.claude/adlc/scripts/discover.py -o <org-alias> --batch
 ```
 
 ### CI/CD Integration
@@ -162,7 +162,7 @@ CUSTOM_TARGETS = {
 
 The discover script should be located at:
 ```
-/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/discover.py
+~/.claude/adlc/scripts/discover.py
 ```
 
 Required Python packages:

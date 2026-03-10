@@ -17,25 +17,25 @@ This skill enables direct invocation of Flow and Apex actions referenced in Agen
 
 ```bash
 # Execute a Flow action
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/run.py \
+python3 ~/.claude/adlc/scripts/run.py \
   -o <org-alias> \
   --target "flow://Get_Order_Status" \
   --inputs "orderId=00190000023XXXX"
 
 # Execute an Apex action with multiple inputs
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/run.py \
+python3 ~/.claude/adlc/scripts/run.py \
   -o <org-alias> \
   --target "apex://OrderProcessor" \
   --inputs "orderId=00190000023XXXX,actionType=cancel,reason=Customer request"
 
 # Execute with JSON input for complex data
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/run.py \
+python3 ~/.claude/adlc/scripts/run.py \
   -o <org-alias> \
   --target "flow://Process_Return" \
   --input-file inputs.json
 
 # Test mode (show request without executing)
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/run.py \
+python3 ~/.claude/adlc/scripts/run.py \
   -o <org-alias> \
   --target "apex://CustomerService" \
   --inputs "customerId=001XX000003DHXX" \
@@ -445,7 +445,7 @@ Implement proper error handling:
 
 The run script should be located at:
 ```
-/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/run.py
+~/.claude/adlc/scripts/run.py
 ```
 
 Required dependencies:

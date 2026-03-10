@@ -1136,6 +1136,11 @@ For advanced cases beyond this skill's inline syntax, consult:
 | Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` |
 | Which properties work in which contexts | `references/feature-validity.md` |
 | Agent Script to Lightning type mapping | `references/complex-data-types.md` |
+| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` |
+| Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` |
+| How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` |
+| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` |
+| Tracked platform issues and workarounds | `references/known-issues.md` |
 
 ---
 

@@ -177,6 +177,11 @@ sf data query \
 
 ### 1.1 Find sessions
 
+> **STDM Ingestion Delay**: Preview sessions may take 15-60 minutes to appear in STDM queries. Data Cloud ingests session trace data asynchronously after the session ends. If recently completed sessions are not showing up:
+> 1. Always call `sf agent preview end --session-id <ID> --api-name <Agent> -o <org> --json` to trigger ingestion — abandoned sessions may never be ingested
+> 2. Wait 15-60 minutes after ending the session before querying STDM
+> 3. If sessions still don't appear after 60 minutes, verify the "Agentforce Activity" data stream is active in Setup -> Data Cloud -> Data Streams
+
 If the user provided session IDs, skip to 1.2. Otherwise, write `/tmp/stdm_find.apex` and run it (substitute actual ISO 8601 UTC timestamps, DATA_SPACE, and AGENT_API_NAME):
 
 ```apex
@@ -228,7 +233,16 @@ The result is a JSON array of `SessionSummary` objects:
 ```bash
 sf data query --query "SELECT Id, MasterLabel, DeveloperName FROM GenAiPlannerDefinition" -o <org> --json
 ```
-Use the exact `MasterLabel` value (not `DeveloperName`). `MasterLabel` matches the agent's display name; `DeveloperName` has a version suffix (e.g. `TeslaSupportAgent_v1`).
+
+**Agent name resolution:**
+- `MasterLabel` = display name (e.g., "Real Estate Showing Assistant") — used by the planner fallback strategy in `findSessions`
+- `DeveloperName` = API name with version suffix (e.g., "RealEstateShowingAgent_v1") — used in `sf agent preview/publish` commands
+- `ssot__AiAgentApiName__c` = direct agent API name field on the participant DMO — used by the preferred direct strategy
+
+The skill should try the provided name first. If `findSessions` returns no agent-specific sessions, try the other name format:
+- If the user provided an API name like `RealEstateShowingAgent`, also try the `MasterLabel` (query `GenAiPlannerDefinition` to find it)
+- If the user provided a display name like "Real Estate Showing Assistant", also try the `DeveloperName` pattern (strip spaces, append `_v1`)
+- The `--api-name` flag on `sf agent preview` commands uses the `DeveloperName` (without `_v1` suffix), NOT `MasterLabel`
 
 **If the debug log shows a warning about no sessions for the agent**, both strategies returned empty -- the agent may have no sessions in this date range, or Data Cloud ingestion may be delayed. The query falls back to all sessions in the date range.
 
@@ -570,6 +584,8 @@ sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <or
 ```
 
 For multi-turn scenarios (e.g. handoff routing), repeat the `send` step for each follow-up utterance before ending the session.
+
+> **CRITICAL**: Always call `sf agent preview end` for every session you start. This is not optional cleanup -- it triggers STDM ingestion so the session data becomes available for future Phase 1 analysis. Abandoned sessions (no `end` call) may never appear in STDM queries, creating gaps in your observability data.
 
 ### 2.3 Classify each scenario
 

@@ -33,12 +33,10 @@ variables:
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
       visibility: "External"
-   order_id: mutable string
+   order_id: mutable string = ""
       description: "Current order being discussed"
-      default: ""
-   issue_resolved: mutable boolean
+   issue_resolved: mutable boolean = False
       description: "Whether the issue has been resolved"
-      default: False
 
 language:
    default_locale: "en_US"

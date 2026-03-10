@@ -42,38 +42,28 @@ variables:
       visibility: "External"
 
    # Buyer preferences
-   preferred_state: mutable string
+   preferred_state: mutable string = ""
       description: "Buyer's preferred state"
-      default: ""
-   preferred_city: mutable string
+   preferred_city: mutable string = ""
       description: "Buyer's preferred city"
-      default: ""
-   min_price: mutable number
+   min_price: mutable number = 0
       description: "Minimum budget"
-      default: 0
-   max_price: mutable number
+   max_price: mutable number = 0
       description: "Maximum budget"
-      default: 0
-   bedrooms_needed: mutable number
+   bedrooms_needed: mutable number = 3
       description: "Number of bedrooms needed"
-      default: 3
-   home_type: mutable string
+   home_type: mutable string = ""
       description: "Single-family, townhome, or condo"
-      default: ""
 
    # Search results
-   search_results_count: mutable number
+   search_results_count: mutable number = 0
       description: "Number of homes found"
-      default: 0
-   selected_community: mutable string
+   selected_community: mutable string = ""
       description: "Community selected for tour"
-      default: ""
-   tour_scheduled: mutable boolean
+   tour_scheduled: mutable boolean = False
       description: "Whether a tour has been scheduled"
-      default: False
-   confirmation_number: mutable string
+   confirmation_number: mutable string = ""
       description: "Tour confirmation number"
-      default: ""
 
 language:
    default_locale: "en_US"
@@ -96,42 +86,30 @@ topic qualification:
          description: "Capture buyer's location and budget preferences"
          target: "flow://Capture_Buyer_Preferences"
          inputs:
-            state:
-               type: string
+            state: string
                description: "State the buyer wants to live in"
-            city:
-               type: string
+            city: string
                description: "City the buyer prefers"
-            min_budget:
-               type: number
+            min_budget: number
                description: "Minimum budget"
-            max_budget:
-               type: number
+            max_budget: number
                description: "Maximum budget"
-            bedrooms:
-               type: number
+            bedrooms: number
                description: "Number of bedrooms needed"
-            home_type_pref:
-               type: string
+            home_type_pref: string
                description: "Home type preference"
          outputs:
-            state:
-               type: string
+            state: string
                description: "Confirmed state"
-            city:
-               type: string
+            city: string
                description: "Confirmed city"
-            min_budget:
-               type: number
+            min_budget: number
                description: "Confirmed min budget"
-            max_budget:
-               type: number
+            max_budget: number
                description: "Confirmed max budget"
-            bedrooms:
-               type: number
+            bedrooms: number
                description: "Confirmed bedrooms"
-            home_type_result:
-               type: string
+            home_type_result: string
                description: "Confirmed home type"
 
    reasoning:
@@ -183,36 +161,26 @@ topic home_search:
          description: "Search available Lennar homes"
          target: "flow://Search_Lennar_Inventory"
          inputs:
-            state:
-               type: string
+            state: string
                description: "State to search in"
-               is_required: True
-            city:
-               type: string
+            city: string
                description: "City to search in"
-            min_price:
-               type: number
+            min_price: number
                description: "Minimum price"
-            max_price:
-               type: number
+            max_price: number
                description: "Maximum price"
-            bedrooms:
-               type: number
+            bedrooms: number
                description: "Number of bedrooms"
-            home_type_filter:
-               type: string
+            home_type_filter: string
                description: "Type of home"
          outputs:
-            homes_found:
-               type: number
+            homes_found: number
                description: "Number of homes found"
                is_displayable: True
-            communities:
-               type: string
+            communities: string
                description: "Matching communities"
                is_displayable: True
-            price_ranges:
-               type: string
+            price_ranges: string
                description: "Price ranges in results"
                is_displayable: True
 
@@ -269,32 +237,22 @@ topic tour_scheduling:
          description: "Schedule a tour at a Lennar community"
          target: "flow://Schedule_Community_Tour"
          inputs:
-            community_name:
-               type: string
+            community_name: string
                description: "Name of the community"
-               is_required: True
-            preferred_date:
-               type: date
+            preferred_date: date
                description: "Preferred tour date"
-               is_required: True
-            preferred_time:
-               type: string
+            preferred_time: string
                description: "Preferred tour time"
-            contact_phone:
-               type: string
+            contact_phone: string
                description: "Contact phone number"
-               is_required: True
-            contact_email:
-               type: string
+            contact_email: string
                description: "Contact email"
          outputs:
-            confirmation_number:
-               type: string
+            confirmation_number: string
                description: "Tour confirmation number"
                is_displayable: True
                is_used_by_planner: True
-            scheduled_datetime:
-               type: datetime
+            scheduled_datetime: datetime
                description: "Scheduled tour date and time"
                is_displayable: True
 
@@ -338,25 +296,19 @@ topic community_information:
          description: "Get detailed community information"
          target: "flow://Get_Community_Details"
          inputs:
-            community_name:
-               type: string
+            community_name: string
                description: "Name of the community"
-               is_required: True
          outputs:
-            amenities:
-               type: string
+            amenities: string
                description: "Community amenities"
                is_displayable: True
-            schools:
-               type: string
+            schools: string
                description: "Nearby schools"
                is_displayable: True
-            hoa_fees:
-               type: string
+            hoa_fees: string
                description: "HOA fees"
                is_displayable: True
-            available_models:
-               type: number
+            available_models: number
                description: "Number of available models"
                is_displayable: True
 

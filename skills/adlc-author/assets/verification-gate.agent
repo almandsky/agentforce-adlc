@@ -42,26 +42,20 @@ variables:
       visibility: "External"
 
    # Identity verification state
-   customer_verified: mutable boolean
+   customer_verified: mutable boolean = False
       description: "Has customer passed identity verification"
-      default: False
-   failed_attempts: mutable number
+   failed_attempts: mutable number = 0
       description: "Number of failed verification attempts"
-      default: 0
-   customer_email: mutable string
+   customer_email: mutable string = ""
       description: "Customer email for verification"
-      default: ""
 
    # Operation state
-   refund_status: mutable string
+   refund_status: mutable string = ""
       description: "Status of refund operation"
-      default: ""
-   refund_amount: mutable number
+   refund_amount: mutable number = 0
       description: "Refund amount to process"
-      default: 0
-   churn_risk_score: mutable number
+   churn_risk_score: mutable number = 0
       description: "Customer churn risk from Data Cloud"
-      default: 0
 
 language:
    default_locale: "en_US"

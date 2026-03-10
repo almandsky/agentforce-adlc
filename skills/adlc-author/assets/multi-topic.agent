@@ -32,9 +32,8 @@ variables:
 		source: @MessagingEndUser.ContactId
 		description: "Contact ID"
 		visibility: "External"
-	user_intent: mutable string
+	user_intent: mutable string = ""
 		description: "What the user is trying to accomplish"
-		default: ""
 
 language:
 	default_locale: "en_US"

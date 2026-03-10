@@ -12,6 +12,8 @@ Checks:
 8. Reserved field names used as variable names
 9. @inputs in set clauses (must use @outputs)
 10. bundle-meta.xml extra fields that break publish
+11. `default:` sub-property on variables (must use inline `= value`)
+12. `type:` sub-property on action I/O fields (must use inline type)
 
 Also auto-resolves REPLACE_WITH_EINSTEIN_AGENT_USER placeholder by querying the org.
 """
@@ -64,6 +66,8 @@ class AgentScriptValidator:
         self._check_reserved_field_names()
         self._check_inputs_in_set()
         self._check_bundle_meta_xml()
+        self._check_default_subproperty()
+        self._check_type_subproperty()
         self._auto_resolve_placeholder()
 
         return {
@@ -253,6 +257,55 @@ class AgentScriptValidator:
         if "<bundleType>" not in meta_content:
             self.errors.append((0, "ERROR",
                 "bundle-meta.xml missing <bundleType>AGENT</bundleType> — required for publish"))
+
+    def _check_default_subproperty(self):
+        """Check for `default:` used as a sub-property of mutable variables.
+
+        The compiler rejects `default:` as a standalone sub-property.
+        Correct syntax: `varName: mutable string = ""`  (inline default)
+        Wrong syntax:   `varName: mutable string` + `default: ""`  (sub-property)
+        """
+        in_variables = False
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("variables:"):
+                in_variables = True
+                continue
+            # Exit variables block when we hit a non-indented, non-empty line
+            if in_variables and stripped and not line.startswith(("\t", " ")):
+                in_variables = False
+
+            if in_variables and re.match(r'default:\s', stripped):
+                self.errors.append((i, "ERROR",
+                    f"'default:' sub-property is invalid — use inline default "
+                    f"(e.g., `varName: mutable string = \"\"`) (line {i})"))
+
+    def _check_type_subproperty(self):
+        """Check for `type:` used as a sub-property in action input/output blocks.
+
+        The compiler rejects nested `type: string` under I/O field names.
+        Correct syntax: `fieldName: string`  (inline type)
+        Wrong syntax:   `fieldName:` + `type: string`  (sub-property)
+        """
+        in_inputs_outputs = False
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if stripped in ("inputs:", "outputs:"):
+                in_inputs_outputs = True
+                continue
+            # Exit I/O block when indent level drops back
+            if in_inputs_outputs and stripped and not line.startswith(("\t\t\t", "         ")):
+                # If we're at a higher-level block, exit
+                if not stripped.startswith(("#", "//")) and ":" in stripped:
+                    # Check if this is still inside actions (3+ tab indent)
+                    tab_count = len(line) - len(line.lstrip("\t"))
+                    if tab_count < 3:
+                        in_inputs_outputs = False
+
+            if in_inputs_outputs and re.match(r'type:\s', stripped):
+                self.errors.append((i, "ERROR",
+                    f"'type:' sub-property in action I/O is invalid — use inline type "
+                    f"(e.g., `fieldName: string`) (line {i})"))
 
     def _auto_resolve_placeholder(self):
         """Auto-resolve REPLACE_WITH_EINSTEIN_AGENT_USER placeholder."""

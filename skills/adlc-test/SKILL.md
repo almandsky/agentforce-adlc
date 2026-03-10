@@ -216,10 +216,10 @@ Testing Center is Salesforce's built-in test infrastructure for Agentforce agent
 
 ### Phase 1: Create Test Spec YAML
 
-The Testing Center uses a specific YAML format. Create a spec file:
+The Testing Center uses a specific YAML format. Create a temporary spec file:
 
 ```yaml
-# tests/<AgentApiName>-testing-center.yaml
+# /tmp/<AgentApiName>-test-spec.yaml
 name: "LennarAgent Smoke Tests"
 subjectType: AGENT
 subjectName: LennarAgent          # BotDefinition DeveloperName (API name)
@@ -293,15 +293,20 @@ testCases:
 
 ### Phase 2: Deploy and Run Tests
 
+`sf agent test create` takes the YAML spec, converts it to `AiEvaluationDefinition` metadata XML, and deploys it to the org. The XML is written to `force-app/main/default/aiEvaluationDefinitions/` as part of the SFDX project.
+
 ```bash
 # Step 1: Check if Testing Center is available
 sf agent test list -o <org> --json
 
-# Step 2: Deploy the test suite
+# Step 2: Deploy the test suite (writes XML to force-app/ and deploys to org)
 sf agent test create \
-  --spec tests/<AgentApiName>-testing-center.yaml \
+  --spec /tmp/<AgentApiName>-test-spec.yaml \
   --api-name <TestSuiteName> \
   -o <org> --json
+
+# The deployed metadata is now at:
+# force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
 
 # Step 3: Run the tests (wait for results)
 sf agent test run \
@@ -324,10 +329,17 @@ sf agent test results \
 
 ```bash
 sf agent test create \
-  --spec tests/<AgentApiName>-testing-center.yaml \
+  --spec /tmp/<AgentApiName>-test-spec.yaml \
   --api-name <TestSuiteName> \
   --force-overwrite \
   -o <org> --json
+```
+
+**Retrieving existing test definitions from the org:**
+
+```bash
+sf project retrieve start --metadata "AiEvaluationDefinition:<TestSuiteName>" -o <org>
+# Retrieved to: force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
 ```
 
 ### Phase 3: Analyze Results

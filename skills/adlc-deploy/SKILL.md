@@ -289,6 +289,21 @@ if __name__ == '__main__':
     main()
 ```
 
+## Deploy vs Publish: What Each Propagates
+
+| What changes | `sf project deploy start` | `sf agent publish authoring-bundle` |
+|---|---|---|
+| Bundle metadata (`.agent` file stored) | Yes | Yes |
+| `system: instructions:` | Yes (via activate) | Yes |
+| `topic: description:` (routing) | Yes (via activate) | Yes |
+| `topic: reasoning: instructions:` | Partial (may not propagate) | Yes |
+| `topic: reasoning: actions:` (transitions + invocations) | **NO** — topics show zero enabled tools | Yes |
+| Creates new active version | Requires separate `sf agent activate` | Automatic |
+
+**Key takeaway:** Always prefer `sf agent publish authoring-bundle`. Use deploy + activate only as a fallback for non-action changes. If you change `reasoning: actions:` in any topic, publish is required.
+
+---
+
 ## Error Recovery
 
 ### Common Issues and Fixes
@@ -298,7 +313,7 @@ if __name__ == '__main__':
 | `Required fields missing: [BundleType]` | Extra fields in bundle-meta.xml (`<developerName>`, `<masterLabel>`, `<description>`, `<target>`) | Use minimal bundle-meta.xml with ONLY `<bundleType>AGENT</bundleType>`. The publish command manages other fields automatically. |
 | `Not available for deploy for this API version` | Using `sf project deploy start` on AiAuthoringBundle | Use `sf agent publish authoring-bundle`, not `sf project deploy` for agent bundles |
 | `Internal Error, try again later` | Invalid default_agent_user | Query Einstein Agent Users and fix .agent file |
-| `Duplicate value found: GenAiPluginDefinition` | Previous failed publish left orphan | Deactivate and delete draft version |
+| `Duplicate value found: GenAiPluginDefinition` | `start_agent` and a `topic` share the same name (both create `GenAiPluginDefinition` records), or orphaned records from prior failed publishes | Rename `start_agent` or the colliding topic so they have different names, then re-publish. Orphaned records cannot be deleted (dependency errors). See known-issues.md Issue 13. |
 | `No .agent file found` | developer_name mismatch | Ensure folder name matches developer_name |
 | `Flow not found` | Metadata not deployed | Deploy flows before publishing agent |
 

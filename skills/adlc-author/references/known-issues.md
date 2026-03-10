@@ -191,16 +191,31 @@ Each issue follows this format:
 
 ### Issue 13: `duplicate value found: GenAiPluginDefinition` on Publish
 
-- **Status**: Open (intermittent)
-- **Symptom**: `sf agent publish authoring-bundle` fails with a duplicate value error mentioning `GenAiPluginDefinition`.
-- **Root Cause**: A previous failed publish left an orphaned draft record. The publish process tries to create a new record with the same name.
-- **Workaround**: Use `sf project deploy start` as a fallback to clean up the metadata, then retry publish:
+- **Status**: Root cause identified
+- **Symptom**: `sf agent publish authoring-bundle` fails with `duplicate value found: GenAiPluginDefinition duplicates value on record with id: <topic_name>_<planner_id>`.
+- **Root Cause**: Two known causes:
+  1. **`start_agent` and `topic` share the same name.** Both create `GenAiPluginDefinition` records. If `start_agent: entry` and `topic entry:` coexist, publish tries to create two records named `entry` and fails. Each failed attempt leaves an orphaned record, compounding the problem.
+  2. **Orphaned records from previous failed publishes.** Even after fixing the name collision, prior orphans still exist. They cannot be deleted (DML not allowed, REST returns dependency errors).
+- **Fix** (preventive): Give `start_agent` and all `topic` blocks unique names:
+  ```
+  # WRONG — causes duplicate GenAiPluginDefinition
+  start_agent: entry
+  topic entry:
+
+  # CORRECT — different names
+  start_agent router:
+  topic welcome:
+  ```
+- **Workaround** (if orphans already exist): Rename the colliding topic to a name that has no orphaned records:
   ```bash
-  sf project deploy start --metadata "AiAuthoringBundle:MyAgent" -o Org
-  # Wait for deploy to complete
+  # 1. Check how many orphans exist
+  sf data query --query "SELECT Id, DeveloperName FROM GenAiPluginDefinition WHERE MasterLabel = 'Entry'" -o Org --json
+  # 2. Rename the topic in the .agent file (e.g., entry -> welcome)
+  # 3. Re-publish with the new name
   sf agent publish authoring-bundle --api-name MyAgent -o Org --json
   ```
-- **Affects**: All agents (intermittent, more common after failed publishes)
+  Note: `sf project deploy start` does NOT clean up orphans. Only renaming avoids the collision.
+- **Affects**: All agents where `start_agent` name matches a `topic` name
 
 ### Issue 14: `@inputs` Not Valid in `set` Clauses
 

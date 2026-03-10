@@ -52,9 +52,23 @@ The source of truth for agent behavior. Cross-reference trace data against the s
 
 ---
 
-## 2. Six Span Types in Traces
+## Two Trace Formats
 
-Each trace step has a `type` field. The six types you'll encounter:
+There are two different trace formats depending on the data source:
+
+**STDM trace spans** (Data Cloud, used by `adlc-optimize` Phase 1):
+Step types: `TOPIC_STEP`, `LLM_STEP`, `ACTION_STEP`, `TRUST_GUARDRAILS_STEP`, `SESSION_END`, `SYSTEM_STEP`
+These are high-level spans from the runtime telemetry pipeline.
+
+**Local preview trace steps** (`--authoring-bundle`, used by `adlc-author`/`adlc-test`):
+Step types: `UserInputStep`, `NodeEntryStateStep`, `VariableUpdateStep`, `BeforeReasoningIterationStep`, `EnabledToolsStep`, `LLMStep`, `ReasoningStep`, `PlannerResponseStep`
+These are fine-grained steps with full LLM prompt, variable state, and grounding details.
+
+The STDM span types in Section 2 below correspond to the Data Cloud telemetry format. For local preview trace analysis, see Section 7.
+
+## 2. Six STDM Span Types
+
+Each STDM trace step has a `type` field. The six types you'll encounter:
 
 | Span Type | Color (UI) | What It Represents | Duration Includes |
 |---|---|---|---|
@@ -167,15 +181,29 @@ The action returned `0` instead of keeping `85`. Check:
 
 ### Variable Diff Recipe
 
-Use this `jq` recipe to diff pre/post variables across all action steps in a trace:
-
+**For STDM traces** (from Data Cloud / `adlc-optimize`):
 ```bash
+# STDM uses pre_vars/post_vars on ACTION_STEP spans
 jq -r '
-  .planTrace.steps[]
-  | select(.type == "ACTION_STEP")
-  | "Action: \(.name)\n  Pre:  \(.preVars)\n  Post: \(.postVars)\n"
+  .steps[]
+  | select(.step_type == "ACTION_STEP")
+  | "Action: \(.name)\n  Pre:  \(.pre_vars)\n  Post: \(.post_vars)\n"
 ' "$TRACE_FILE"
 ```
+
+**For local preview traces** (from `--authoring-bundle`):
+```bash
+# Local traces use VariableUpdateStep with detailed change reasons
+jq -r '
+  .plan[]
+  | select(.type == "VariableUpdateStep")
+  | .data.variable_updates[]
+  | "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"
+' "$TRACE_FILE"
+```
+
+**Internal variable: `AgentScriptInternal_agent_instructions`**
+Local preview traces show how the LLM prompt is assembled incrementally via `VariableUpdateStep` entries for `AgentScriptInternal_agent_instructions`. Each update appends one line from the `start_agent` or topic `reasoning: instructions:` block. This reveals exactly what instruction text the LLM receives — useful for debugging instruction assembly issues.
 
 ---
 
@@ -297,72 +325,82 @@ Run through this checklist for any agent issue:
 
 ## 7. Programmatic Trace Access
 
-### Local Trace Files (from `sf agent preview`)
+### Local Trace Files (from `sf agent preview --authoring-bundle`)
 
 ```bash
 # List all trace sessions for an agent
-ls -la ~/.sf/sfdx/agents/MyAgent/sessions/
+ls -la .sfdx/agents/MyAgent/sessions/
 
 # Read all traces for the most recent session
-for TRACE in ~/.sf/sfdx/agents/MyAgent/sessions/*/traces/*.json; do
+for TRACE in .sfdx/agents/MyAgent/sessions/*/traces/*.json; do
   echo "=== $(basename "$TRACE") ==="
   jq '.' "$TRACE"
 done
 ```
 
-### jq Recipes
+### jq Recipes (Local Preview Traces)
 
-**Extract all steps with type and name:**
+**Check topic routing:**
 ```bash
-jq -r '.planTrace.steps[] | "\(.type)\t\(.name)\t\(.durationMs // "?")ms"' "$TRACE"
+jq -r '.topic' "$TRACE"
+jq -r '.plan[] | select(.type == "NodeEntryStateStep") | .data.agent_name' "$TRACE"
 ```
 
-**Find action errors:**
+**Check action availability:**
 ```bash
-jq -r '.planTrace.steps[] | select(.type == "ACTION_STEP" and .error != null) | "ERROR in \(.name): \(.error)"' "$TRACE"
+jq -r '.plan[] | select(.type == "BeforeReasoningIterationStep") | .data.action_names[]' "$TRACE"
+jq -r '.plan[] | select(.type == "EnabledToolsStep") | .data.enabled_tools[]' "$TRACE"
 ```
 
 **Extract LLM prompt (what the model actually saw):**
 ```bash
-jq -r '.planTrace.steps[] | select(.type == "LLM_STEP") | .input' "$TRACE"
+jq -r '.plan[] | select(.type == "LLMStep") | .data.messages_sent[] | "\(.role): \(.content[:200])..."' "$TRACE"
 ```
 
-**Extract LLM response:**
+**Extract tools offered to LLM:**
 ```bash
-jq -r '.planTrace.steps[] | select(.type == "LLM_STEP") | .output' "$TRACE"
+jq -r '.plan[] | select(.type == "LLMStep") | .data.tools_sent[]' "$TRACE"
 ```
 
-**List available actions:**
+**Check execution latency:**
 ```bash
-jq -r '.planTrace.availableActions[]' "$TRACE"
+jq -r '.plan[] | select(.type == "LLMStep") | .data.execution_latency' "$TRACE"
+```
+
+**Check grounding assessment:**
+```bash
+jq -r '.plan[] | select(.type == "ReasoningStep") | {category: .category, reason: .reason}' "$TRACE"
+```
+
+**Check safety score:**
+```bash
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .safetyScore.safetyScore.safety_score' "$TRACE"
+```
+
+**Get response text:**
+```bash
+jq -r '.plan[] | select(.type == "PlannerResponseStep") | .message' "$TRACE"
 ```
 
 **Variable state timeline:**
 ```bash
 jq -r '
-  .planTrace.steps[]
-  | select(.preVars or .postVars)
-  | "\(.type) \(.name):\n  Pre:  \(.preVars // "none")\n  Post: \(.postVars // "none")"
+  .plan[]
+  | select(.type == "VariableUpdateStep")
+  | .data.variable_updates[]
+  | "\(.variable_name): \(.variable_past_value) -> \(.variable_new_value) (\(.variable_change_reason))"
 ' "$TRACE"
 ```
 
-**Check instruction adherence score:**
+**Count UNGROUNDED retries:**
 ```bash
-jq -r '
-  .planTrace.steps[]
-  | select(.type == "TRUST_GUARDRAILS_STEP")
-  | "Adherence: \(.output)"
-' "$TRACE"
+jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
+# 1 = normal, 2+ = UNGROUNDED retry happened
 ```
 
-**Duration breakdown (sorted by slowest):**
+**All step types in order:**
 ```bash
-jq -r '
-  [.planTrace.steps[] | {type: .type, name: .name, ms: (.durationMs // 0)}]
-  | sort_by(-.ms)
-  | .[]
-  | "\(.ms)ms\t\(.type)\t\(.name)"
-' "$TRACE"
+jq -r '.plan[] | .type' "$TRACE"
 ```
 
 ---

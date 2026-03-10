@@ -25,6 +25,8 @@ Given a description of an Agentforce agent, this skill:
 4. Creates the companion `bundle-meta.xml`
 5. Validates the output via CLI
 6. Presents a 100-point quality score
+7. Runs a live preview session with trace analysis to verify behavior
+8. Deploys (publish + activate) when the agent is confirmed working
 
 ### When to Use This Skill
 
@@ -34,9 +36,10 @@ Given a description of an Agentforce agent, this skill:
 
 ### When NOT to Use This Skill
 
-- Testing an existing agent (use adlc-run)
-- Deploying an agent to an org (use adlc-deploy)
+- Batch testing or regression suites for an existing agent (use adlc-test)
+- Deploying without authoring changes (use adlc-deploy)
 - Discovering org metadata for action targets (use adlc-discover)
+- Analyzing production session traces (use adlc-optimize)
 
 ---
 
@@ -151,6 +154,103 @@ If validation fails, read the error output, fix the `.agent` file, and re-valida
 ### Phase 5: Review
 
 Present the generated file with a 100-point score breakdown (see Section 6).
+
+### Phase 6: Preview & Test
+
+After validation passes, run a live preview session to verify the agent works end-to-end. Use `--authoring-bundle` to compile from the local `.agent` file and generate trace files for diagnosis.
+
+**Prerequisites:** The agent must be published at least once before preview will work:
+```bash
+sf agent publish authoring-bundle --api-name <AgentName> -o <org> --json
+```
+
+**Run the preview loop:**
+```bash
+# Start session (--authoring-bundle compiles local .agent file + generates traces)
+SESSION_ID=$(sf agent preview start \
+  --authoring-bundle <AgentName> \
+  --target-org <org> --json 2>/dev/null \
+  | jq -r '.result.sessionId')
+
+# Send a test utterance per topic
+for UTT in "utterance for topic 1" "utterance for topic 2" "off-topic test"; do
+  echo "--- Sending: $UTT ---"
+  RESPONSE=$(sf agent preview send \
+    --session-id "$SESSION_ID" \
+    --authoring-bundle <AgentName> \
+    --utterance "$UTT" \
+    --target-org <org> --json 2>/dev/null)
+
+  # Show response
+  echo "$RESPONSE" | jq -r '.result.messages[0].message'
+
+  # Capture planId for trace analysis
+  PLAN_ID=$(echo "$RESPONSE" | jq -r '.result.messages[-1].planId')
+  echo "Plan ID: $PLAN_ID"
+done
+
+# End session
+sf agent preview end \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <AgentName> \
+  --target-org <org> --json 2>/dev/null
+```
+
+**Trace file location:**
+```
+.sfdx/agents/<AgentName>/sessions/<sessionId>/
+  metadata.json          # session metadata (agentId, startTime, mockMode)
+  transcript.jsonl       # full conversation (role, text, raw messages per turn)
+  traces/<planId>.json   # execution trace per turn (topic routing, actions, LLM prompts)
+```
+
+**Inspect traces for issues:**
+```bash
+TRACE=".sfdx/agents/<AgentName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
+
+# Which topic handled the turn?
+jq -r '.topic' "$TRACE"
+
+# Which actions were available?
+jq -r '.plan[] | select(.type == "BeforeReasoningIterationStep") | .data.action_names[]' "$TRACE"
+
+# Was the response grounded?
+jq -r '.plan[] | select(.type == "ReasoningStep") | {category, reason}' "$TRACE"
+
+# What prompt did the LLM receive?
+jq -r '.plan[] | select(.type == "LLMStep") | .data.messages_sent[0].content' "$TRACE" | head -50
+```
+
+**Fix loop (max 3 iterations):**
+
+If trace analysis reveals issues (wrong topic, missing action, ungrounded response):
+1. Edit the `.agent` file to fix the issue (expand topic description, relax action guards, add instruction detail)
+2. Re-run preview — `--authoring-bundle` picks up local changes immediately, no re-publish needed
+3. Check traces again to confirm the fix
+
+| Trace symptom | Likely cause | Fix |
+|---------------|-------------|-----|
+| Wrong topic in `.topic` | Topic description too vague | Add keywords from the utterance |
+| Action missing from enabled tools | `available when` guard too restrictive | Relax or remove the guard |
+| `"category": "UNGROUNDED"` | Instructions lack data references | Add `{!@variables.x}` references |
+| `topic: "DefaultTopic"` | No topic matched | Add keywords to topic descriptions |
+| Only `__state_update_action__` in action list | Topic has no actions | Add `reasoning: actions:` block |
+
+### Phase 7: Deploy
+
+Once preview confirms the agent works correctly:
+
+```bash
+# Publish (compiles .agent into org metadata)
+sf agent publish authoring-bundle --api-name <AgentName> -o <org> --json
+
+# Activate (makes agent available to end users)
+sf agent activate --api-name <AgentName> -o <org>
+```
+
+Tell the user: "Agent published and activated. You can now test it in the Agent Builder UI or via the messaging channel."
+
+If the user doesn't want to deploy yet, skip this phase and remind them to run `/adlc-deploy` when ready.
 
 ---
 

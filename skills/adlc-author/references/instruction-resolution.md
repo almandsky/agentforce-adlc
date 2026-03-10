@@ -473,7 +473,7 @@ To verify how instructions were resolved at runtime, use the trace files generat
 ### Trace File Location
 
 ```
-~/.sf/sfdx/agents/{agent}/sessions/{sid}/traces/{planId}.json
+.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json
 ```
 
 ### Reading Instruction Resolution from Traces

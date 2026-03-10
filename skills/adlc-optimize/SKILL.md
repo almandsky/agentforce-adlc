@@ -742,15 +742,6 @@ Root cause: Agent Configuration Gap -- <topic_name>
 
 Use `sf agent preview` to simulate conversations in an isolated session (no production data affected).
 
-### Preview mode selection
-
-| Flag | Compiles from | Local traces? | Use when |
-|------|---------------|---------------|----------|
-| `--authoring-bundle <BundleName>` | Local `.agent` file | YES | Development iteration (recommended) |
-| `--api-name <name>` | Last published version | NO | Testing activated agent |
-
-When using `--authoring-bundle`, the same flag must appear on all three subcommands (`start`, `send`, `end`). Local traces are written to `.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json`.
-
 ### 2.1 Build test scenarios from Phase 1 findings
 
 Before opening a preview session, define one test scenario per confirmed issue:
@@ -766,19 +757,30 @@ Before opening a preview session, define one test scenario per confirmed issue:
 
 ### 2.2 Run a preview session
 
+Use `--authoring-bundle` to compile from the local `.agent` file and generate local trace files:
+
+| Flag | Compiles from | Local traces? | Use when |
+|------|---------------|---------------|----------|
+| `--authoring-bundle <BundleName>` | Local `.agent` file | YES | Development iteration (recommended) |
+| `--api-name <name>` | Last published version | NO | Testing activated agent |
+
+> **Note:** `--authoring-bundle` must appear on all three subcommands (`start`, `send`, `end`).
+
 ```bash
-# Start a preview session
-sf agent preview start --api-name <AgentApiName> -o <org> --json | tee /tmp/preview_start.json
+# Start a preview session (--authoring-bundle enables local traces)
+sf agent preview start \
+  --authoring-bundle <AgentApiName> \
+  -o <org> --json | tee /tmp/preview_start.json
 
 # Extract the session ID
 SESSION_ID=$(python3 -c "import json,sys; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
 echo "Session ID: $SESSION_ID"
 
-# Send the test utterance (flag is --utterance, not --message; --api-name is required)
+# Send the test utterance (flag is --utterance, not --message)
 sf agent preview send \
   --session-id "$SESSION_ID" \
   --utterance "your test utterance here" \
-  --api-name <AgentApiName> \
+  --authoring-bundle <AgentApiName> \
   -o <org> --json | tee /tmp/preview_response.json
 
 # Extract the agent's response text
@@ -801,43 +803,21 @@ else:
     print(json.dumps(result, indent=2))  # fallback: print full result
 "
 
-# End the session when done (--api-name is required)
-sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
+# End the session when done (--authoring-bundle required on end too)
+sf agent preview end \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <AgentApiName> \
+  -o <org> --json
+```
+
+**Trace file location:**
+```
+.sfdx/agents/{AgentApiName}/sessions/{sessionId}/traces/{planId}.json
 ```
 
 For multi-turn scenarios (e.g. handoff routing), repeat the `send` step for each follow-up utterance before ending the session.
 
-### 2.2b Preview with `--authoring-bundle` (with local traces)
-
-For deeper diagnosis, use `--authoring-bundle` to get full local trace files with LLM prompt, variable state, and grounding details:
-
-```bash
-# Start with authoring bundle (enables local traces)
-sf agent preview start \
-  --authoring-bundle <BundleName> \
-  -o <org> --json | tee /tmp/preview_start.json
-
-SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
-
-# Send test utterance
-sf agent preview send \
-  --session-id "$SESSION_ID" \
-  --authoring-bundle <BundleName> \
-  --utterance "your test utterance here" \
-  -o <org> --json | tee /tmp/preview_response.json
-
-# Extract planId and read the trace
-PLAN_ID=$(python3 -c "import json; d=json.load(open('/tmp/preview_response.json')); print(d['result']['messages'][-1]['planId'])")
-TRACE=".sfdx/agents/<BundleName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
-
-# End session (--authoring-bundle required on end too)
-sf agent preview end \
-  --session-id "$SESSION_ID" \
-  --authoring-bundle <BundleName> \
-  -o <org> --json
-```
-
-### 2.2c Local trace diagnosis
+### 2.2b Local trace diagnosis
 
 For each Phase 1 issue type, diagnose from the local trace:
 
@@ -1128,17 +1108,22 @@ sf agent activate --api-name <AGENT_API_NAME> -o <org>
 Always verify by running a quick preview test (not by querying BPO objects):
 
 ```bash
-# Quick smoke test to verify the deploy took effect
-sf agent preview start --api-name <AgentApiName> -o <org> --json | tee /tmp/deploy_verify_start.json
+# Quick smoke test to verify the deploy took effect (--authoring-bundle generates traces for verification)
+sf agent preview start \
+  --authoring-bundle <AgentApiName> \
+  -o <org> --json | tee /tmp/deploy_verify_start.json
 SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/deploy_verify_start.json'))['result']['sessionId'])")
 
 sf agent preview send \
   --session-id "$SESSION_ID" \
   --utterance "<utterance that exercises the changed topic>" \
-  --api-name <AgentApiName> \
+  --authoring-bundle <AgentApiName> \
   -o <org> --json | tee /tmp/deploy_verify_response.json
 
-sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
+sf agent preview end \
+  --session-id "$SESSION_ID" \
+  --authoring-bundle <AgentApiName> \
+  -o <org> --json
 ```
 
 If the agent still exhibits old behavior after deploy + activate, the publish did not fully propagate -- try `sf agent publish authoring-bundle` again, or re-run deploy + activate.

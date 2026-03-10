@@ -2,7 +2,7 @@
 name: adlc-test
 description: Smoke test Agentforce agents using sf agent preview and batch testing
 allowed-tools: Bash Read Write Edit Glob Grep
-argument-hint: "<org-alias> --api-name <AgentName> [--utterances <file>]"
+argument-hint: "<org-alias> --authoring-bundle <AgentName> [--utterances <file>]"
 ---
 
 # ADLC Test
@@ -20,10 +20,10 @@ There is no standalone Python script.
 
 **Quick smoke test (Mode A):**
 ```bash
-# Start preview, send utterance, end session
-sf agent preview start --api-name MyAgent -o <org-alias> --json
-sf agent preview send --session-id <ID> --utterance "test" --api-name MyAgent -o <org-alias> --json
-sf agent preview end --session-id <ID> --api-name MyAgent -o <org-alias> --json
+# Start preview, send utterance, end session (--authoring-bundle generates local traces)
+sf agent preview start --authoring-bundle MyAgent -o <org-alias> --json
+sf agent preview send --session-id <ID> --utterance "test" --authoring-bundle MyAgent -o <org-alias> --json
+sf agent preview end --session-id <ID> --authoring-bundle MyAgent -o <org-alias> --json
 ```
 
 **Batch testing (Mode B):**
@@ -739,8 +739,8 @@ Enable detailed logging for preview sessions:
 # Enable SF CLI debug output
 export SF_LOG_LEVEL=debug
 
-# Run preview with verbose output
-sf agent preview start --api-name MyAgent -o myorg --json 2>&1 | tee /tmp/preview_debug.json
+# Run preview with verbose output (--authoring-bundle for local traces)
+sf agent preview start --authoring-bundle MyAgent -o myorg --json 2>&1 | tee /tmp/preview_debug.json
 ```
 
 ## Best Practices

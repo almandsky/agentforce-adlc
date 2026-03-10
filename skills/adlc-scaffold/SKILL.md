@@ -13,17 +13,26 @@ Generate stub metadata files (Flow XML, Apex classes) for Agent Script targets t
 
 This skill automatically generates Salesforce metadata stubs for missing action targets referenced in `.agent` files. It creates properly structured Flow XML files and Apex InvocableMethod classes based on the input/output schemas defined in your Agent Script, with intelligent field mapping when connected to an org.
 
+## Script Path
+
+The scripts live inside the installed repo copy. Resolve the path based on which IDE config directory exists:
+
+```bash
+# Auto-detect: prefer ~/.claude, fall back to ~/.cursor
+ADLC_SCRIPTS="$([ -d ~/.claude/adlc ] && echo ~/.claude/adlc/scripts || echo ~/.cursor/adlc/scripts)"
+```
+
 ## Usage
 
 The script auto-configures `sys.path`, so it can be run from any directory:
 
 ```bash
 # Scaffold missing targets (runs discover first)
-python3 ~/.claude/adlc/scripts/scaffold.py \
+python3 "$ADLC_SCRIPTS/scaffold.py" \
   --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
 
 # Scaffold all targets without checking org (use --all flag)
-python3 ~/.claude/adlc/scripts/scaffold.py \
+python3 "$ADLC_SCRIPTS/scaffold.py" \
   --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
 
 # From the project root (also works)
@@ -354,7 +363,7 @@ Generated Apex classes need:
 
 ## Script Requirements
 
-Located at: `~/.claude/adlc/scripts/scaffold.py`
+Located at: `$ADLC_SCRIPTS/scaffold.py` (see Script Path section above)
 
 Dependencies:
 - `simple-salesforce` - Org connection and metadata queries

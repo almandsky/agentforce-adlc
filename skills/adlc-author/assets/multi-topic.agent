@@ -13,24 +13,27 @@ system:
 		error: "I'm sorry, I encountered an issue. Please try again."
 
 config:
-	agent_name: "{{AgentApiName}}"
-	default_agent_user: "{{AgentUser}}"
+	developer_name: "{{AgentApiName}}"
 	agent_label: "{{AgentLabel}}"
 	description: "{{AgentDescription}}"
+	default_agent_user: "{{AgentUser}}"
+	agent_type: "AgentforceServiceAgent"
 
 variables:
 	EndUserId: linked string
 		source: @MessagingSession.MessagingEndUserId
 		description: "Messaging End User ID"
+		visibility: "External"
 	RoutableId: linked string
 		source: @MessagingSession.Id
 		description: "Messaging Session ID"
+		visibility: "External"
 	ContactId: linked string
 		source: @MessagingEndUser.ContactId
 		description: "Contact ID"
-	user_intent: mutable string
+		visibility: "External"
+	user_intent: mutable string = ""
 		description: "What the user is trying to accomplish"
-		default: ""
 
 language:
 	default_locale: "en_US"

@@ -33,20 +33,59 @@ Determine intent from user input:
 - **"reproduce" / "test" / "preview"** -> Phase 2 (run Phase 1 first if no issues in hand)
 - **"fix" / "improve" / "update"** -> Phase 3 (run Phase 1 first if no issues in hand)
 
-### Locate the .agent file
+### Resolve agent name
 
-Before any Phase 3 work, locate the `.agent` file:
+Before any STDM query, resolve the user-provided agent name against the org to get the exact `MasterLabel` and `DeveloperName`:
 
 ```bash
-# Auto-detect .agent files in the project
+sf data query \
+  --query "SELECT Id, MasterLabel, DeveloperName FROM GenAiPlannerDefinition WHERE MasterLabel LIKE '%<user-provided-name>%' OR DeveloperName LIKE '%<user-provided-name>%'" \
+  -o <org> --json
+```
+
+- `MasterLabel` = display name used by STDM `findSessions` and Agent Builder UI (e.g. "Lennar Agent")
+- `DeveloperName` = API name with version suffix used in metadata (e.g. "LennarAgent_v9")
+- The `--api-name` flag for `sf agent preview/activate/publish` uses `DeveloperName` **without** the `_vN` suffix (e.g. "LennarAgent")
+
+Store these values:
+- `AGENT_MASTER_LABEL` -- for `findSessions()` agent filter
+- `AGENT_API_NAME` -- `DeveloperName` without `_vN` suffix, for `sf agent` CLI commands
+- `PLANNER_ID` -- the Salesforce record ID for this agent (needed by `findSessions` Planner fallback strategy)
+
+### Locate the .agent file
+
+**Step 1 -- Search locally:**
+
+```bash
 find <project-root>/force-app/main/default/aiAuthoringBundles -name "*.agent" 2>/dev/null
 ```
 
-If the user provided an agent file path, use that directly. Otherwise, search for files matching the agent API name:
+If the user provided an agent file path, use that directly. Otherwise, search for files matching `AGENT_API_NAME`.
+
+**Step 2 -- If not found locally, retrieve from the org:**
 
 ```bash
-ls force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent
+sf project retrieve start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org> --json
 ```
+
+> **Known bug:** `sf project retrieve start` creates a double-nested path: `force-app/main/default/main/default/aiAuthoringBundles/...`. Fix it immediately after retrieve:
+
+```bash
+if [ -d "force-app/main/default/main/default/aiAuthoringBundles" ]; then
+  mkdir -p force-app/main/default/aiAuthoringBundles
+  cp -r force-app/main/default/main/default/aiAuthoringBundles/* \
+    force-app/main/default/aiAuthoringBundles/
+  rm -rf force-app/main/default/main
+fi
+```
+
+**Step 3 -- Validate the retrieved file:**
+
+Read the `.agent` file and verify it has proper Agent Script structure:
+- `system:` block with `instructions:`
+- `config:` block with `developer_name:`
+- `start_agent` or `topic` blocks with `reasoning: instructions:`
+- Each topic should have distinct `instructions:` content (not identical across topics)
 
 Store the resolved path as `AGENT_FILE` for Phase 3.
 
@@ -185,7 +224,7 @@ String result = AgentforceOptimizeService.findSessions(
     'START_ISO',
     'END_ISO',
     20,
-    'AGENT_API_NAME'
+    'AGENT_MASTER_LABEL'
 );
 System.debug('STDM_RESULT:' + result);
 ```
@@ -361,6 +400,7 @@ Check each session for these patterns and classify by root cause category:
 | `end_type` is `null` on a short session (< 30s, 1-2 turns) | **Abandoned session** -- user may have hit a dead-end | `Agent Configuration Gap` or `Knowledge Gap` |
 | Specialized topic appears for exactly 1 turn then session returns to entry permanently | **Handoff topic with no post-collection routing** -- topic collects input but has no instruction for what to do after | `Agent Configuration Gap` -- topic instructions missing the "after this, transition to X" step |
 | A topic has zero sessions over the analysis window despite the agent being designed to handle those intents | **Dead topic** -- topic exists in `.agent` file but is never entered | `Agent Configuration Gap` -- entry topic handles the intent directly instead of routing |
+| Agent responds with generic behavior despite the `.agent` file having rich per-topic instructions | **Publish drift** -- bundle was deployed but never properly published/activated | `Platform / Runtime Issue` -- re-publish the `.agent` file (Phase 3.5) |
 
 **Root cause categories:**
 - `Knowledge Gap -- Infrastructure` -- no `DataKnowledgeSpace`, no sources indexed, or knowledge action not deployed
@@ -402,108 +442,115 @@ Priority: P1 = action errors, topic misroutes, LOW adherence; P2 = missing actio
 | Agent Configuration Gap | N | N | +N sessions fully resolved |
 | Knowledge Gap | N | N | +N sessions partially resolved |
 
-After presenting findings, **automatically proceed to Phase 1.5b** -- do not wait for the user to ask. The config evidence is needed to confirm root causes before any fix can be proposed. Ask about Phase 2/3 only after 1.5b is complete.
+After presenting findings, **automatically proceed to Phase 1.5b** -- do not wait for the user to ask. The `.agent` file analysis is needed to confirm root causes before any fix can be proposed. Ask about Phase 2/3 only after 1.5b is complete.
 
 ### 1.5b Agent Config Evidence
 
-Run these queries when issues are found in 1.4 to cross-reference STDM symptoms against the live agent configuration. This answers *why* the symptoms occur, not just *what* happened.
+Confirm root causes by analyzing the **retrieved `.agent` file** -- not by querying BPO metadata objects directly. The `.agent` file is the single source of truth.
 
-**Step 1 -- Agent identity and planner description:**
+> **Important:** Do NOT query `GenAiPluginDefinition`, `GenAiPluginInstructionDef`, or `GenAiFunction` directly. These are internal metadata objects managed by the Agent Script compiler. Always retrieve the `.agent` file from the org and analyze it. The only acceptable SOQL query is `GenAiPlannerDefinition` (for agent name resolution in the Routing step).
 
-```bash
-sf data query \
-  --query "SELECT Id, DeveloperName, Description FROM GenAiPlannerDefinition WHERE DeveloperName LIKE '%<AgentName>%'" \
-  -o <org> --json
-```
+**Step 1 -- Retrieve the latest `.agent` file from the org:**
 
-Note the `Id` (e.g. `16jWt000000REZxIAO`). Topics for this agent follow the naming convention `<topicName>_<15-char-planner-id>` in `DeveloperName`.
-
-**Step 2 -- Topics deployed for this agent:**
+If the `.agent` file was not already retrieved in the Routing step, retrieve it now:
 
 ```bash
-sf data query \
-  --query "SELECT Id, DeveloperName, MasterLabel, Description FROM GenAiPluginDefinition WHERE DeveloperName LIKE '%_<15-char-planner-id>'" \
-  -o <org> --json
+sf project retrieve start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org> --json
 ```
 
-> SOQL LIKE is not supported on ID fields (`INVALID_QUERY_FILTER_OPERATOR: invalid operator on id field`). Filter only on `DeveloperName` (a text field) using `LIKE`, never on `Id`. For exact ID lookups always use `=` or `IN`.
-
-**Step 3 -- Verbatim topic instructions:**
-
-The instruction field name varies by org API version -- describe the object first:
+Fix double-nesting if present:
 ```bash
-sf api request rest "/services/data/v66.0/sobjects/GenAiPluginInstructionDef/describe" -o <org> 2>/dev/null \
-  | python3 -c "import sys,json; [print(f['name'],'-',f['type']) for f in json.loads(sys.stdin.read()).get('fields',[])]"
+if [ -d "force-app/main/default/main/default/aiAuthoringBundles" ]; then
+  mkdir -p force-app/main/default/aiAuthoringBundles
+  cp -r force-app/main/default/main/default/aiAuthoringBundles/* \
+    force-app/main/default/aiAuthoringBundles/
+  rm -rf force-app/main/default/main
+fi
 ```
-Use `Instruction` if present; fall back to `Description` if not.
 
-```bash
-sf data query \
-  --query "SELECT Id, GenAiPluginDefinitionId, Description FROM GenAiPluginInstructionDef WHERE GenAiPluginDefinitionId IN ('<topic_id_1>', '<topic_id_2>')" \
-  -o <org> --json
-```
+**Step 2 -- Analyze the `.agent` file structure:**
+
+Read the `.agent` file and extract:
+
+1. **Agent-level system prompt** -- `system: instructions:` content
+2. **Per-topic descriptions** -- each `topic <name>: description:` value (controls routing)
+3. **Per-topic instructions** -- each `topic <name>: reasoning: instructions:` content (controls LLM behavior)
+4. **Action definitions** -- each `reasoning: actions:` block (what actions are available per topic)
+5. **Action bindings** -- `with` (input) and `set` (output) bindings on each action
+6. **Transitions** -- `@utils.transition to @topic.<name>` actions (how topics connect)
+
+**Step 3 -- Cross-reference STDM symptoms against `.agent` file:**
+
+| STDM symptom | What to check in `.agent` file | What to look for |
+|---|---|---|
+| Topic misroute | `topic <name>: description:` on affected topics | Description too broad -- overlaps with adjacent topic description |
+| Action not called | `reasoning: actions:` in the topic + `reasoning: instructions:` | Action not defined in topic's `actions:` block, or not mentioned in `instructions:` |
+| LOW instruction adherence | `reasoning: instructions:` in the topic | Instructions are vague, short, or conflict with other topics |
+| Topic stuck, no transition | `reasoning: actions:` | No `@utils.transition to @topic.<next>` action defined |
+| Wrong action input | `with <param> = @variables.<name>` | Wrong variable mapped, or variable not populated by prior step |
+| Variable not captured | `set @variables.<name> = @outputs.<field>` | Missing `set` binding on the action |
+| Knowledge miss | Look for `@actions.answer_*` or `retriever://` actions | Knowledge action not defined in any topic |
 
 **Critical check -- identical instructions across topics:**
 
-After querying Step 3, compare the instruction text across all topics. If 2 or more topics share the same `Description`/`Instruction` text word-for-word, this is a **critical `Agent Configuration Gap`** -- the topics have no differentiated guidance and the LLM is falling back to topic `Description` routing alone. Flag this prominently before presenting per-topic analysis:
+Compare the `reasoning: instructions:` content across all topics. If 2+ topics share the same instructions word-for-word, flag this as a critical issue:
 
 ```
-CRITICAL: All N topics share identical GenAiPluginInstructionDef text.
-    Specialized topics have no actionable instructions -- the agent cannot know
-    what to do differently in each topic.
+CRITICAL: N topics share identical reasoning instructions.
+    Each topic needs distinct, actionable instructions that tell the LLM
+    what to do specifically for that topic's responsibility.
     Root cause: Agent Configuration Gap (identical instructions across all topics)
 ```
 
-**Step 4 -- Knowledge infrastructure (only if any topic is expected to answer knowledge questions):**
+**Step 4 -- Publish drift detection:**
+
+Compare what the `.agent` file contains against what the agent actually does (from STDM):
+
+1. If the `.agent` file has rich per-topic instructions but STDM shows the agent giving generic responses, the bundle was likely deployed but never properly published/activated
+2. If the `.agent` file defines actions that are never invoked in STDM sessions, the actions may not have been compiled into live metadata
+
+If publish drift is detected:
+
+```
+PUBLISH DRIFT DETECTED: .agent file has topic-specific instructions and actions,
+    but the agent behaves as if using generic/default configuration.
+    Root cause: Platform / Runtime Issue -- bundle was never properly published,
+    or publish failed silently after deploy.
+    Fix: Re-publish the existing .agent file (no edits needed -- see Phase 3.5).
+```
+
+**Step 5 -- Knowledge infrastructure (only if knowledge gaps detected):**
 
 ```bash
 # Does a knowledge space exist?
 sf data query --query "SELECT Id, Name FROM DataKnowledgeSpace" -o <org> --json
-
-# Is the knowledge action deployed for this agent?
-sf data query \
-  --query "SELECT Id, DeveloperName FROM GenAiPluginDefinition WHERE DeveloperName LIKE 'AnswerQuestionsWithKnowledge%'" \
-  -o <org> --json
-
-# If a space exists, what sources are indexed?
-sf data query \
-  --query "SELECT Id, FileName, Status, LastModifiedDate FROM DataKnowledgeSrcFileRef WHERE DataKnowledgeSpaceId = '<space_id>'" \
-  -o <org> --json
 ```
 
-**Mapping STDM symptoms to config evidence:**
+Also check the `.agent` file for any action with `retriever://` target -- if none exists, knowledge infrastructure is not wired to the agent.
 
-| STDM symptom | Config to check | What to look for |
-|---|---|---|
-| Topic misroute | `GenAiPluginDefinition.Description` on affected topics | Description too broad -- overlaps with adjacent topic description |
-| Action not called | `GenAiPluginInstructionDef.Instruction` for the topic | Instruction doesn't mention the action, or wrong action name |
-| LOW instruction adherence | `GenAiPluginInstructionDef.Instruction` for the topic | Instructions are vague, short, or conflict with other topics |
-| Topic stuck, no transition | `GenAiPluginInstructionDef.Instruction` | No guidance on what to do after the main task completes |
-| Knowledge miss | `DataKnowledgeSpace` + `DataKnowledgeSrcFileRef` | Space missing = Infrastructure gap; space exists but no relevant sources = Content gap |
-
-**Present config evidence alongside STDM findings:**
+**Present findings alongside STDM evidence:**
 
 ```
-Agent: <AgentName> (<DeveloperName_v1>)
-  Description: "<verbatim GenAiPlannerDefinition.Description>"
+Agent: <AgentName> (from .agent file)
+  System prompt: "<first 200 chars of system: instructions:>"
 
-Topics configured:
-  <topic_DeveloperName>: "<verbatim GenAiPluginDefinition.Description>"
-  Instructions: "<verbatim GenAiPluginInstructionDef.Instruction>"
-  ...
+Topics in .agent file:
+  <topic_name>:
+    Description: "<topic description>"
+    Instructions: "<first 200 chars of reasoning instructions>"
+    Actions: <list of action names>
+    Transitions: <list of @utils.transition targets>
 
-Knowledge:
-  DataKnowledgeSpace: <name(s) if present, else "None configured">
-  AnswerQuestionsWithKnowledge action: <deployed / not deployed>
-  Indexed sources: <N> files
+STDM symptom → .agent file evidence:
+  <symptom> → <what the .agent file shows for this topic>
 ```
 
-**Confirmed root cause format** (when config evidence supports the STDM symptom):
+**Confirmed root cause format:**
 
 ```
 Root cause: Agent Configuration Gap -- <topic_name>
-  Current instruction (GenAiPluginInstructionDef <Id>):
-  > <verbatim Instruction field text>
+  Current instruction (from .agent file):
+  > <verbatim reasoning: instructions: content>
 
   Proposed fix (will be applied to .agent file):
   > <replacement instruction text>
@@ -565,8 +612,8 @@ else:
     print(json.dumps(result, indent=2))  # fallback: print full result
 "
 
-# End the session when done
-sf agent preview end --session-id "$SESSION_ID" -o <org> --json
+# End the session when done (--api-name is required)
+sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
 ```
 
 For multi-turn scenarios (e.g. handoff routing), repeat the `send` step for each follow-up utterance before ending the session.
@@ -649,7 +696,7 @@ topic entry_topic:
 - `reasoning.actions` with `@utils.transition` -> topic transitions
 - `reasoning.actions` with `@actions.*` -> action invocations with `with` (input) and `set` (output) bindings
 
-This mapping is exactly what Phase 1.5b queried -- the fix closes the gap between what was deployed and what should be there.
+This mapping is what Phase 1.5b verifies by reading the retrieved `.agent` file -- the fix closes the gap between what's in the file and what's deployed.
 
 ### 3.2 Map issue to fix location
 
@@ -660,19 +707,19 @@ This mapping is exactly what Phase 1.5b queried -- the fix closes the gap betwee
 | `Agent Configuration Gap` | Wrong action input / error | `reasoning: actions: <action>: with` | Correct `with` bindings or action `target:` URI. Target URI format: `flow://FlowApiName`, `apex://ClassName`, `retriever://RetrieverName` -- type prefix must be lowercase |
 | `Agent Configuration Gap` | Variable not captured | `reasoning: actions: <action>: set` | Add `set @variables.myVar = @outputs.field` binding |
 | `Agent Configuration Gap` | No post-action transition | `reasoning: actions:` | Add `@utils.transition to @topic.<next_topic>` action |
-| `Agent Configuration Gap` | LOW adherence / vague instructions | `topic <name>: reasoning: instructions:` | Rewrite using Phase 1.5b verbatim text as baseline -- see instruction principles below |
+| `Agent Configuration Gap` | LOW adherence / vague instructions | `topic <name>: reasoning: instructions:` | Rewrite using current `.agent` file instructions as baseline -- see instruction principles below |
 | `Agent Configuration Gap` | Identical instructions across topics | All `topic: reasoning: instructions:` blocks | Give each topic distinct, actionable instructions |
 | `Knowledge Gap -- Infrastructure` | Knowledge question answered generically | Add knowledge action definition to the relevant topic | Define action with `retriever://` target |
 | `Knowledge Gap -- Content` | Knowledge question -- wrong/missing answer | N/A (org data issue) | Add missing articles to knowledge space; verify `DataKnowledgeSrcFileRef` |
 | `Platform / Runtime Issue` | Action timeout / latency > 10s | Flow or Apex class (not .agent) | Optimize query/processing logic; add timeout handling |
 
-**When fixing topic instructions**, always quote the current live instruction verbatim (from Phase 1.5b) before proposing a replacement:
+**When fixing topic instructions**, always quote the current instruction from the `.agent` file before proposing a replacement:
 
 ```
-Current instruction (GenAiPluginInstructionDef <Id>):
-> <verbatim Instruction field value from 1.5b query>
+Current instruction (from .agent file, topic: <topic_name>):
+> <verbatim reasoning: instructions: content>
 
-Proposed replacement (to be written to .agent file):
+Proposed replacement:
 > <new instruction text>
 ```
 
@@ -779,13 +826,13 @@ After editing, show the before/after diff of the changed section so the user can
 cd <project-root> && git diff <AGENT_FILE>
 ```
 
-### 3.5 Validate and Publish
+### 3.5 Validate, Deploy, Publish, and Activate
 
-After editing the `.agent` file, validate and publish the authoring bundle:
+After editing the `.agent` file, use this deployment chain to push changes to the live agent. **Never update `GenAiPluginInstructionDef` or other agent metadata directly** -- always edit the `.agent` file and re-deploy. The `.agent` file is the single source of truth.
 
 ```bash
 # Step 1: Validate (dry run -- checks for syntax errors, no changes to org)
-sf agent validate authoring-bundle --api-name <AgentName> -o <org> --json
+sf agent validate authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
 ```
 
 If validation fails, read the error output carefully:
@@ -794,64 +841,45 @@ If validation fails, read the error output carefully:
 - **Duplicate names** -- two actions or topics share the same API name
 
 ```bash
-# Step 2: Publish (deploys metadata and activates the agent)
-sf agent publish authoring-bundle --api-name <AgentName> -o <org> --json
+# Step 2: Publish (compiles Agent Script, deploys metadata, and activates the agent)
+sf agent publish authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
 ```
 
 A successful publish returns a JSON result with `status: "Success"`. The agent is now live with the updated configuration.
 
-**If publish fails with `duplicate value found: GenAiPluginDefinition`:**
-
-This happens when a previous failed publish left an orphaned draft. Use `sf project deploy start` as a fallback:
+**If publish fails** (common with agents that have many versions or orphaned drafts), use the deploy + activate fallback:
 
 ```bash
-sf project deploy start --metadata "AiAuthoringBundle:<AgentName>" -o <org>
+# Step 3a: Deploy the bundle to the metadata store
+sf project deploy start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org>
+
+# Step 3b: Activate the agent (creates a new active version from the deployed bundle)
+sf agent activate --api-name <AGENT_API_NAME> -o <org>
 ```
 
-> **Important:** `sf project deploy start` deploys the bundle file to the org's metadata store but does **not** update live `GenAiPluginInstructionDef` records. The publish step is what propagates instruction changes to the LLM prompt. If deploy works but publish still fails, use Phase 3.5b below.
+> **Important:** `sf project deploy start` stores the bundle but does NOT always propagate instruction changes to live `GenAiPluginInstructionDef` records. The `sf agent activate` step is required to create an active version. If instructions still don't match after deploy + activate, try publish again -- the deploy may have resolved the underlying metadata conflict.
 
-### 3.5b Update instructions directly via Tooling API (bypass publish)
+**Verification after deploy:**
 
-When `sf agent publish authoring-bundle` and `sf project deploy start` both fail to update the live instruction records, use the Tooling API to PATCH `GenAiPluginInstructionDef` directly. This is the **only reliable fallback** -- Apex DML is blocked on this object (`DML operation Update not allowed on List<GenAiPluginInstructionDef>`).
+Always verify by running a quick preview test (not by querying BPO objects):
 
 ```bash
-# First, get the InstructionDef ID from Phase 1.5b Step 3 query results
-# (you already have this from the config evidence step)
+# Quick smoke test to verify the deploy took effect
+sf agent preview start --api-name <AgentApiName> -o <org> --json | tee /tmp/deploy_verify_start.json
+SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/deploy_verify_start.json'))['result']['sessionId'])")
 
-# Patch the Description field with the new instruction text
-sf api request rest \
-  "/services/data/v66.0/tooling/sobjects/GenAiPluginInstructionDef/<InstructionDefId>" \
-  --method PATCH \
-  --body '{"Description": "<new instruction text -- escape quotes with backslash>"}' \
-  -o <org>
+sf agent preview send \
+  --session-id "$SESSION_ID" \
+  --utterance "<utterance that exercises the changed topic>" \
+  --api-name <AgentApiName> \
+  -o <org> --json | tee /tmp/deploy_verify_response.json
+
+sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
 ```
 
-For multi-line instruction text, write the body to a temp file first:
+If the agent still exhibits old behavior after deploy + activate, the publish did not fully propagate -- try `sf agent publish authoring-bundle` again, or re-run deploy + activate.
 
-```bash
-# Write the body to a JSON file to avoid shell quoting issues
-cat > /tmp/patch_body.json <<'EOF'
-{
-  "Description": "Collect the customer's name and email using CollectCustomerInfo.\nDo not proceed until both fields are provided.\nAfter collection, route to schedule_test_drive."
-}
-EOF
-
-sf api request rest \
-  "/services/data/v66.0/tooling/sobjects/GenAiPluginInstructionDef/<InstructionDefId>" \
-  --method PATCH \
-  --body "$(cat /tmp/patch_body.json)" \
-  -o <org>
-```
-
-A successful PATCH returns HTTP 204 No Content (empty response body). Verify by re-querying:
-
-```bash
-sf data query \
-  --query "SELECT Id, Instruction FROM GenAiPluginInstructionDef WHERE Id = '<InstructionDefId>'" \
-  -o <org> --json
-```
-
-> **Note:** The Tooling API field name is `Description` (the external-facing name). The SOQL field name on the same object is `Instruction`. Both refer to the same underlying text that gets injected into the LLM prompt.
+**Never use the Tooling API to patch `GenAiPluginInstructionDef` or other BPO objects directly.** This creates drift between the `.agent` file (source of truth) and the live metadata. Always fix the `.agent` file and re-deploy.
 
 ### 3.6 Verify
 
@@ -868,7 +896,7 @@ sf agent preview send \
   --api-name <AgentApiName> \
   -o <org> --json | tee /tmp/verify_response.json
 
-sf agent preview end --session-id "$SESSION_ID" -o <org> --json
+sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <org> --json
 ```
 
 **At scale** -- after 24-48 hours of new live sessions, re-run Phase 1 over the new date range and compare against the pre-fix baseline:
@@ -882,6 +910,74 @@ sf agent preview end --session-id "$SESSION_ID" -o <org> --json
 | Avg session duration / turn count | Shorter = less confusion, faster resolution |
 
 If new issues surface in the post-fix Phase 1 run, repeat the cycle from Phase 1.4.
+
+### 3.7 Update Testing Center test cases (cross-skill with adlc-test)
+
+After fixing issues, create or update test cases in **Testing Center format** so they can be deployed directly to the org via `sf agent test create`. This ensures regressions are caught automatically.
+
+**Step 1 -- Derive test cases from confirmed issues:**
+
+For each `[CONFIRMED]` or `[INTERMITTENT]` issue from Phase 2, create a test case in Testing Center YAML format:
+
+```yaml
+# tests/<AgentApiName>-regression.yaml
+name: "<AgentApiName> Regression Tests"
+subjectType: AGENT
+subjectName: <AgentApiName>
+
+testCases:
+  - utterance: "<exact utterance from Phase 2 scenario>"
+    expectedTopic: <topic_that_should_handle_this>
+    expectedActions:
+      - <action_that_should_fire>
+
+  - utterance: "<another failing utterance>"
+    expectedTopic: <expected_topic>
+    expectedOutcome: "Agent should <expected behavior description>"
+```
+
+**Key format rules:**
+- `expectedActions` is a **flat string list**: `["action_a"]`, NOT objects
+- `subjectName` is the agent's `DeveloperName` (API name without `_vN` suffix)
+- `expectedOutcome` uses LLM-as-judge evaluation -- describe the desired behavior in natural language
+- If a test case only needs topic routing validation, omit `expectedActions`
+
+**Step 2 -- Write the test file:**
+
+```bash
+mkdir -p <project-root>/tests
+# Write tests/<AgentApiName>-regression.yaml
+```
+
+If a regression file already exists, append new test cases to the existing `testCases` array.
+
+**Step 3 -- Deploy and run tests via Testing Center:**
+
+```bash
+# Deploy the test suite to the org
+sf agent test create \
+  --spec tests/<AgentApiName>-regression.yaml \
+  --api-name <AgentApiName>_Regression \
+  --force-overwrite \
+  -o <org> --json
+
+# Run and wait for results
+sf agent test run \
+  --api-name <AgentApiName>_Regression \
+  --wait 10 \
+  --result-format json \
+  -o <org> --json | tee /tmp/regression_run.json
+
+# Get results (ALWAYS use --job-id, NOT --use-most-recent which is broken)
+JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/regression_run.json'))['result']['runId'])")
+sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json
+```
+
+Or invoke the adlc-test skill directly: `/adlc-test <org> --api-name <AgentApiName>`
+
+**Step 4 -- Verify all previously-broken scenarios now pass:**
+
+All test cases derived from Phase 2 `[CONFIRMED]` issues should pass after the Phase 3 fix. If any fail, return to Phase 3.4 and iterate.
 
 ---
 
@@ -977,19 +1073,18 @@ Always run Phase 0 first to discover the correct Data Space `name` for the org. 
 
 ---
 
-## Agent Config Objects Reference
+## Agent Name Resolution Reference
 
-These standard Salesforce objects are queried in Phase 1.5b to cross-reference STDM symptoms against the live agent configuration.
+The only Salesforce metadata object that should be queried directly is `GenAiPlannerDefinition` -- used exclusively for agent name resolution in the Routing step.
 
-| Object | Purpose | Key fields |
+| Object | Purpose | When to query |
 |---|---|---|
-| `GenAiPlannerDefinition` | The agent itself | `DeveloperName` (has `_v1` suffix), `Description` (agent-level system prompt) |
-| `GenAiPluginDefinition` | Topics and actions | `DeveloperName` (format: `<topicName>_<15-char-planner-id>`), `MasterLabel`, `Description` (topic routing description) |
-| `GenAiPluginInstructionDef` | Topic instructions (verbatim) | `GenAiPluginDefinitionId` (FK to topic), `Instruction` or `Description` (the actual instruction text -- field name varies by API version; describe the object to confirm) |
-| `DataKnowledgeSpace` | Knowledge base container | `Name` (`Status` field does not exist -- query with `SELECT Id, Name` only) |
-| `DataKnowledgeSrcFileRef` | Individual knowledge sources | `DataKnowledgeSpaceId`, `FileName`, `Status`, `LastModifiedDate` |
-| `KnowledgeArticle` | Salesforce Knowledge articles | `Title`, `ArticleNumber`, `PublishStatus` |
+| `GenAiPlannerDefinition` | The agent definition | Routing step only -- to resolve `MasterLabel`, `DeveloperName`, and `Id` |
+| `DataKnowledgeSpace` | Knowledge base container | Phase 1.5b Step 5 only -- if knowledge gaps are detected |
 
-**Topic `DeveloperName` convention:** Agent Builder appends the first 15 characters of the planner's Salesforce ID to each topic's name: `entry_16jWt000000REZx`. Use `WHERE DeveloperName LIKE '%_<15-char-id>'` to find all topics for a given planner.
+**Do NOT query these objects directly** -- use the `.agent` file instead:
+- `GenAiPluginDefinition` (topics) -- read from `.agent` file `topic:` blocks
+- `GenAiPluginInstructionDef` (instructions) -- read from `.agent` file `reasoning: instructions:` blocks
+- `GenAiFunction` (actions) -- read from `.agent` file `reasoning: actions:` blocks
 
-**`GenAiPluginInstructionDef` is the key object for fix targeting.** It holds the exact text that is injected into the LLM prompt as the topic's operating instructions. When STDM shows LOW adherence, action not called, or topic misroute, this is the first place to look. Always quote its `Instruction` field verbatim before proposing a replacement (see Phase 3.2).
+The `.agent` file is the single source of truth. All fixes should be applied to it and deployed via the Phase 3.5 deployment chain.

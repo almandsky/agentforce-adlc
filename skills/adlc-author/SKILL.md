@@ -78,14 +78,18 @@ force-app/main/default/aiAuthoringBundles/<AgentName>/
   <AgentName>.bundle-meta.xml
 ```
 
-Use the Write tool for both files. The bundle-meta.xml content is:
+Use the Write tool for both files. The bundle-meta.xml MUST be minimal — only `bundleType`:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <AiAuthoringBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <developerName>{{AgentName}}</developerName>
-    <masterLabel>{{AgentLabel}}</masterLabel>
+  <bundleType>AGENT</bundleType>
 </AiAuthoringBundle>
 ```
+
+CRITICAL: Do NOT add `<developerName>`, `<masterLabel>`, `<description>`, `<target>`, or any
+other fields. The publish command (`sf agent publish authoring-bundle`) manages these
+automatically. Extra fields cause "Required fields are missing: [BundleType]" deploy errors
+because the Metadata API deploy step fails when unexpected fields are present.
 
 ### Phase 4: Validate
 
@@ -152,15 +156,12 @@ Variables define agent state. Two modifiers exist:
 #### Mutable Variables (read-write state)
 ```
 variables:
-   order_id: mutable string
+   order_id: mutable string = ""
       description: "Current order being discussed"
-      default: ""
-   is_verified: mutable boolean
+   is_verified: mutable boolean = False
       description: "Whether customer has been verified"
-      default: False
-   attempt_count: mutable number
+   attempt_count: mutable number = 0
       description: "Number of verification attempts"
-      default: 0
 ```
 
 #### Linked Variables (read-only context)
@@ -169,13 +170,19 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
 ```
+
+NOTE: `visibility: "External"` is recommended on linked variables for service agents.
+It ensures the variable is accessible to the messaging channel.
 
 #### Variable Type Reference
 
@@ -190,8 +197,8 @@ variables:
 | `list[T]` | Yes | NO | `[]` |
 
 Rules:
-- Mutable variables MUST have a `default:` value
-- Linked variables MUST have a `source:` and CANNOT have a `default:`
+- Mutable variables MUST have an inline default value (e.g., `= ""`)
+- Linked variables MUST have a `source:` and CANNOT have an inline default
 - Linked variables CANNOT use `object` or `list` types
 - Service agents auto-add `EndUserId`, `RoutableId`, `ContactId` as linked variables
 - The `...` token is for slot-filling only (in `with param=...`), never as a default
@@ -277,17 +284,13 @@ topic order_support:
          description: "Look up order status by order ID"
          target: "flow://Get_Order_Status"
          inputs:
-            order_id:
-               type: string
+            order_id: string
                description: "The order ID to look up"
-               is_required: True
          outputs:
-            status:
-               type: string
+            status: string
                description: "Current order status"
                is_displayable: True
-            tracking_number:
-               type: string
+            tracking_number: string
                description: "Shipping tracking number"
 
    reasoning:
@@ -321,16 +324,12 @@ actions:
       description: "Create a support case"
       target: "flow://Create_Support_Case"
       inputs:
-         subject:
-            type: string
+         subject: string
             description: "Case subject"
-            is_required: True
-         desc_text:
-            type: string
+         desc_text: string
             description: "Case description"
       outputs:
-         case_id:
-            type: string
+         case_id: string
             description: "Created case ID"
             is_displayable: True
             is_used_by_planner: True
@@ -567,16 +566,12 @@ topic home_search:
          description: "Search available homes"
          target: "flow://Search_Inventory"
          inputs:
-            city:
-               type: string
+            city: string
                description: "City to search"
-               is_required: True
-            max_price:
-               type: number
+            max_price: number
                description: "Maximum price"
          outputs:
-            results_count:
-               type: number
+            results_count: number
                description: "Number of homes found"
                is_displayable: True
 
@@ -598,9 +593,8 @@ Action input and output definitions support these metadata properties:
 
 | Property | Applies To | Purpose |
 |----------|-----------|---------|
-| `type` | input, output | Data type (string, number, boolean, date, id, list, object, currency, datetime) |
+| (inline type) | input, output | Data type declared inline: `field_name: string`. Valid types: string, number, boolean, date, id, list, object, currency, datetime |
 | `description` | input, output | Human-readable description |
-| `is_required` | input | Whether the input must be provided (True/False) |
 | `is_displayable` | output | Whether to show the output to the user |
 | `is_used_by_planner` | output | Whether the planner uses this for routing decisions |
 | `is_user_input` | input | Whether the value comes from the end user |
@@ -630,6 +624,30 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | No comment-only if bodies | `if @variables.x:` with only `# comment` | Add executable statement: `\| text`, `run`, `set`, or `transition` |
 | `connection` not `connections` | `connections messaging:` | `connection messaging:` |
 | No `@inputs` in `set` clauses | `set @variables.x = @inputs.y` | Use `@outputs.y` or `@utils.setVariables` |
+| No `default:` sub-property on variables | `order_id: mutable string` + `default: ""` | `order_id: mutable string = ""` (inline default) |
+| No nested `type:` in action I/O | `order_id:` + `type: string` | `order_id: string` (inline type) |
+
+### Syntax Pitfalls (Compiler Errors)
+
+These patterns look reasonable but cause compiler errors. Use the correct forms:
+
+```
+❌ WRONG — `default:` as sub-property:
+   order_id: mutable string
+      default: ""
+
+✅ CORRECT — inline default:
+   order_id: mutable string = ""
+
+❌ WRONG — nested `type:` in action I/O:
+   inputs:
+      order_id:
+         type: string
+
+✅ CORRECT — inline type:
+   inputs:
+      order_id: string
+```
 
 ### Reserved Field Names
 
@@ -699,6 +717,7 @@ Common mistakes that cause deployment failures:
 | WRONG | CORRECT |
 |-------|---------|
 | `AgentName.aiAuthoringBundle-meta.xml` | `AgentName.bundle-meta.xml` |
+| bundle-meta.xml with `<developerName>`, `<masterLabel>`, or `<target>` | Minimal: only `<bundleType>AGENT</bundleType>` |
 | `sf project deploy start` for agents | `sf agent publish authoring-bundle --api-name X -o Org` |
 | `sf agent validate --source-dir` | `sf agent validate authoring-bundle --api-name X -o Org` |
 | Query Einstein Agent User from wrong org | Query the TARGET org specifically with `-o` flag |
@@ -871,12 +890,15 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
 
 language:
    default_locale: "en_US"
@@ -892,6 +914,14 @@ topic greeting:
       instructions: ->
          | Welcome the user warmly.
          | Ask how you can help them today.
+```
+
+Companion `bundle-meta.xml` (MUST be this exact content — no extra fields):
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<AiAuthoringBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+  <bundleType>AGENT</bundleType>
+</AiAuthoringBundle>
 ```
 
 ---
@@ -919,24 +949,23 @@ variables:
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
-   order_id: mutable string
+      visibility: "External"
+   order_id: mutable string = ""
       description: "Current order being discussed"
-      default: ""
-   order_status: mutable string
+   order_status: mutable string = ""
       description: "Status of the current order"
-      default: ""
-   is_verified: mutable boolean
+   is_verified: mutable boolean = False
       description: "Customer verification status"
-      default: False
-   case_id: mutable string
+   case_id: mutable string = ""
       description: "Created case ID"
-      default: ""
 
 language:
    default_locale: "en_US"
@@ -971,17 +1000,13 @@ topic order_support:
          description: "Look up order by ID"
          target: "flow://Get_Order_Status"
          inputs:
-            order_id:
-               type: string
+            order_id: string
                description: "Order ID"
-               is_required: True
          outputs:
-            status:
-               type: string
+            status: string
                description: "Order status"
                is_displayable: True
-            tracking_url:
-               type: string
+            tracking_url: string
                description: "Tracking URL"
                is_displayable: True
 
@@ -1011,16 +1036,12 @@ topic return_support:
          description: "Start a return process"
          target: "flow://Initiate_Return"
          inputs:
-            order_id:
-               type: string
+            order_id: string
                description: "Order ID for the return"
-               is_required: True
-            reason:
-               type: string
+            reason: string
                description: "Reason for return"
          outputs:
-            return_id:
-               type: string
+            return_id: string
                description: "Return authorization ID"
                is_displayable: True
 
@@ -1115,6 +1136,11 @@ For advanced cases beyond this skill's inline syntax, consult:
 | Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` |
 | Which properties work in which contexts | `references/feature-validity.md` |
 | Agent Script to Lightning type mapping | `references/complex-data-types.md` |
+| Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` |
+| Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` |
+| How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` |
+| Reading traces, diagnosing issues, jq recipes | `references/debugging-guide.md` |
+| Tracked platform issues and workarounds | `references/known-issues.md` |
 
 ---
 

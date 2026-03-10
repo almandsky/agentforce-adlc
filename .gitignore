@@ -33,3 +33,6 @@ package-lock.json
 
 # Claude
 .claude/
+
+# Salesforce DX
+force-app/

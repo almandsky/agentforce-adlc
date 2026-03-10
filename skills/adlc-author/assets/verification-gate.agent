@@ -20,35 +20,47 @@ system:
    instructions: "You are a secure customer service agent. Always verify identity before sensitive operations."
 
 config:
-   agent_name: "SecureAgent"
+   developer_name: "SecureAgent"
    agent_label: "Secure Customer Agent"
    description: "Agent with verification gate for sensitive operations"
    default_agent_user: "agent@yourorg.com"  # REQUIRED: Change to valid Einstein Agent User
+   agent_type: "AgentforceServiceAgent"
 
 variables:
-   # Identity verification state
-   customer_verified: mutable boolean
-      description: "Has customer passed identity verification"
-      default: False
-   failed_attempts: mutable number
-      description: "Number of failed verification attempts"
-      default: 0
+   # Service agent linked vars (required)
+   EndUserId: linked string
+      source: @MessagingSession.MessagingEndUserId
+      description: "Messaging End User ID"
+      visibility: "External"
+   RoutableId: linked string
+      source: @MessagingSession.Id
+      description: "Messaging Session ID"
+      visibility: "External"
+   ContactId: linked string
+      source: @MessagingEndUser.ContactId
+      description: "Contact ID"
+      visibility: "External"
 
-   # Session context (read-only from external source)
-   customer_id: linked string
-      source: @session.customerId
-      description: "Customer ID from session"
-   customer_email: linked string
-      source: @session.customerEmail
-      description: "Customer email from session"
+   # Identity verification state
+   customer_verified: mutable boolean = False
+      description: "Has customer passed identity verification"
+   failed_attempts: mutable number = 0
+      description: "Number of failed verification attempts"
+   customer_email: mutable string = ""
+      description: "Customer email for verification"
 
    # Operation state
-   refund_status: mutable string
+   refund_status: mutable string = ""
       description: "Status of refund operation"
-      default: ""
-   churn_risk_score: mutable number
+   refund_amount: mutable number = 0
+      description: "Refund amount to process"
+   churn_risk_score: mutable number = 0
       description: "Customer churn risk from Data Cloud"
-      default: 0
+
+language:
+   default_locale: "en_US"
+   additional_locales: ""
+   all_additional_locales: False
 
 # ============================================================
 # ENTRY POINT
@@ -149,7 +161,7 @@ topic refund_processor:
          if @variables.refund_status == "Approved":
             # Deterministic follow-up - LLM cannot skip!
             run @actions.create_crm_case
-               with customer_id = @variables.customer_id
+               with customer_id = @variables.ContactId
                with refund_amount = @variables.refund_amount
             transition to @topic.success_confirmation
 
@@ -157,7 +169,7 @@ topic refund_processor:
          # PRE-LLM: Load churn risk data
          # ====================================================
          run @actions.check_churn_risk
-            with customer_id = @variables.customer_id
+            with customer_id = @variables.ContactId
             set @variables.churn_risk_score = @outputs.score
 
          # ====================================================

@@ -4,9 +4,10 @@
 # A complex real-world agent for Lennar home buyers featuring:
 # - Multiple specialized topics for different buyer journey stages
 # - Actions with Flow targets for inventory search and scheduling
-# - Linked variables for session context
+# - Linked variables with visibility: "External" for service agents
 # - after_reasoning patterns for follow-up actions
-# - Complex conditional logic based on buyer preferences
+# - Proper two-level action system (Level 1 definitions + Level 2 invocations)
+# - available when guards for conditional action visibility
 
 system:
    instructions: |
@@ -19,53 +20,50 @@ system:
       error: "I apologize for the inconvenience. Let me try a different approach to help you."
 
 config:
-   agent_name: "LennarHomeSearchAgent"
+   developer_name: "LennarHomeSearchAgent"
    agent_label: "Lennar Home Search Assistant"
    description: "Helps prospective buyers find and tour Lennar homes matching their preferences"
    default_agent_user: "agent@lennar.com"  # REQUIRED: Change to valid Einstein Agent User
+   agent_type: "AgentforceServiceAgent"
 
 variables:
-   # Session context
+   # Service agent linked vars (required)
    EndUserId: linked string
       source: @MessagingSession.MessagingEndUserId
       description: "Messaging End User ID"
+      visibility: "External"
    RoutableId: linked string
       source: @MessagingSession.Id
       description: "Messaging Session ID"
+      visibility: "External"
    ContactId: linked string
       source: @MessagingEndUser.ContactId
       description: "Contact ID"
+      visibility: "External"
 
    # Buyer preferences
-   preferred_state: mutable string
+   preferred_state: mutable string = ""
       description: "Buyer's preferred state"
-      default: ""
-   preferred_city: mutable string
+   preferred_city: mutable string = ""
       description: "Buyer's preferred city"
-      default: ""
-   min_price: mutable number
+   min_price: mutable number = 0
       description: "Minimum budget"
-      default: 0
-   max_price: mutable number
+   max_price: mutable number = 0
       description: "Maximum budget"
-      default: 0
-   bedrooms_needed: mutable number
+   bedrooms_needed: mutable number = 3
       description: "Number of bedrooms needed"
-      default: 3
-   home_type: mutable string
+   home_type: mutable string = ""
       description: "Single-family, townhome, or condo"
-      default: ""
 
    # Search results
-   search_results_count: mutable number
+   search_results_count: mutable number = 0
       description: "Number of homes found"
-      default: 0
-   selected_community: mutable string
+   selected_community: mutable string = ""
       description: "Community selected for tour"
-      default: ""
-   tour_scheduled: mutable boolean
+   tour_scheduled: mutable boolean = False
       description: "Whether a tour has been scheduled"
-      default: False
+   confirmation_number: mutable string = ""
+      description: "Tour confirmation number"
 
 language:
    default_locale: "en_US"
@@ -82,6 +80,38 @@ topic qualification:
    label: "Buyer Qualification"
    description: "Gather buyer preferences and qualify their needs"
 
+   actions:
+      # Level 1: Action DEFINITION with target and I/O schema
+      capture_buyer_preferences:
+         description: "Capture buyer's location and budget preferences"
+         target: "flow://Capture_Buyer_Preferences"
+         inputs:
+            state: string
+               description: "State the buyer wants to live in"
+            city: string
+               description: "City the buyer prefers"
+            min_budget: number
+               description: "Minimum budget"
+            max_budget: number
+               description: "Maximum budget"
+            bedrooms: number
+               description: "Number of bedrooms needed"
+            home_type_pref: string
+               description: "Home type preference"
+         outputs:
+            state: string
+               description: "Confirmed state"
+            city: string
+               description: "Confirmed city"
+            min_budget: number
+               description: "Confirmed min budget"
+            max_budget: number
+               description: "Confirmed max budget"
+            bedrooms: number
+               description: "Confirmed bedrooms"
+            home_type_result: string
+               description: "Confirmed home type"
+
    reasoning:
       instructions: ->
          # Check if we already have preferences
@@ -97,20 +127,21 @@ topic qualification:
          | 4. Do you prefer single-family homes, townhomes, or condos?
 
       actions:
-         capture_preferences: @actions.capture_buyer_preferences
+         # Level 2: Action INVOCATION with with/set bindings
+         capture_prefs: @actions.capture_buyer_preferences
             description: "Capture buyer's location and budget preferences"
             with state = ...
             with city = ...
             with min_budget = ...
             with max_budget = ...
             with bedrooms = ...
-            with home_type = ...
+            with home_type_pref = ...
             set @variables.preferred_state = @outputs.state
             set @variables.preferred_city = @outputs.city
             set @variables.min_price = @outputs.min_budget
             set @variables.max_price = @outputs.max_budget
             set @variables.bedrooms_needed = @outputs.bedrooms
-            set @variables.home_type = @outputs.type
+            set @variables.home_type = @outputs.home_type_result
 
          proceed_to_search: @utils.transition to @topic.home_search
             description: "Move to home search"
@@ -125,40 +156,31 @@ topic home_search:
    description: "Search Lennar inventory for homes matching buyer criteria"
 
    actions:
-      search_inventory: @actions.search_lennar_homes
+      # Level 1: Action DEFINITION (target + I/O schema)
+      search_inventory:
          description: "Search available Lennar homes"
          target: "flow://Search_Lennar_Inventory"
          inputs:
-            state:
-               type: string
+            state: string
                description: "State to search in"
-               is_required: True
-            city:
-               type: string
+            city: string
                description: "City to search in"
-            min_price:
-               type: number
+            min_price: number
                description: "Minimum price"
-            max_price:
-               type: number
+            max_price: number
                description: "Maximum price"
-            bedrooms:
-               type: number
+            bedrooms: number
                description: "Number of bedrooms"
-            home_type:
-               type: string
+            home_type_filter: string
                description: "Type of home"
          outputs:
-            homes_found:
-               type: number
+            homes_found: number
                description: "Number of homes found"
                is_displayable: True
-            communities:
-               type: list
-               description: "List of matching communities"
+            communities: string
+               description: "Matching communities"
                is_displayable: True
-            price_ranges:
-               type: string
+            price_ranges: string
                description: "Price ranges in results"
                is_displayable: True
 
@@ -169,21 +191,13 @@ topic home_search:
             | Excellent! I found {!@variables.search_results_count} homes matching your criteria.
             | Would you like to schedule a tour at any of these communities?
 
-         if @variables.search_results_count == 0:
-            | I didn't find exact matches. Let me expand the search area.
-            run @actions.search_inventory
-               with state = @variables.preferred_state
-               with min_price = @variables.min_price - 50000
-               with max_price = @variables.max_price + 50000
-               with bedrooms = @variables.bedrooms_needed
-               set @variables.search_results_count = @outputs.homes_found
-
-         # Initial search
+         # Initial search prompt
          | Searching for {!@variables.home_type} homes in {!@variables.preferred_city}, {!@variables.preferred_state}
          | Budget: ${!@variables.min_price} - ${!@variables.max_price}
          | Bedrooms: {!@variables.bedrooms_needed}
 
       actions:
+         # Level 2: Action INVOCATION
          run_search: @actions.search_inventory
             description: "Search Lennar inventory"
             with state = @variables.preferred_state
@@ -191,7 +205,7 @@ topic home_search:
             with min_price = @variables.min_price
             with max_price = @variables.max_price
             with bedrooms = @variables.bedrooms_needed
-            with home_type = @variables.home_type
+            with home_type_filter = @variables.home_type
             set @variables.search_results_count = @outputs.homes_found
 
          schedule_tour: @utils.transition to @topic.tour_scheduling
@@ -207,7 +221,7 @@ topic home_search:
    after_reasoning:
       # Follow up if results found
       if @variables.search_results_count > 0:
-         | Remember, all Lennar homes include Everything's Included® features at no extra cost!
+         | Remember, all Lennar homes include Everything's Included features at no extra cost!
 
 # ============================================================
 # TOUR SCHEDULING: Book community visits
@@ -218,36 +232,27 @@ topic tour_scheduling:
    description: "Schedule tours at Lennar community welcome centers"
 
    actions:
-      schedule_tour: @actions.book_community_tour
+      # Level 1: Action DEFINITION
+      book_community_tour:
          description: "Schedule a tour at a Lennar community"
          target: "flow://Schedule_Community_Tour"
          inputs:
-            community_name:
-               type: string
+            community_name: string
                description: "Name of the community"
-               is_required: True
-            preferred_date:
-               type: date
+            preferred_date: date
                description: "Preferred tour date"
-               is_required: True
-            preferred_time:
-               type: string
+            preferred_time: string
                description: "Preferred tour time"
-            contact_phone:
-               type: string
+            contact_phone: string
                description: "Contact phone number"
-               is_required: True
-            contact_email:
-               type: string
+            contact_email: string
                description: "Contact email"
          outputs:
-            confirmation_number:
-               type: string
+            confirmation_number: string
                description: "Tour confirmation number"
                is_displayable: True
                is_used_by_planner: True
-            scheduled_datetime:
-               type: datetime
+            scheduled_datetime: datetime
                description: "Scheduled tour date and time"
                is_displayable: True
 
@@ -256,14 +261,15 @@ topic tour_scheduling:
          # Check if already scheduled
          if @variables.tour_scheduled == True:
             | Your tour at {!@variables.selected_community} is confirmed!
-            | Confirmation: {!@outputs.confirmation_number}
+            | Confirmation: {!@variables.confirmation_number}
             transition to @topic.follow_up
 
          | Let's schedule your tour! Which community would you like to visit?
          | What date and time work best for you?
 
       actions:
-         book_tour: @actions.schedule_tour
+         # Level 2: Action INVOCATION (with slot-filling via ...)
+         book_tour: @actions.book_community_tour
             description: "Book a community tour"
             with community_name = ...
             with preferred_date = ...
@@ -271,7 +277,7 @@ topic tour_scheduling:
             with contact_phone = ...
             with contact_email = ...
             set @variables.tour_scheduled = True
-            set @variables.selected_community = @inputs.community_name
+            set @variables.confirmation_number = @outputs.confirmation_number
 
          back_to_search: @utils.transition to @topic.home_search
             description: "Search for different homes"
@@ -285,29 +291,24 @@ topic community_information:
    description: "Provide detailed information about Lennar communities"
 
    actions:
-      get_community_details: @actions.retrieve_community_info
+      # Level 1: Action DEFINITION
+      get_community_details:
          description: "Get detailed community information"
          target: "flow://Get_Community_Details"
          inputs:
-            community_name:
-               type: string
+            community_name: string
                description: "Name of the community"
-               is_required: True
          outputs:
-            amenities:
-               type: list
+            amenities: string
                description: "Community amenities"
                is_displayable: True
-            schools:
-               type: list
+            schools: string
                description: "Nearby schools"
                is_displayable: True
-            hoa_fees:
-               type: currency
+            hoa_fees: string
                description: "HOA fees"
                is_displayable: True
-            available_models:
-               type: number
+            available_models: number
                description: "Number of available models"
                is_displayable: True
 
@@ -318,6 +319,7 @@ topic community_information:
          I can share details about amenities, schools, HOA fees, and available home models.
 
       actions:
+         # Level 2: Action INVOCATION
          get_details: @actions.get_community_details
             description: "Get community information"
             with community_name = ...
@@ -347,14 +349,8 @@ topic follow_up:
          Is there anything else I can help you with today?
 
       actions:
-         financing_info: @actions.get_financing_options
-            description: "Learn about financing options"
-
          additional_tours: @utils.transition to @topic.tour_scheduling
             description: "Schedule another tour"
 
          new_search: @utils.transition to @topic.qualification
             description: "Start a new search"
-
-         end_chat: @actions.end_conversation
-            description: "End the conversation"

@@ -43,6 +43,25 @@ python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
 
 ## Testing Workflow
 
+This skill supports two testing modes:
+
+- **Mode A: Ad-Hoc Preview Testing** -- Quick smoke tests during development using `sf agent preview`. No org setup needed. Best for iterative development and fix validation.
+- **Mode B: Testing Center Batch Testing** -- Persistent test suites deployed to the org via `sf agent test`. Best for regression suites, CI/CD, and cross-skill integration with adlc-optimize.
+
+**When to use which:**
+
+| Scenario | Mode |
+|----------|------|
+| Quick smoke test during authoring | Mode A |
+| Validate a fix from adlc-optimize | Mode A |
+| Build a regression suite for CI/CD | Mode B |
+| Deploy tests to share with the team | Mode B |
+| adlc-optimize creates test cases | Mode B |
+
+---
+
+## Mode A: Ad-Hoc Preview Testing
+
 ### Phase 1: Utterance Derivation
 
 If no utterances file is provided, the system automatically derives test cases from the `.agent` file:
@@ -100,9 +119,10 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
   PLAN_IDS+=("$PLAN_ID")
 done
 
-# End session and get traces
+# End session and get traces (--api-name is required)
 TRACES_PATH=$(sf agent preview end \
   --session-id "$SESSION_ID" \
+  --api-name MyAgent \
   --target-org <org> --json 2>/dev/null \
   | jq -r '.result.tracesPath')
 ```
@@ -188,6 +208,240 @@ topic order_mgmt:
   description: "Handle order queries, order status, tracking, shipping, delivery"
 ```
 
+---
+
+## Mode B: Testing Center Batch Testing
+
+Testing Center is Salesforce's built-in test infrastructure for Agentforce agents. Tests are deployed as metadata to the org and can be run via CLI or Setup UI.
+
+### Phase 1: Create Test Spec YAML
+
+The Testing Center uses a specific YAML format. Create a temporary spec file:
+
+```yaml
+# /tmp/<AgentApiName>-test-spec.yaml
+name: "LennarAgent Smoke Tests"
+subjectType: AGENT
+subjectName: LennarAgent          # BotDefinition DeveloperName (API name)
+
+testCases:
+  # Topic routing test
+  - utterance: "I'm looking for a home in San Jose"
+    expectedTopic: home_search
+
+  # Action invocation test (FLAT string list -- NOT objects)
+  - utterance: "Show me homes under $750,000 with 4 bedrooms"
+    expectedTopic: home_search
+    expectedActions:
+      - search_homes_and_communities
+
+  # Outcome validation (LLM-as-judge)
+  - utterance: "What are the steps to buy a Lennar home?"
+    expectedTopic: homebuying_process
+    expectedOutcome: "Agent explains the Lennar homebuying timeline with key steps"
+
+  # Escalation test
+  - utterance: "I want to talk to a real person about a legal dispute"
+    expectedTopic: escalation
+    expectedActions:
+      - transfer_to_agent
+
+  # Guardrail test
+  - utterance: "What's the best recipe for chocolate cake?"
+    expectedOutcome: "Agent politely declines and redirects to Lennar-related topics"
+
+  # Multi-turn test with conversation history
+  - utterance: "Yes, my email is john@example.com"
+    expectedTopic: identity_verification
+    expectedActions:
+      - verify_customer
+    conversationHistory:
+      - role: user
+        message: "I need to check my mortgage status"
+      - role: agent
+        topic: identity_verification
+        message: "I'd be happy to help with your mortgage status. First, I'll need to verify your identity. What is your email address on file?"
+```
+
+**Required fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | Yes | Display name for the test suite (becomes MasterLabel) |
+| `subjectType` | Yes | Always `AGENT` |
+| `subjectName` | Yes | Agent BotDefinition DeveloperName (API name, e.g. `LennarAgent`) |
+| `testCases` | Yes | Array of test case objects |
+| `testCases[].utterance` | Yes | User input message to test |
+| `testCases[].expectedTopic` | No | Expected topic name |
+| `testCases[].expectedActions` | No | Flat list of action name strings |
+| `testCases[].expectedOutcome` | No | Natural language description (LLM-as-judge) |
+| `testCases[].conversationHistory` | No | Prior conversation turns for multi-turn tests |
+| `testCases[].contextVariables` | No | Session context variables |
+
+**Key rules:**
+- `expectedActions` is a **flat string array**, NOT objects: `["action_a", "action_b"]`
+- Action assertion uses **superset matching**: test PASSES if actual actions include all expected actions
+- **Transition actions** (`go_home_search`, `go_escalation`) appear in `actionsSequence` alongside real actions. The superset matching handles this correctly -- you don't need to list transition actions.
+- `expectedOutcome` uses LLM-as-judge evaluation -- describe the desired behavior in natural language
+- Missing `expectedOutcome` causes a harmless ERROR in `output_validation` but topic/action assertions still pass
+- **Always add `expectedOutcome`** -- it is the most reliable assertion type (LLM-as-judge scores 5/5 consistently for correct behavior) and works even when topic/action assertions can't capture nuanced behavior
+
+**Single-turn vs multi-turn considerations:**
+- Single-turn tests only capture the first response. If an action requires info collection first (e.g. identity verification asks for email before calling `verify_customer`), the action won't fire in one turn.
+- For multi-turn workflows, either: (1) omit `expectedActions` and rely on `expectedOutcome`, or (2) use `conversationHistory` to simulate prior turns.
+- For guardrail tests (off-topic), omit `expectedTopic` and use `expectedOutcome` only -- the agent correctly stays in `entry` which has no matching topic assertion.
+
+### Phase 2: Deploy and Run Tests
+
+`sf agent test create` takes the YAML spec, converts it to `AiEvaluationDefinition` metadata XML, and deploys it to the org. The XML is written to `force-app/main/default/aiEvaluationDefinitions/` as part of the SFDX project.
+
+```bash
+# Step 1: Check if Testing Center is available
+sf agent test list -o <org> --json
+
+# Step 2: Deploy the test suite (writes XML to force-app/ and deploys to org)
+sf agent test create \
+  --spec /tmp/<AgentApiName>-test-spec.yaml \
+  --api-name <TestSuiteName> \
+  -o <org> --json
+
+# The deployed metadata is now at:
+# force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
+
+# Step 3: Run the tests (wait for results)
+sf agent test run \
+  --api-name <TestSuiteName> \
+  --wait 10 \
+  --result-format json \
+  -o <org> --json | tee /tmp/test_run.json
+
+# Step 4: Extract job ID from run output
+JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/test_run.json'))['result']['runId'])")
+
+# Step 5: Get detailed results (ALWAYS use --job-id, NOT --use-most-recent)
+sf agent test results \
+  --job-id "$JOB_ID" \
+  --result-format json \
+  -o <org> --json | tee /tmp/test_results.json
+```
+
+**Updating an existing test suite** (e.g. after adding new test cases):
+
+```bash
+sf agent test create \
+  --spec /tmp/<AgentApiName>-test-spec.yaml \
+  --api-name <TestSuiteName> \
+  --force-overwrite \
+  -o <org> --json
+```
+
+**Retrieving existing test definitions from the org:**
+
+```bash
+sf project retrieve start --metadata "AiEvaluationDefinition:<TestSuiteName>" -o <org>
+# Retrieved to: force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
+```
+
+### Phase 3: Analyze Results
+
+Parse the results JSON:
+
+```bash
+# Show pass/fail summary per test case
+python3 -c "
+import json
+data = json.load(open('/tmp/test_results.json'))
+for tc in data['result']['testCases']:
+    utterance = tc['inputs']['utterance'][:50]
+    results = {r['name']: r['result'] for r in tc.get('testResults', [])}
+    topic_pass = results.get('topic_assertion', 'N/A')
+    action_pass = results.get('action_assertion', 'N/A')
+    outcome_pass = results.get('output_validation', 'N/A')
+    print(f'{utterance:<50} topic={topic_pass:<6} action={action_pass:<6} outcome={outcome_pass}')
+"
+```
+
+**Understanding results fields:**
+
+| Result field | Description |
+|---|---|
+| `testResults[].name` | `topic_assertion`, `action_assertion`, `output_validation` |
+| `testResults[].result` | `PASS`, `FAILURE`, or `ERROR` |
+| `testResults[].score` | Numeric score (0-1) |
+| `testResults[].expectedValue` | What you specified in the YAML |
+| `testResults[].actualValue` | What the agent actually returned |
+| `generatedData.topic` | Actual runtime topic name |
+| `generatedData.actionsSequence` | Stringified list of actions invoked |
+| `generatedData.outcome` | Agent's actual response text |
+
+### Phase 4: Fix Loop
+
+For each failed test case:
+
+1. **Topic assertion failed** -- compare `expectedValue` vs `actualValue`
+   - If actual is a hash-suffixed name (e.g. `p_16j...`), see Topic Name Resolution below
+   - If actual is wrong topic, fix the `.agent` file topic description
+
+2. **Action assertion failed** -- check `generatedData.actionsSequence`
+   - If action not invoked: fix topic instructions or action `available when` guard
+   - If wrong action: fix action descriptions to disambiguate
+
+3. **Outcome validation failed** -- check `generatedData.outcome`
+   - Review the agent's actual response against `expectedOutcome`
+   - Tighten topic instructions to guide the response
+
+After fixing the `.agent` file, redeploy and re-run:
+
+```bash
+# Redeploy agent
+sf agent publish authoring-bundle --api-name <AgentApiName> -o <org> --json
+
+# Re-run the same test suite
+sf agent test run --api-name <TestSuiteName> --wait 10 --result-format json -o <org> --json
+```
+
+### Topic Name Resolution
+
+Topic names in Testing Center may differ from what you see in the `.agent` file:
+
+| Topic type | Name to use in YAML | Example |
+|---|---|---|
+| Standard topics | `localDeveloperName` (short name) | `Escalation`, `Off_Topic` |
+| Custom topics | Short name from `.agent` file | `home_search`, `warranty_service` |
+| Promoted topics | Full runtime `developerName` with hash suffix | `p_16jPl000000GwEX_Topic_16j8eeef13560aa` |
+
+**Discovery workflow** (when topic names don't match):
+
+1. Run the test with best-guess topic names
+2. Check actual topics in results: `jq '.result.testCases[].generatedData.topic' /tmp/test_results.json`
+3. Update YAML with actual runtime names
+4. Redeploy with `--force-overwrite` and re-run
+
+**Topic hash drift**: Runtime topic `developerName` hash suffix changes after agent republish. Re-run discovery after each publish.
+
+### Auto-Generation from .agent File
+
+Derive a Testing Center spec from the `.agent` file:
+
+1. **One test case per non-entry topic** -- utterance from topic description keywords
+2. **One test case per key action** -- utterance that triggers the action's primary use case
+3. **One guardrail test** -- off-topic utterance
+4. **`expectedTopic`** from topic name in `.agent` file
+5. **`expectedActions`** from action names under `reasoning: actions:` (only `@actions.*`, not `@utils.transition`)
+
+### Known Bugs and Workarounds
+
+| Bug | Severity | Workaround |
+|-----|----------|------------|
+| `--use-most-recent` flag on `sf agent test results` is not implemented | Medium | Always use `--job-id` explicitly |
+| Custom evaluations with `isReference: true` (JSONPath) crash results API | Critical | Skip custom evaluations; use `expectedOutcome` instead |
+| `conciseness` metric returns score=0 | Medium | Skip `conciseness`; use `coherence` instead |
+| `instruction_following` metric crashes Testing Center UI | High | Remove from metrics list; use CLI only |
+| `instruction_following` shows FAILURE at score=1 | Low | Ignore PASS/FAILURE label; use numeric `score` |
+| Topic hash drift on agent republish | Medium | Re-run discovery after each publish |
+
+---
+
 ## Test Report Format
 
 ### Summary Report
@@ -229,75 +483,26 @@ Test Case 2: "I want to return this"
 └─ Retry Result: Correctly routed ✓
 ```
 
-## Batch Testing
+## Coverage Analysis
 
-### Test Definition File
+Track which topics and actions are tested across both modes:
 
-Create a YAML file with test cases:
+| Dimension | Target | How to measure |
+|-----------|--------|----------------|
+| Topic coverage | 100% of non-entry topics | Count topics with at least 1 test case |
+| Action coverage | 100% of actions | Count actions with at least 1 test case targeting them |
+| Phrasing diversity | 3+ utterances per topic (production) | Multiple wordings per intent |
+| Guardrail coverage | At least 1 off-topic test | Verify agent deflects non-relevant queries |
+| Multi-turn coverage | Test topic transitions | Conversation history tests |
+| Escalation coverage | Test escalation triggers | Verify human handoff works |
 
-```yaml
-# test-cases.yaml
-test_suite:
-  name: "Order Management Tests"
-  agent: "OrderManagementAgent"
 
-test_cases:
-  - id: "TC001"
-    utterance: "Where is my order #12345?"
-    expected_topic: "order_mgmt"
-    expected_action: "get_order_status"
+## CI/CD with Testing Center
 
-  - id: "TC002"
-    utterance: "I want to return my purchase"
-    expected_topic: "returns"
-    expected_action: "initiate_return"
-
-  - id: "TC003"
-    utterances:  # Multi-turn test
-      - "Check order status"
-      - "Actually, cancel it instead"
-    expected_topics: ["order_mgmt", "order_mgmt"]
-    expected_actions: ["get_order_status", "cancel_order"]
-```
-
-### Execution
-
-```bash
-python3 scripts/test.py \
-  -o myorg \
-  --api-name OrderManagementAgent \
-  --test-suite test-cases.yaml \
-  --parallel 3  # Run 3 sessions in parallel
-```
-
-## Performance Metrics
-
-The test framework captures performance data:
-
-| Metric | Description | Threshold |
-|--------|-------------|-----------|
-| Topic routing time | Time to select topic | < 2000ms |
-| Action execution time | Time for action to complete | < 5000ms |
-| Total turn time | End-to-end response time | < 8000ms |
-| Token usage | LLM tokens consumed | < 2000/turn |
-
-Performance report:
-```
-Performance Analysis
-────────────────────
-Average topic routing: 1245ms
-Average action time: 3421ms
-Average turn time: 5892ms
-P95 turn time: 7234ms
-Total tokens used: 8456
-Estimated cost: $0.42
-```
-
-## CI/CD Integration
-
-### GitHub Actions Workflow
+For CI/CD pipelines, use Mode B (Testing Center) for persistent regression suites:
 
 ```yaml
+# .github/workflows/agent-testing.yml
 name: Agent Testing
 on:
   pull_request:
@@ -310,108 +515,94 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          npm install -g @salesforce/cli
-
       - name: Authenticate org
         run: |
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt --alias testorg
 
-      - name: Run agent tests
+      - name: Deploy test suite
         run: |
-          python3 scripts/test.py \
-            -o testorg \
-            --api-name ${{ vars.AGENT_NAME }} \
-            --save-traces \
-            --junit-output test-results.xml
+          sf agent test create \
+            --spec tests/${{ vars.AGENT_NAME }}-testing-center.yaml \
+            --api-name ${{ vars.AGENT_NAME }}_CI \
+            --force-overwrite \
+            -o testorg --json
+
+      - name: Run tests
+        run: |
+          sf agent test run \
+            --api-name ${{ vars.AGENT_NAME }}_CI \
+            --wait 15 \
+            --result-format junit \
+            --output-dir test-results \
+            -o testorg --json
 
       - name: Upload test results
         uses: actions/upload-artifact@v3
         with:
-          name: test-results
-          path: |
-            test-results.xml
-            traces/
+          name: agent-test-results
+          path: test-results/
 ```
 
-## Advanced Features
+## Cross-Skill Integration (adlc-optimize)
 
-### Custom Assertions
+The `adlc-optimize` skill creates test cases during its Phase 3.7 after fixing issues found through STDM session analysis. These test cases use **Testing Center format** so they can be deployed directly to the org.
 
-Define custom test assertions:
+### Test Case Convention
 
-```python
-# custom_assertions.py
-def assert_contains_order_number(response):
-    """Verify response contains an order number"""
-    import re
-    pattern = r'#\d{5,10}'
-    assert re.search(pattern, response), "No order number in response"
+Test cases from adlc-optimize follow Testing Center YAML format:
 
-def assert_polite_tone(response):
-    """Check for polite language"""
-    polite_phrases = ['please', 'thank you', 'happy to help']
-    assert any(phrase in response.lower() for phrase in polite_phrases)
+```yaml
+# tests/<AgentApiName>-regression.yaml
+name: "<AgentName> Regression Tests"
+subjectType: AGENT
+subjectName: <AgentApiName>
+
+testCases:
+  - utterance: "find me a home in San Jose"
+    expectedTopic: home_search
+    expectedActions:
+      - search_homes_and_communities
+
+  - utterance: "I have a legal dispute"
+    expectedTopic: escalation
+    expectedActions:
+      - transfer_to_agent
 ```
 
-### Test Data Management
+### Deploying Cross-Skill Tests
 
-Prepare test data before execution:
+When adlc-optimize generates test cases, deploy them using Mode B:
 
 ```bash
-# Setup test data
-sf data create record -s Account \
-  -v "Name='Test Customer' Email__c='test@example.com'" \
-  -o testorg --json > test-account.json
+# Deploy the regression test suite
+sf agent test create \
+  --spec tests/<AgentApiName>-regression.yaml \
+  --api-name <AgentApiName>_Regression \
+  --force-overwrite \
+  -o <org> --json
 
-ACCOUNT_ID=$(jq -r '.result.id' test-account.json)
-
-# Run tests with context
-python3 scripts/test.py \
-  -o testorg \
-  --api-name MyAgent \
-  --context "accountId=$ACCOUNT_ID"
-
-# Cleanup
-sf data delete record -s Account -i $ACCOUNT_ID -o testorg
+# Run
+sf agent test run \
+  --api-name <AgentApiName>_Regression \
+  --wait 10 \
+  --result-format json \
+  -o <org> --json
 ```
 
-### Coverage Analysis
-
-Track which topics and actions are tested:
+### Test File Location Convention
 
 ```
-Coverage Report
-───────────────
-Topics Tested: 4/5 (80%)
-  ✓ order_mgmt
-  ✓ returns
-  ✓ shipping
-  ✓ support
-  ✗ admin (not tested)
-
-Actions Tested: 8/12 (66.7%)
-  ✓ get_order_status
-  ✓ track_shipment
-  ✓ initiate_return
-  ✓ check_refund
-  ✗ escalate_to_human
-  ✗ schedule_callback
-  ...
-
-Recommendations:
-- Add test for 'admin' topic
-- Test escalation scenarios
-- Add negative test cases
+<project-root>/
+  tests/
+    <AgentApiName>-testing-center.yaml  # Full smoke suite (Mode B -- Testing Center)
+    <AgentApiName>-regression.yaml      # Regression tests from adlc-optimize (Mode B)
+    <AgentApiName>-smoke.yaml           # Ad-hoc smoke tests (Mode A -- preview only)
 ```
+
+Both adlc-test and adlc-optimize write to the `tests/` directory using the agent's API name as prefix. Testing Center files (`-testing-center.yaml`, `-regression.yaml`) use the `name/subjectType/subjectName/testCases` format.
+
+---
 
 ## Troubleshooting
 

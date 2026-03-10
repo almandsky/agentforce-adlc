@@ -56,13 +56,13 @@ Each skill can be invoked independently. Run `/adlc-test` on an existing agent w
 ### One-command install (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/Authoring-Agent/agentforce-adlc/main/tools/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash
 ```
 
 ### From local clone
 
 ```bash
-git clone https://github.com/Authoring-Agent/agentforce-adlc.git
+git clone https://github.com/almandsky/agentforce-adlc.git
 cd agentforce-adlc
 python3 tools/install.py
 ```
@@ -257,7 +257,7 @@ agentforce-adlc/
 
 ```bash
 # Clone and set up dev environment
-git clone https://github.com/Authoring-Agent/agentforce-adlc.git
+git clone https://github.com/almandsky/agentforce-adlc.git
 cd agentforce-adlc
 pip install -e ".[dev]"
 

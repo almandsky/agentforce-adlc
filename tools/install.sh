@@ -7,7 +7,7 @@
 # ============================================================================
 set -euo pipefail
 
-GITHUB_RAW="https://raw.githubusercontent.com/Authoring-Agent/agentforce-adlc/main"
+GITHUB_RAW="https://raw.githubusercontent.com/almandsky/agentforce-adlc/main"
 INSTALL_PY_URL="${GITHUB_RAW}/tools/install.py"
 MIN_PYTHON_MAJOR=3
 MIN_PYTHON_MINOR=10

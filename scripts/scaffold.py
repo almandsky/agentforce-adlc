@@ -15,6 +15,11 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
+# Ensure the parent directory is in sys.path for package imports
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
 from scripts.discover import DiscoveryReport, TargetStatus, discover, extract_actions
 from scripts.generators.flow_xml import generate_flow_xml
 from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml

@@ -761,7 +761,31 @@ reasoning:
             available when @variables.customer_name != ""
 ```
 
-### 3.4 Apply fixes
+### 3.4 Regression Prevention
+
+When editing topic instructions, follow these principles to avoid regressions:
+
+1. **Establish a baseline BEFORE editing** — Run the test utterance 3 times before
+   making changes. Record the pass rate. This is your baseline.
+
+2. **Make minimal, targeted edits** — Change only the specific instruction line that
+   addresses the identified issue. Do NOT expand terse instructions into verbose ones
+   unless the terse version was causing a specific documented failure.
+
+3. **Avoid instruction expansion** — Adding more text to instructions does NOT always
+   help. The LLM may over-interpret verbose instructions and skip asking the user for
+   needed input. Prefer:
+   - Adding a single action reference: "Use `@actions.X` to look up..."
+   - Adding a single constraint: "Do not proceed until the customer provides..."
+   - Adding a single routing directive: "After completing, transition to @topic.Y"
+
+4. **Test immediately after each edit** — Run the same test utterances. If pass rate
+   drops, revert the change immediately. Use `git diff` to see exactly what changed.
+
+5. **One fix per publish cycle** — Do not batch multiple instruction changes into a
+   single publish. Fix one issue, verify, then move to the next.
+
+### 3.5 Apply fixes
 
 **Step 1 -- Read the current .agent file:**
 
@@ -826,7 +850,7 @@ After editing, show the before/after diff of the changed section so the user can
 cd <project-root> && git diff <AGENT_FILE>
 ```
 
-### 3.5 Validate, Deploy, Publish, and Activate
+### 3.6 Validate, Deploy, Publish, and Activate
 
 After editing the `.agent` file, use this deployment chain to push changes to the live agent. **Never update `GenAiPluginInstructionDef` or other agent metadata directly** -- always edit the `.agent` file and re-deploy. The `.agent` file is the single source of truth.
 
@@ -881,7 +905,7 @@ If the agent still exhibits old behavior after deploy + activate, the publish di
 
 **Never use the Tooling API to patch `GenAiPluginInstructionDef` or other BPO objects directly.** This creates drift between the `.agent` file (source of truth) and the live metadata. Always fix the `.agent` file and re-deploy.
 
-### 3.6 Verify
+### 3.7 Verify
 
 **Immediate** -- run the Phase 2 scenarios that returned `[CONFIRMED]` before the fix. All should now return `[NOT REPRODUCED]`.
 
@@ -911,7 +935,7 @@ sf agent preview end --session-id "$SESSION_ID" --api-name <AgentApiName> -o <or
 
 If new issues surface in the post-fix Phase 1 run, repeat the cycle from Phase 1.4.
 
-### 3.7 Update Testing Center test cases (cross-skill with adlc-test)
+### 3.8 Update Testing Center test cases (cross-skill with adlc-test)
 
 After fixing issues, create or update test cases in **Testing Center format** so they can be deployed directly to the org via `sf agent test create`. This ensures regressions are caught automatically.
 

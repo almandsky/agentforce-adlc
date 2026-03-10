@@ -15,18 +15,19 @@ This skill automatically generates Salesforce metadata stubs for missing action 
 
 ## Usage
 
+The script auto-configures `sys.path`, so it can be run from any directory:
+
 ```bash
 # Scaffold missing targets (runs discover first)
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py \
+  --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
 
-# Scaffold all targets without checking org
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --skip-discover
+# Scaffold all targets without checking org (use --all flag)
+python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py \
+  --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
 
-# Specify output directory
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --output-dir force-app/main/default
-
-# Dry run to preview what would be generated
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/scaffold.py -o <org-alias> --agent-file MyAgent.agent --dry-run
+# From the project root (also works)
+python3 scripts/scaffold.py --agent-file path/to/Agent.agent -o <org-alias>
 ```
 
 ## What it does

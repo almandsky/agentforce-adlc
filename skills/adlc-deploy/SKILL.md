@@ -67,6 +67,33 @@ Expected output:
 }
 ```
 
+### Phase 1b: Target Dependency Check
+
+Before deploying, verify all action targets referenced in the `.agent` file exist in the org:
+
+```bash
+# Parse flow targets from the .agent file
+grep -o 'flow://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# Parse apex targets
+grep -o 'apex://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# For each flow target, check if it exists and is active
+sf data query -q "SELECT ApiName FROM FlowDefinitionView WHERE ApiName = '<FlowApiName>' AND IsActive = true" -o <org> --json
+
+# For each apex target, check if it exists
+sf data query -q "SELECT Name FROM ApexClass WHERE Name = '<ClassName>' AND Status = 'Active'" -o <org> --json
+```
+
+If any targets are missing:
+1. List the missing targets clearly
+2. Ask if the user wants to scaffold stubs (invoke adlc-scaffold)
+3. Or ask the user to create them manually
+4. Do NOT proceed to publish until all targets exist
+
+This step prevents the common "Flow not found" error that occurs when publishing an agent
+with references to Flows or Apex classes that haven't been deployed yet.
+
 ### Phase 2: Deploy Supporting Metadata
 
 Before publishing the agent, deploy all referenced metadata:

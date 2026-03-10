@@ -15,30 +15,22 @@ This skill provides comprehensive testing capabilities for Agentforce agents, in
 
 ## Usage
 
+This skill uses `sf agent preview` and `sf agent test` CLI commands directly.
+There is no standalone Python script.
+
+**Quick smoke test (Mode A):**
 ```bash
-# Basic smoke test with derived utterances
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
-  -o <org-alias> \
-  --api-name MyAgent
+# Start preview, send utterance, end session
+sf agent preview start --api-name MyAgent -o <org-alias> --json
+sf agent preview send --session-id <ID> --utterance "test" --api-name MyAgent -o <org-alias> --json
+sf agent preview end --session-id <ID> --api-name MyAgent -o <org-alias> --json
+```
 
-# Test with custom utterances file
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
-  -o <org-alias> \
-  --api-name MyAgent \
-  --utterances test-cases.txt
-
-# Test authoring bundle (pre-publish)
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
-  -o <org-alias> \
-  --api-name MyAgent \
-  --authoring-bundle
-
-# Verbose mode with trace saving
-python3 /Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py \
-  -o <org-alias> \
-  --api-name MyAgent \
-  --save-traces \
-  --verbose
+**Batch testing (Mode B):**
+```bash
+# Deploy and run test suite
+sf agent test create --spec test-spec.yaml --api-name MySuite -o <org-alias> --json
+sf agent test run --api-name MySuite --wait 10 --result-format json -o <org-alias> --json
 ```
 
 ## Testing Workflow
@@ -166,6 +158,33 @@ Expected: Required actions present in array
 jq '.steps[] | select(.stepType == "PlannerResponseStep") | .data.responseText' "$TRACE"
 ```
 Expected: Relevant, coherent response
+
+### Handling Empty Traces
+
+Preview traces may be empty (`{}`) due to CLI version limitations or timing issues.
+When traces are empty:
+
+1. **Check `transcript.jsonl`** — The session transcript is always written:
+   ```bash
+   TRANSCRIPT=$(find .sfdx/agents -name "transcript.jsonl" -newer /tmp/test_start_marker | head -1)
+   cat "$TRANSCRIPT" | python3 -c "
+   import json, sys
+   for line in sys.stdin:
+       msg = json.loads(line)
+       role = msg.get('role', '?')
+       text = msg.get('content', msg.get('message', ''))
+       print(f'{role}: {text[:100]}')
+   "
+   ```
+
+2. **Use Testing Center instead** — Mode B (Testing Center) provides structured
+   assertions (topic, action, outcome) without needing trace files. For most
+   testing needs, Mode B is more reliable than Mode A trace analysis.
+
+3. **Check CLI version** — Trace support requires `sf` CLI 2.121.7+:
+   ```bash
+   sf --version
+   ```
 
 ### Phase 4: Fix Loop
 
@@ -617,19 +636,14 @@ Both adlc-test and adlc-optimize write to the `tests/` directory using the agent
 
 ### Debug Mode
 
-Enable detailed logging:
+Enable detailed logging for preview sessions:
 
 ```bash
-# Set debug environment variables
-export ADLC_DEBUG=true
-export ADLC_LOG_LEVEL=DEBUG
+# Enable SF CLI debug output
+export SF_LOG_LEVEL=debug
 
-# Run with debug output
-python3 scripts/test.py \
-  -o myorg \
-  --api-name MyAgent \
-  --debug \
-  --verbose
+# Run preview with verbose output
+sf agent preview start --api-name MyAgent -o myorg --json 2>&1 | tee /tmp/preview_debug.json
 ```
 
 ## Best Practices
@@ -649,18 +663,12 @@ python3 scripts/test.py \
 - Archive historical test results
 - Monitor test flakiness and address root causes
 
-## Script Location
+## Dependencies
 
-Test script location:
-```
-/Users/sky.chen/Documents/projects/agentforce-adlc/scripts/test.py
-```
-
-Required dependencies:
-- `pyyaml` - Parse test definitions
+This skill uses `sf` CLI commands directly. Required tools:
+- `sf` CLI 2.121.7+ (for preview trace support)
 - `jq` (system) - JSON processing
-- `colorama` - Terminal colors
-- `junit-xml` - JUnit report generation
+- `python3` - For result parsing scripts
 
 ## Exit Codes
 

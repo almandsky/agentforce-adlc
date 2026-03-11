@@ -3,8 +3,11 @@
 import pytest
 from pathlib import Path
 from scripts.generators.flow_xml import generate_flow_xml
-from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml
+from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class
+from scripts.generators.apex_test_stub import generate_apex_test_class
 from scripts.generators.permission_set_xml import generate_permission_set_xml
+from scripts.generators.remote_site_xml import generate_remote_site_xml, safe_domain_name
+from scripts.scaffold import classify_action
 
 
 class TestFlowXml:
@@ -124,3 +127,135 @@ class TestPermissionSetXml:
         assert xml.count("<classAccesses>") == 2
         assert "<apexClass>ClassA</apexClass>" in xml
         assert "<apexClass>ClassB</apexClass>" in xml
+
+
+class TestApexTestStub:
+    def test_basic_test_class(self):
+        code = generate_apex_test_class("GetOrderStatus")
+        assert "@isTest" in code
+        assert "private class GetOrderStatusTest" in code
+        assert "GetOrderStatus.Request req" in code
+        assert "GetOrderStatus.invoke(" in code
+        assert "System.assertNotEquals(null, results" in code
+        assert "System.assertEquals(1, results.size()" in code
+
+    def test_with_inputs(self):
+        inputs = [
+            {"name": "order_number", "type": "string"},
+            {"name": "count", "type": "number"},
+        ]
+        code = generate_apex_test_class("GetOrderStatus", inputs=inputs)
+        assert "req.order_number = 'test';" in code
+        assert "req.count = 1;" in code
+
+    def test_with_outputs(self):
+        outputs = [{"name": "status", "type": "string"}]
+        code = generate_apex_test_class("GetOrderStatus", outputs=outputs)
+        assert "resp.status" in code
+
+    def test_callout_mock(self):
+        code = generate_apex_test_class("ExternalApi", is_callout=True)
+        assert "HttpCalloutMock" in code
+        assert "MockHttpResponse" in code
+        assert "Test.setMock(" in code
+        assert "res.setStatusCode(200)" in code
+
+    def test_no_callout_mock(self):
+        code = generate_apex_test_class("BasicAction", is_callout=False)
+        assert "HttpCalloutMock" not in code
+        assert "Test.setMock(" not in code
+
+    def test_boolean_input_placeholder(self):
+        inputs = [{"name": "is_active", "type": "boolean"}]
+        code = generate_apex_test_class("TestClass", inputs=inputs)
+        assert "req.is_active = true;" in code
+
+    def test_complex_type_input(self):
+        inputs = [{"name": "amount", "type": "object", "complex_data_type_name": "lightning__integerType"}]
+        code = generate_apex_test_class("TestClass", inputs=inputs)
+        assert "req.amount = 1;" in code
+
+
+class TestRemoteSiteXml:
+    def test_basic_remote_site(self):
+        xml = generate_remote_site_xml("api.example.com")
+        assert '<?xml version="1.0" encoding="UTF-8"?>' in xml
+        assert "<RemotesiteSetting" in xml
+        assert "<url>https://api.example.com</url>" in xml
+        assert "<isActive>true</isActive>" in xml
+
+    def test_with_description(self):
+        xml = generate_remote_site_xml("api.github.com", "GitHub API access")
+        assert "<description>GitHub API access</description>" in xml
+
+    def test_default_description(self):
+        xml = generate_remote_site_xml("api.example.com")
+        assert "Remote site for api.example.com" in xml
+
+    def test_xml_escaping(self):
+        xml = generate_remote_site_xml("api.example.com", 'Test <&> "special"')
+        assert "&lt;" in xml
+        assert "&amp;" in xml
+        assert "&gt;" in xml
+
+    def test_safe_domain_name(self):
+        assert safe_domain_name("api.github.com") == "api_github_com"
+        assert safe_domain_name("my-api.example.co.uk") == "my_api_example_co_uk"
+        assert safe_domain_name("simple") == "simple"
+
+
+class TestCalloutApex:
+    def test_callout_class(self):
+        code = generate_callout_apex_class("ExternalApi")
+        assert "HttpRequest httpReq" in code
+        assert "Http http = new Http();" in code
+        assert "HttpResponse httpRes" in code
+        assert "httpReq.setMethod('GET')" in code
+        assert "JSON.deserializeUntyped" in code
+
+    def test_callout_with_endpoint(self):
+        code = generate_callout_apex_class("ExternalApi", endpoint_url="https://api.example.com/v1")
+        assert "https://api.example.com/v1" in code
+
+    def test_callout_with_inputs_outputs(self):
+        inputs = [{"name": "query", "type": "string"}]
+        outputs = [{"name": "result", "type": "string"}]
+        code = generate_callout_apex_class("SearchApi", inputs=inputs, outputs=outputs)
+        assert "public String query;" in code
+        assert "public String result;" in code
+        assert "res.result = 'TODO';" in code
+
+
+class TestClassifyAction:
+    def test_callout_from_api_keyword(self):
+        action = {"name": "fetch_weather", "description": "Call external REST API for weather data"}
+        assert classify_action(action) == "callout"
+
+    def test_callout_from_url(self):
+        action = {"name": "get_data", "description": "Fetch from https://api.example.com/data"}
+        assert classify_action(action) == "callout"
+
+    def test_callout_from_http_keyword(self):
+        action = {"name": "http_request", "description": "Make HTTP request to external service"}
+        assert classify_action(action) == "callout"
+
+    def test_soql_from_query_keyword(self):
+        action = {"name": "get_accounts", "description": "Query Account records"}
+        assert classify_action(action) == "soql"
+
+    def test_soql_from_sobject_keyword(self):
+        action = {"name": "find_cases", "description": "Look up Case SObject records"}
+        assert classify_action(action) == "soql"
+
+    def test_basic_default(self):
+        action = {"name": "process_data", "description": "Process the input data"}
+        assert classify_action(action) == "basic"
+
+    def test_callout_takes_priority(self):
+        """Callout should win over SOQL when both signals present."""
+        action = {"name": "get_external", "description": "Query external API for records"}
+        assert classify_action(action) == "callout"
+
+    def test_empty_description(self):
+        action = {"name": "do_something", "description": ""}
+        assert classify_action(action) == "basic"

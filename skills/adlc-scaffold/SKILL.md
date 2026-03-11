@@ -163,7 +163,44 @@ public with sharing class OrderProcessor {
 }
 ```
 
-### 3. SObject-Aware Generation
+### 3. Action Classification
+
+Before generating stubs, scaffold classifies each action to determine the appropriate output strategy:
+
+| Signal in Description | Classification | Generated Files |
+|----------------------|---------------|-----------------|
+| "API", "HTTP", "REST", "external", URL | `callout` | Apex with `Http`/`HttpRequest`/`HttpResponse` + test with `HttpCalloutMock` + Remote Site Settings + Custom Metadata (if auth detected) |
+| "query", "record", "SObject", "SOQL" | `soql` | Apex with SOQL query logic (SObject-aware) + test class |
+| No special signals | `basic` | Standard placeholder Apex + test class |
+
+**Callout scaffold** includes:
+- Apex class with HTTP callout boilerplate (`Http`, `HttpRequest`, `HttpResponse`, `JSON.deserializeUntyped`)
+- Remote Site Setting XML for each domain found in the action description
+- Custom Metadata Type (`__mdt`) + default record with `apikey__c` field when auth keywords detected ("API key", "Bearer", "token")
+- Test class with `HttpCalloutMock` inner class and `Test.setMock()`
+
+**Complete output for a callout action:**
+```
+force-app/main/default/
+├── classes/
+│   ├── FetchWeatherData.cls              # Apex with Http boilerplate
+│   ├── FetchWeatherData.cls-meta.xml
+│   ├── FetchWeatherDataTest.cls          # Test with HttpCalloutMock
+│   └── FetchWeatherDataTest.cls-meta.xml
+├── remoteSiteSettings/
+│   └── api_weather_com.remoteSite-meta.xml
+├── customMetadata/
+│   └── FetchWeatherData_Config.Default.md-meta.xml
+├── objects/
+│   └── FetchWeatherData_Config__mdt/
+│       ├── FetchWeatherData_Config__mdt.object-meta.xml
+│       └── fields/
+│           └── apikey__c.field-meta.xml
+└── permissionsets/
+    └── Agent_Action_Access.permissionset-meta.xml
+```
+
+### 4. SObject-Aware Generation
 
 When connected to an org, the scaffold tool:
 - **Queries SObject metadata** for referenced object types

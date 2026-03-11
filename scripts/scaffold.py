@@ -11,6 +11,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -22,9 +23,75 @@ if str(_repo_root) not in sys.path:
 
 from scripts.discover import DiscoveryReport, TargetStatus, discover, extract_actions
 from scripts.generators.flow_xml import generate_flow_xml
-from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml
+from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class
+from scripts.generators.apex_test_stub import generate_apex_test_class
 from scripts.generators.permission_set_xml import generate_permission_set_xml
+from scripts.generators.remote_site_xml import generate_remote_site_xml, safe_domain_name
 from scripts.org_describe import describe_sobject, match_fields
+
+
+# --- Action Classification ---
+
+# Patterns that signal HTTP callout actions
+_CALLOUT_PATTERNS = re.compile(
+    r'\b(api|http|https|rest|soap|external|callout|webhook|endpoint)\b'
+    r'|https?://[^\s"\']+',
+    re.IGNORECASE,
+)
+
+# Patterns that signal SOQL/record-based actions
+_SOQL_PATTERNS = re.compile(
+    r'\b(soql|query|record|sobject|object|lookup|search|find|get\s+record)\b'
+    r'|__c\b',
+    re.IGNORECASE,
+)
+
+# Patterns that signal auth/credential needs
+_AUTH_PATTERNS = re.compile(
+    r'\b(api\s*key|bearer|token|auth|credential|secret|oauth)\b',
+    re.IGNORECASE,
+)
+
+# Pattern to extract domains from descriptions
+_DOMAIN_PATTERN = re.compile(
+    r'https?://([a-zA-Z0-9][-a-zA-Z0-9]*(?:\.[a-zA-Z0-9][-a-zA-Z0-9]*)+)',
+)
+
+
+def classify_action(action_def: dict) -> str:
+    """Classify an action to determine scaffold strategy.
+
+    Examines the action description and name for signals:
+    - 'callout': HTTP/REST/external API patterns detected
+    - 'soql': SObject/query patterns detected
+    - 'basic': No special signals
+
+    Args:
+        action_def: Action definition dict with 'name', 'description', etc.
+
+    Returns:
+        Classification string: 'callout', 'soql', or 'basic'.
+    """
+    text = " ".join([
+        action_def.get("description", ""),
+        action_def.get("name", ""),
+    ])
+
+    if _CALLOUT_PATTERNS.search(text):
+        return "callout"
+    if _SOQL_PATTERNS.search(text):
+        return "soql"
+    return "basic"
+
+
+def _extract_domains(text: str) -> list[str]:
+    """Extract domain names from a text string."""
+    return list(set(_DOMAIN_PATTERN.findall(text)))
+
+
+def _needs_auth_metadata(text: str) -> bool:
+    """Check if the action description suggests auth/credential needs."""
+    return bool(_AUTH_PATTERNS.search(text))
 
 
 @dataclass
@@ -131,16 +198,26 @@ def _scaffold_apex(
     target_org: str | None,
     result: ScaffoldResult,
 ) -> None:
-    """Generate Apex class + test class + meta XMLs."""
+    """Generate Apex class + test class + meta XMLs, with classification-aware output."""
     classes_dir = output_dir / "classes"
     classes_dir.mkdir(parents=True, exist_ok=True)
 
     action_def = actions.get(target.target_name, {})
     inputs = action_def.get("inputs", [])
     outputs = action_def.get("outputs", [])
+    classification = classify_action(action_def)
+    is_callout = classification == "callout"
 
-    # Main class
-    cls_code = generate_apex_class(target.target_name, inputs, outputs)
+    description_text = action_def.get("description", "")
+
+    # Main class — use callout variant if classified as such
+    if is_callout:
+        domains = _extract_domains(description_text)
+        endpoint = f"https://{domains[0]}" if domains else "https://example.com/api"
+        cls_code = generate_callout_apex_class(target.target_name, inputs, outputs, endpoint)
+    else:
+        cls_code = generate_apex_class(target.target_name, inputs, outputs)
+
     cls_path = classes_dir / f"{target.target_name}.cls"
     cls_path.write_text(cls_code, encoding="utf-8")
     result.files_created.append(cls_path)
@@ -151,9 +228,9 @@ def _scaffold_apex(
     meta_path.write_text(meta_xml, encoding="utf-8")
     result.files_created.append(meta_path)
 
-    # Test class
+    # Test class — use the dedicated generator
     test_name = f"{target.target_name}Test"
-    test_code = _generate_test_class(test_name, target.target_name, inputs)
+    test_code = generate_apex_test_class(target.target_name, inputs, outputs, is_callout=is_callout)
     test_path = classes_dir / f"{test_name}.cls"
     test_path.write_text(test_code, encoding="utf-8")
     result.files_created.append(test_path)
@@ -163,29 +240,94 @@ def _scaffold_apex(
     test_meta_path.write_text(meta_xml, encoding="utf-8")
     result.files_created.append(test_meta_path)
 
+    # Callout-specific artifacts
+    if is_callout:
+        # Remote Site Settings for discovered domains
+        domains = _extract_domains(description_text)
+        for domain in domains:
+            _scaffold_remote_site(domain, description_text, output_dir, result)
 
-def _generate_test_class(test_name: str, class_name: str, inputs: list[dict]) -> str:
-    """Generate a minimal test class for an Apex stub."""
-    lines = [
-        f"@isTest",
-        f"private class {test_name} {{",
-        f"    @isTest",
-        f"    static void testInvoke() {{",
-        f"        {class_name}.Request req = new {class_name}.Request();",
-    ]
-    for inp in inputs:
-        default = "'test'" if inp.get("type") in ("string", "id") else "0" if inp.get("type") == "number" else "false"
-        lines.append(f"        req.{inp['name']} = {default};")
-    lines.extend([
-        f"        List<{class_name}.Response> results = {class_name}.invoke(",
-        f"            new List<{class_name}.Request>{{ req }}",
-        f"        );",
-        f"        System.assertNotEquals(null, results, 'Expected non-null response');",
-        f"        System.assertEquals(1, results.size(), 'Expected one response');",
-        f"    }}",
-        f"}}",
-    ])
-    return "\n".join(lines) + "\n"
+        # Custom Metadata for auth if needed
+        if _needs_auth_metadata(description_text):
+            _scaffold_custom_metadata(target.target_name, output_dir, result)
+
+
+def _scaffold_remote_site(
+    domain: str,
+    description: str,
+    output_dir: Path,
+    result: ScaffoldResult,
+) -> None:
+    """Generate a Remote Site Setting for a callout domain."""
+    remote_dir = output_dir / "remoteSiteSettings"
+    remote_dir.mkdir(parents=True, exist_ok=True)
+
+    site_name = safe_domain_name(domain)
+    xml = generate_remote_site_xml(domain, f"Remote site for callout to {domain}")
+    site_path = remote_dir / f"{site_name}.remoteSite-meta.xml"
+    site_path.write_text(xml, encoding="utf-8")
+    result.files_created.append(site_path)
+
+
+def _scaffold_custom_metadata(
+    action_name: str,
+    output_dir: Path,
+    result: ScaffoldResult,
+) -> None:
+    """Generate Custom Metadata Type + record for API key storage."""
+    cmd_dir = output_dir / "customMetadata"
+    cmd_dir.mkdir(parents=True, exist_ok=True)
+
+    type_name = f"{action_name}_Config"
+    record_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata">\n'
+        f'    <label>{action_name} Config Default</label>\n'
+        '    <protected>false</protected>\n'
+        '    <values>\n'
+        '        <field>apikey__c</field>\n'
+        '        <value xsi:type="xsd:string" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">REPLACE_WITH_ACTUAL_KEY</value>\n'
+        '    </values>\n'
+        '</CustomMetadata>\n'
+    )
+
+    record_path = cmd_dir / f"{type_name}.Default.md-meta.xml"
+    record_path.write_text(record_xml, encoding="utf-8")
+    result.files_created.append(record_path)
+
+    # Also generate the Custom Metadata Type definition
+    type_dir = output_dir / "objects" / f"{type_name}__mdt"
+    type_dir.mkdir(parents=True, exist_ok=True)
+
+    type_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">\n'
+        f'    <label>{action_name} Config</label>\n'
+        f'    <pluralLabel>{action_name} Configs</pluralLabel>\n'
+        '    <visibility>Public</visibility>\n'
+        '</CustomObject>\n'
+    )
+    type_path = type_dir / f"{type_name}__mdt.object-meta.xml"
+    type_path.write_text(type_xml, encoding="utf-8")
+    result.files_created.append(type_path)
+
+    # Field definition for apikey__c
+    fields_dir = type_dir / "fields"
+    fields_dir.mkdir(parents=True, exist_ok=True)
+    field_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">\n'
+        '    <fullName>apikey__c</fullName>\n'
+        '    <fieldManageability>SubscriberControlled</fieldManageability>\n'
+        '    <label>API Key</label>\n'
+        '    <length>255</length>\n'
+        '    <type>Text</type>\n'
+        '    <unique>false</unique>\n'
+        '</CustomField>\n'
+    )
+    field_path = fields_dir / "apikey__c.field-meta.xml"
+    field_path.write_text(field_xml, encoding="utf-8")
+    result.files_created.append(field_path)
 
 
 def _scaffold_permission_set(

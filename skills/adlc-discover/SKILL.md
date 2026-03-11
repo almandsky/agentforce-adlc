@@ -102,6 +102,36 @@ Summary: 2/3 targets found (66.7%)
 Exit code: 1 (missing targets detected)
 ```
 
+### 5. I/O Parameter Validation
+
+When the `--validate-io` flag is used, discover also validates that found targets have I/O parameters matching the `.agent` file declarations:
+
+- **Flows:** Queries `/services/data/v66.0/actions/custom/flow/{FlowApiName}` to get actual input/output parameter schema. Compares names (case-sensitive) and types against `.agent` file declarations.
+- **Apex:** Queries `ApexClass` body to check `@InvocableVariable` field names match expected inputs/outputs.
+
+Validation results appear as warnings (non-blocking):
+
+```
+⚠️  I/O Mismatches (2):
+   Get_Order_Status: input 'customer_name' not found in org target
+   ProcessReturn: input 'order_id' type mismatch — expected number, got string
+```
+
+### 6. Classification for Scaffold Pipeline
+
+Discovery feeds into scaffold with action classification:
+
+| Signal in Description | Classification | Scaffold Output |
+|----------------------|---------------|-----------------|
+| "API", "HTTP", "REST", "external", URL patterns | `callout` | Apex with Http + Remote Site + Custom Metadata |
+| SObject names, "query", "record", "SOQL" | `soql` | Apex with SOQL query logic |
+| No special signals | `basic` | Standard placeholder Apex |
+
+When `callout` is classified, scaffold additionally generates:
+- Remote Site Settings for discovered domains
+- Custom Metadata Type + record if auth keywords detected ("API key", "Bearer", "token")
+- Apex test class with `HttpCalloutMock`
+
 ## Integration with Other Skills
 
 ### Next Steps After Discovery

@@ -41,9 +41,21 @@ class TargetStatus:
 
 
 @dataclass
+class IoMismatch:
+    """A mismatch between expected and actual I/O parameters."""
+    target_name: str
+    field_name: str
+    direction: str  # "input" or "output"
+    expected_type: str
+    actual_type: str
+    issue: str  # "missing", "type_mismatch", "extra"
+
+
+@dataclass
 class DiscoveryReport:
     """Collection of target statuses."""
     targets: list[TargetStatus] = field(default_factory=list)
+    io_mismatches: list[IoMismatch] = field(default_factory=list)
 
     @property
     def found(self) -> list[TargetStatus]:
@@ -102,6 +114,16 @@ def extract_actions(agent_file: Path) -> list[dict]:
             current_action["target_type"] = target_match.group(1)
             current_action["target_name"] = target_match.group(2)
             current_action["target"] = f"{target_match.group(1)}://{target_match.group(2)}"
+            # Target terminates input/output collection
+            in_inputs = False
+            in_outputs = False
+            continue
+
+        # Detect description line (captures action description for classification)
+        desc_match = re.match(r'description:\s*"(.+)"', stripped)
+        if desc_match and current_action and "description" not in current_action:
+            current_action["description"] = desc_match.group(1)
+            continue
 
         # Detect inputs/outputs sections
         if stripped == "inputs:":
@@ -113,9 +135,9 @@ def extract_actions(agent_file: Path) -> list[dict]:
             in_inputs = False
             continue
 
-        # Detect action start (indented name followed by colon, with description)
-        action_match = re.match(r'^(\t{2}|\s{8})(\w+):\s*$', line)
-        if action_match and not in_inputs and not in_outputs:
+        # Detect action start (indented name followed by colon)
+        action_match = re.match(r'^(\t{2,3}|\s{6,12})(\w+):\s*$', line)
+        if action_match:
             # Save previous action
             if current_action and current_action.get("target"):
                 current_action["inputs"] = current_inputs
@@ -126,9 +148,10 @@ def extract_actions(agent_file: Path) -> list[dict]:
             current_outputs = []
             in_inputs = False
             in_outputs = False
+            continue
 
-        # Collect input/output parameters
-        param_match = re.match(r'^\s+(\w+):\s*(string|number|boolean|date|datetime|id|object)', stripped)
+        # Collect input/output parameters (match "name: type" on stripped text)
+        param_match = re.match(r'^(\w+):\s*(string|number|boolean|date|datetime|id|object)\b', stripped)
         if param_match:
             param = {"name": param_match.group(1), "type": param_match.group(2)}
             if in_inputs:
@@ -212,8 +235,179 @@ def _suggest_similar(name: str, available: list[str], threshold: float = 0.4) ->
     return sorted(suggestions, key=lambda s: s.similarity, reverse=True)[:3]
 
 
-def discover(agent_file: Path, target_org: str) -> DiscoveryReport:
-    """Run discovery for a single .agent file."""
+def _rest_api_get(path: str, target_org: str) -> dict | None:
+    """Call a Salesforce REST API endpoint via sf CLI."""
+    cmd = ["sf", "org", "open", "-o", target_org, "--json", "--url-only"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if proc.returncode != 0:
+            return None
+        data = json.loads(proc.stdout)
+        instance_url = data.get("result", {}).get("url", "")
+        # Extract base URL (everything before /secur/ or similar)
+        import urllib.parse
+        parsed = urllib.parse.urlparse(instance_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
+        return None
+
+    # Use sf api to call REST endpoint
+    cmd = ["sf", "api", "request", "rest", path, "-o", target_org, "--json"]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            return None
+        return json.loads(proc.stdout)
+    except (subprocess.TimeoutExpired, json.JSONDecodeError, FileNotFoundError):
+        return None
+
+
+# Flow type to .agent type mapping for validation
+_FLOW_TYPE_TO_AGENT = {
+    "STRING": "string",
+    "NUMBER": "number",
+    "CURRENCY": "number",
+    "BOOLEAN": "boolean",
+    "DATE": "date",
+    "DATETIME": "datetime",
+}
+
+
+def validate_action_io(
+    target_type: str,
+    target_name: str,
+    expected_inputs: list[dict],
+    expected_outputs: list[dict],
+    target_org: str,
+) -> list[IoMismatch]:
+    """Validate that an existing target's I/O matches what the .agent file declares.
+
+    For flows, queries the Actions REST API to get actual parameter schema.
+    For apex, queries the Tooling API for @InvocableVariable fields.
+
+    Args:
+        target_type: "flow" or "apex".
+        target_name: The API name of the target.
+        expected_inputs: Input params declared in the .agent file.
+        expected_outputs: Output params declared in the .agent file.
+        target_org: Salesforce org alias.
+
+    Returns:
+        List of IoMismatch entries (empty if everything matches).
+    """
+    mismatches = []
+
+    if target_type == "flow":
+        mismatches = _validate_flow_io(target_name, expected_inputs, expected_outputs, target_org)
+    elif target_type == "apex":
+        mismatches = _validate_apex_io(target_name, expected_inputs, expected_outputs, target_org)
+
+    return mismatches
+
+
+def _validate_flow_io(
+    flow_name: str,
+    expected_inputs: list[dict],
+    expected_outputs: list[dict],
+    target_org: str,
+) -> list[IoMismatch]:
+    """Validate flow I/O via the custom/flow REST API."""
+    mismatches = []
+    api_path = f"/services/data/v{66}.0/actions/custom/flow/{flow_name}"
+    result = _rest_api_get(api_path, target_org)
+    if not result:
+        return mismatches
+
+    # Parse actual inputs/outputs from the REST response
+    actual_inputs = {}
+    actual_outputs = {}
+    for param in result.get("result", result).get("inputs", []):
+        name = param.get("name", "")
+        ptype = param.get("type", "").upper()
+        actual_inputs[name] = _FLOW_TYPE_TO_AGENT.get(ptype, "string")
+
+    for param in result.get("result", result).get("outputs", []):
+        name = param.get("name", "")
+        ptype = param.get("type", "").upper()
+        actual_outputs[name] = _FLOW_TYPE_TO_AGENT.get(ptype, "string")
+
+    # Check expected inputs exist
+    for inp in expected_inputs:
+        name = inp["name"]
+        if name not in actual_inputs:
+            mismatches.append(IoMismatch(
+                target_name=flow_name, field_name=name, direction="input",
+                expected_type=inp.get("type", "string"), actual_type="",
+                issue="missing",
+            ))
+        elif actual_inputs[name] != inp.get("type", "string"):
+            mismatches.append(IoMismatch(
+                target_name=flow_name, field_name=name, direction="input",
+                expected_type=inp.get("type", "string"), actual_type=actual_inputs[name],
+                issue="type_mismatch",
+            ))
+
+    # Check expected outputs exist
+    for out in expected_outputs:
+        name = out["name"]
+        if name not in actual_outputs:
+            mismatches.append(IoMismatch(
+                target_name=flow_name, field_name=name, direction="output",
+                expected_type=out.get("type", "string"), actual_type="",
+                issue="missing",
+            ))
+
+    return mismatches
+
+
+def _validate_apex_io(
+    class_name: str,
+    expected_inputs: list[dict],
+    expected_outputs: list[dict],
+    target_org: str,
+) -> list[IoMismatch]:
+    """Validate Apex I/O by querying the class body for @InvocableVariable fields."""
+    mismatches = []
+    records = _query_org(
+        f"SELECT Body FROM ApexClass WHERE Name = '{class_name}' LIMIT 1",
+        target_org,
+    )
+    if not records:
+        return mismatches
+
+    body = records[0].get("Body", "")
+    # Extract @InvocableVariable field names from Request/Response classes
+    # Simple regex: find field declarations after @InvocableVariable
+    field_pattern = re.compile(r'@InvocableVariable[^;]*\n\s*public\s+\w+\s+(\w+)\s*;')
+    actual_fields = set(field_pattern.findall(body))
+
+    for inp in expected_inputs:
+        if inp["name"] not in actual_fields:
+            mismatches.append(IoMismatch(
+                target_name=class_name, field_name=inp["name"], direction="input",
+                expected_type=inp.get("type", "string"), actual_type="",
+                issue="missing",
+            ))
+
+    for out in expected_outputs:
+        if out["name"] not in actual_fields:
+            mismatches.append(IoMismatch(
+                target_name=class_name, field_name=out["name"], direction="output",
+                expected_type=out.get("type", "string"), actual_type="",
+                issue="missing",
+            ))
+
+    return mismatches
+
+
+def discover(agent_file: Path, target_org: str, validate_io: bool = False) -> DiscoveryReport:
+    """Run discovery for a single .agent file.
+
+    Args:
+        agent_file: Path to the .agent file.
+        target_org: Salesforce org alias.
+        validate_io: If True, validate I/O parameters for found targets.
+    """
     report = DiscoveryReport()
     raw_targets = extract_targets(agent_file)
 
@@ -256,6 +450,21 @@ def discover(agent_file: Path, target_org: str) -> DiscoveryReport:
                 status.suggestions = _suggest_similar(name, available)
             report.targets.append(status)
 
+    # Validate I/O for found targets
+    if validate_io:
+        actions = {a["target_name"]: a for a in extract_actions(agent_file) if a.get("target_name")}
+        for target in report.found:
+            if target.target_type in ("flow", "apex") and target.target_name in actions:
+                action_def = actions[target.target_name]
+                mismatches = validate_action_io(
+                    target.target_type,
+                    target.target_name,
+                    action_def.get("inputs", []),
+                    action_def.get("outputs", []),
+                    target_org,
+                )
+                report.io_mismatches.extend(mismatches)
+
     return report
 
 
@@ -291,6 +500,15 @@ def print_report(report: DiscoveryReport) -> None:
             print(f"   {t.target}")
             for s in t.suggestions:
                 print(f"      💡 Did you mean: {s.name} ({s.similarity:.0%} match)?")
+
+    # I/O mismatches
+    if report.io_mismatches:
+        print(f"\n⚠️  I/O Mismatches ({len(report.io_mismatches)}):")
+        for m in report.io_mismatches:
+            if m.issue == "missing":
+                print(f"   {m.target_name}: {m.direction} '{m.field_name}' not found in org target")
+            elif m.issue == "type_mismatch":
+                print(f"   {m.target_name}: {m.direction} '{m.field_name}' type mismatch — expected {m.expected_type}, got {m.actual_type}")
 
     print(f"\n{'=' * 60}")
     if report.all_found:

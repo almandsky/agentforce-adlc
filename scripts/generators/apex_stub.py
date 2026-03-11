@@ -147,6 +147,102 @@ def _class_to_label(class_name: str) -> str:
     return "".join(result)
 
 
+def generate_callout_apex_class(
+    class_name: str,
+    inputs: list[dict] | None = None,
+    outputs: list[dict] | None = None,
+    endpoint_url: str = "https://example.com/api",
+) -> str:
+    """Generate an Apex class with HTTP callout boilerplate.
+
+    Like generate_apex_class but the invoke() method includes Http/HttpRequest/HttpResponse
+    scaffolding instead of a plain placeholder.
+
+    Args:
+        class_name: The Apex class name.
+        inputs: Action input definitions.
+        outputs: Action output definitions.
+        endpoint_url: Default endpoint URL placeholder.
+
+    Returns:
+        Apex class source code string with callout logic.
+    """
+    inputs = inputs or []
+    outputs = outputs or []
+
+    lines = [
+        f'public with sharing class {class_name} {{',
+        '',
+    ]
+
+    # Request inner class
+    lines.append('    public class Request {')
+    for inp in inputs:
+        apex_type = _COMPLEX_TYPE_MAP.get(inp.get("complex_data_type_name", ""), _TYPE_MAP.get(inp.get("type", "string"), "String"))
+        desc = inp.get("description", "")
+        is_req = inp.get("required", True)
+        if desc:
+            lines.append(f'        @InvocableVariable(label=\'{_escape_apex(desc)}\' required={_apex_bool(is_req)})')
+        else:
+            lines.append(f'        @InvocableVariable(required={_apex_bool(is_req)})')
+        lines.append(f'        public {apex_type} {inp["name"]};')
+        lines.append('')
+    lines.append('    }')
+    lines.append('')
+
+    # Response inner class
+    lines.append('    public class Response {')
+    for out in outputs:
+        apex_type = _COMPLEX_TYPE_MAP.get(out.get("complex_data_type_name", ""), _TYPE_MAP.get(out.get("type", "string"), "String"))
+        desc = out.get("description", "")
+        if desc:
+            lines.append(f'        @InvocableVariable(label=\'{_escape_apex(desc)}\')')
+        else:
+            lines.append(f'        @InvocableVariable')
+        lines.append(f'        public {apex_type} {out["name"]};')
+        lines.append('')
+    lines.append('    }')
+    lines.append('')
+
+    # @InvocableMethod with HTTP callout
+    method_label = _class_to_label(class_name)
+    lines.extend([
+        f'    @InvocableMethod(label=\'{method_label}\' description=\'TODO: Add description\')',
+        '    public static List<Response> invoke(List<Request> requests) {',
+        '        List<Response> responses = new List<Response>();',
+        '        for (Request req : requests) {',
+        '            Response res = new Response();',
+        '',
+        '            HttpRequest httpReq = new HttpRequest();',
+        f'            httpReq.setEndpoint(\'{_escape_apex(endpoint_url)}\');',
+        '            httpReq.setMethod(\'GET\');',
+        '            httpReq.setHeader(\'Content-Type\', \'application/json\');',
+        '',
+        '            Http http = new Http();',
+        '            HttpResponse httpRes = http.send(httpReq);',
+        '',
+        '            if (httpRes.getStatusCode() == 200) {',
+        '                Map<String, Object> body = (Map<String, Object>) JSON.deserializeUntyped(httpRes.getBody());',
+        '                // TODO: Map response body to output fields',
+    ])
+
+    for out in outputs:
+        default = _default_for_type(out.get("type", "string"))
+        lines.append(f'                res.{out["name"]} = {default};')
+
+    lines.extend([
+        '            }',
+        '',
+        '            responses.add(res);',
+        '        }',
+        '        return responses;',
+        '    }',
+        '}',
+    ])
+
+    return "\n".join(lines) + "\n"
+
+
 def _default_for_type(type_name: str) -> str:
     """Return a placeholder Apex default value literal."""
     defaults = {

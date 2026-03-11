@@ -1,8 +1,9 @@
 """Tests for discover.py — target extraction from .agent files."""
 
 import pytest
+from unittest.mock import patch
 from pathlib import Path
-from scripts.discover import extract_targets, extract_actions, _suggest_similar, Suggestion
+from scripts.discover import extract_targets, extract_actions, _suggest_similar, Suggestion, IoMismatch, validate_action_io
 
 
 SAMPLE_AGENT = """\
@@ -122,3 +123,121 @@ class TestSuggestSimilar:
         available = [f"Get_Order_{i}" for i in range(10)]
         suggestions = _suggest_similar("Get_Order_Status", available)
         assert len(suggestions) <= 3
+
+
+class TestValidateActionIo:
+    """Tests for I/O parameter validation."""
+
+    @patch("scripts.discover._rest_api_get")
+    def test_flow_io_missing_input(self, mock_rest):
+        """Should detect when a declared input is missing from the flow."""
+        mock_rest.return_value = {
+            "inputs": [
+                {"name": "order_id", "type": "STRING"},
+            ],
+            "outputs": [
+                {"name": "status", "type": "STRING"},
+            ],
+        }
+        expected_inputs = [
+            {"name": "order_id", "type": "string"},
+            {"name": "customer_name", "type": "string"},
+        ]
+        expected_outputs = [{"name": "status", "type": "string"}]
+
+        mismatches = validate_action_io("flow", "Get_Order", expected_inputs, expected_outputs, "testorg")
+        assert len(mismatches) == 1
+        assert mismatches[0].field_name == "customer_name"
+        assert mismatches[0].issue == "missing"
+        assert mismatches[0].direction == "input"
+
+    @patch("scripts.discover._rest_api_get")
+    def test_flow_io_type_mismatch(self, mock_rest):
+        """Should detect type mismatch between .agent and flow."""
+        mock_rest.return_value = {
+            "inputs": [
+                {"name": "count", "type": "NUMBER"},
+            ],
+            "outputs": [],
+        }
+        expected_inputs = [{"name": "count", "type": "string"}]
+
+        mismatches = validate_action_io("flow", "TestFlow", expected_inputs, [], "testorg")
+        assert len(mismatches) == 1
+        assert mismatches[0].issue == "type_mismatch"
+        assert mismatches[0].expected_type == "string"
+        assert mismatches[0].actual_type == "number"
+
+    @patch("scripts.discover._rest_api_get")
+    def test_flow_io_all_match(self, mock_rest):
+        """Should return empty list when all I/O matches."""
+        mock_rest.return_value = {
+            "inputs": [{"name": "order_id", "type": "STRING"}],
+            "outputs": [{"name": "status", "type": "STRING"}],
+        }
+        expected_inputs = [{"name": "order_id", "type": "string"}]
+        expected_outputs = [{"name": "status", "type": "string"}]
+
+        mismatches = validate_action_io("flow", "TestFlow", expected_inputs, expected_outputs, "testorg")
+        assert mismatches == []
+
+    @patch("scripts.discover._rest_api_get")
+    def test_flow_io_api_unavailable(self, mock_rest):
+        """Should return empty list when API is unreachable."""
+        mock_rest.return_value = None
+
+        mismatches = validate_action_io("flow", "TestFlow", [{"name": "x", "type": "string"}], [], "testorg")
+        assert mismatches == []
+
+    @patch("scripts.discover._query_org")
+    def test_apex_io_missing_field(self, mock_query):
+        """Should detect when a declared field is missing from Apex class."""
+        mock_query.return_value = [{
+            "Body": """
+public with sharing class MyAction {
+    public class Request {
+        @InvocableVariable(required=true)
+        public String order_id;
+    }
+    public class Response {
+        @InvocableVariable
+        public String status;
+    }
+}
+"""
+        }]
+        expected_inputs = [
+            {"name": "order_id", "type": "string"},
+            {"name": "extra_field", "type": "string"},
+        ]
+        expected_outputs = [{"name": "status", "type": "string"}]
+
+        mismatches = validate_action_io("apex", "MyAction", expected_inputs, expected_outputs, "testorg")
+        assert len(mismatches) == 1
+        assert mismatches[0].field_name == "extra_field"
+        assert mismatches[0].direction == "input"
+
+    @patch("scripts.discover._query_org")
+    def test_apex_io_all_match(self, mock_query):
+        """Should return empty list when all fields exist in Apex."""
+        mock_query.return_value = [{
+            "Body": """
+public class MyAction {
+    public class Request {
+        @InvocableVariable(required=true)
+        public String order_id;
+    }
+    public class Response {
+        @InvocableVariable
+        public String result;
+    }
+}
+"""
+        }]
+        mismatches = validate_action_io(
+            "apex", "MyAction",
+            [{"name": "order_id", "type": "string"}],
+            [{"name": "result", "type": "string"}],
+            "testorg",
+        )
+        assert mismatches == []

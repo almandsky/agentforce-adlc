@@ -414,6 +414,15 @@ def discover(agent_file: Path, target_org: str, validate_io: bool = False) -> Di
     if not raw_targets:
         return report
 
+    # Deduplicate targets (same action can appear in multiple topics)
+    seen_uris = set()
+    unique_targets = []
+    for uri, ttype, tname in raw_targets:
+        if uri not in seen_uris:
+            seen_uris.add(uri)
+            unique_targets.append((uri, ttype, tname))
+    raw_targets = unique_targets
+
     # Group by type
     by_type: dict[str, list[tuple[str, str]]] = {"flow": [], "apex": [], "retriever": []}
     for uri, ttype, tname in raw_targets:

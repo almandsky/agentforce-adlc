@@ -23,7 +23,7 @@ if str(_repo_root) not in sys.path:
 
 from scripts.discover import DiscoveryReport, TargetStatus, discover, extract_actions
 from scripts.generators.flow_xml import generate_flow_xml
-from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class
+from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class, generate_soql_apex_class
 from scripts.generators.apex_test_stub import generate_apex_test_class
 from scripts.generators.permission_set_xml import generate_permission_set_xml
 from scripts.generators.remote_site_xml import generate_remote_site_xml, safe_domain_name
@@ -127,23 +127,38 @@ def scaffold(
             if action.get("target_name"):
                 actions[action["target_name"]] = action
 
+    # Derive agent name for permission set naming
+    agent_name = ""
+    if agent_file:
+        agent_name = agent_file.stem  # e.g. "ToyotaConnectedService"
+
     apex_classes = []
+    seen_targets = set()
+    seen_retriever_warnings = set()
 
     for target in report.missing:
+        # Deduplicate: same target can appear in multiple topics
+        if target.target in seen_targets:
+            continue
+        seen_targets.add(target.target)
+
         if target.target_type == "flow":
             _scaffold_flow(target, output_dir, actions, target_org, result)
         elif target.target_type == "apex":
             _scaffold_apex(target, output_dir, actions, target_org, result)
             apex_classes.append(target.target_name)
         elif target.target_type == "retriever":
-            result.warnings.append(
-                f"Retriever '{target.target_name}' must be created manually in "
-                f"Setup → Data Cloud → Data Spaces → Knowledge"
-            )
+            if target.target_name not in seen_retriever_warnings:
+                seen_retriever_warnings.add(target.target_name)
+                result.warnings.append(
+                    f"Retriever '{target.target_name}' must be created manually in "
+                    f"Setup → Data Cloud → Data Spaces → Knowledge"
+                )
 
     # Generate permission set if any Apex classes were scaffolded
     if apex_classes:
-        _scaffold_permission_set(apex_classes, output_dir, result)
+        perm_set_name = f"{agent_name}_Action_Access" if agent_name else "Agent_Action_Access"
+        _scaffold_permission_set(apex_classes, output_dir, result, perm_set_name)
 
     return result
 
@@ -210,13 +225,15 @@ def _scaffold_apex(
 
     description_text = action_def.get("description", "")
 
-    # Main class — use callout variant if classified as such
+    # Main class — use classification-appropriate generator
     if is_callout:
         domains = _extract_domains(description_text)
         endpoint = f"https://{domains[0]}" if domains else "https://example.com/api"
-        cls_code = generate_callout_apex_class(target.target_name, inputs, outputs, endpoint)
+        cls_code = generate_callout_apex_class(target.target_name, inputs, outputs, endpoint, description=description_text)
+    elif classification == "soql":
+        cls_code = generate_soql_apex_class(target.target_name, inputs, outputs, description=description_text)
     else:
-        cls_code = generate_apex_class(target.target_name, inputs, outputs)
+        cls_code = generate_apex_class(target.target_name, inputs, outputs, description=description_text)
 
     cls_path = classes_dir / f"{target.target_name}.cls"
     cls_path.write_text(cls_code, encoding="utf-8")
@@ -334,6 +351,7 @@ def _scaffold_permission_set(
     apex_classes: list[str],
     output_dir: Path,
     result: ScaffoldResult,
+    perm_set_name: str = "Agent_Action_Access",
 ) -> None:
     """Generate permission set granting access to scaffolded Apex classes."""
     perm_dir = output_dir / "permissionsets"
@@ -345,8 +363,8 @@ def _scaffold_permission_set(
         all_classes.append(cls)
         all_classes.append(f"{cls}Test")
 
-    xml = generate_permission_set_xml("Agent_Action_Access", all_classes)
-    perm_path = perm_dir / "Agent_Action_Access.permissionset-meta.xml"
+    xml = generate_permission_set_xml(perm_set_name, all_classes)
+    perm_path = perm_dir / f"{perm_set_name}.permissionset-meta.xml"
     perm_path.write_text(xml, encoding="utf-8")
     result.files_created.append(perm_path)
 

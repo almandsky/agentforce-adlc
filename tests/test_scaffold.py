@@ -3,7 +3,7 @@
 import pytest
 from pathlib import Path
 from scripts.generators.flow_xml import generate_flow_xml
-from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class
+from scripts.generators.apex_stub import generate_apex_class, generate_apex_meta_xml, generate_callout_apex_class, generate_soql_apex_class
 from scripts.generators.apex_test_stub import generate_apex_test_class
 from scripts.generators.permission_set_xml import generate_permission_set_xml
 from scripts.generators.remote_site_xml import generate_remote_site_xml, safe_domain_name
@@ -259,3 +259,66 @@ class TestClassifyAction:
     def test_empty_description(self):
         action = {"name": "do_something", "description": ""}
         assert classify_action(action) == "basic"
+
+
+class TestSoqlApex:
+    def test_soql_class_has_query(self):
+        inputs = [{"name": "customer_id", "type": "string"}]
+        outputs = [{"name": "history_json", "type": "string"}]
+        code = generate_soql_apex_class("GetHistory", inputs, outputs,
+            description="Query Contact records for history")
+        assert "SELECT Id" in code
+        assert "FROM Contact" in code
+        assert "WHERE Id != null" in code
+        assert "Suggested WHERE: customer_id = :req.customer_id" in code
+        assert "WITH USER_MODE" in code
+        assert "LIMIT 100" in code
+
+    def test_soql_class_infers_sobject(self):
+        code = generate_soql_apex_class("GetOrders",
+            description="Query Order and OrderItem records")
+        assert "FROM Order" in code
+
+    def test_soql_class_fallback_sobject(self):
+        code = generate_soql_apex_class("DoSomething",
+            description="Do something generic")
+        assert "FROM SObject" in code
+
+    def test_soql_class_custom_object(self):
+        code = generate_soql_apex_class("GetWidgets",
+            description="Query Widget__c records")
+        assert "FROM Widget__c" in code
+
+    def test_soql_with_multiple_inputs(self):
+        inputs = [
+            {"name": "part_number", "type": "string"},
+            {"name": "dealer_code", "type": "string"},
+        ]
+        code = generate_soql_apex_class("LookupParts", inputs,
+            description="Query Product2 for parts")
+        assert "Suggested WHERE: part_number = :req.part_number AND dealer_code = :req.dealer_code" in code
+
+    def test_soql_has_invocable_method(self):
+        code = generate_soql_apex_class("GetHistory",
+            description="Query Case records")
+        assert "@InvocableMethod" in code
+        assert "public class Request" in code
+        assert "public class Response" in code
+
+
+class TestDescriptionPassthrough:
+    def test_basic_class_with_description(self):
+        code = generate_apex_class("MyAction", description="Do the thing")
+        assert "description='Do the thing'" in code
+
+    def test_basic_class_no_description(self):
+        code = generate_apex_class("MyAction")
+        assert "description='TODO: Add description'" in code
+
+    def test_callout_class_with_description(self):
+        code = generate_callout_apex_class("MyCallout", description="Call the API")
+        assert "description='Call the API'" in code
+
+    def test_soql_class_with_description(self):
+        code = generate_soql_apex_class("MyQuery", description="Query Account records")
+        assert "description='Query Account records'" in code

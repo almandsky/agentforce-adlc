@@ -867,6 +867,7 @@ def _install_for_target(tgt: Dict, source_dir: Path, version: str,
 def cmd_install(dry_run: bool = False, force: bool = False,
                 called_from_bash: bool = False, target: str = "claude") -> int:
     """Install agentforce-adlc."""
+    _download_tmp = None  # Set if remote install uses a temp dir
     if not called_from_bash:
         print(f"\n{c('agentforce-adlc installer', Colors.BOLD)}")
 
@@ -948,12 +949,14 @@ def cmd_install(dry_run: bool = False, force: bool = False,
 
         print_info(f"Version: {version}" + (f" ({commit_sha})" if commit_sha else ""))
 
-        # Download to first target's install dir, then copy to others
-        first_install_dir = valid_targets[0]["install_dir"]
-        if not download_repo_zip(first_install_dir):
+        # Download to a temp directory, then copy to each target
+        _download_tmp = tempfile.mkdtemp(prefix="adlc-download-")
+        _download_dir = Path(_download_tmp) / "adlc"
+        if not download_repo_zip(_download_dir):
+            shutil.rmtree(_download_tmp, ignore_errors=True)
             return 1
-        print_substep(f"Extracted to {first_install_dir}")
-        source_dir = first_install_dir
+        print_substep(f"Downloaded to temp dir")
+        source_dir = _download_dir
 
     # Install for each valid target
     all_skills = []
@@ -966,6 +969,10 @@ def cmd_install(dry_run: bool = False, force: bool = False,
             all_agents = result["agents"]
         if result["hooks"]:
             all_hooks = result["hooks"]
+
+    # Clean up temp download directory (remote install only)
+    if _download_tmp and Path(_download_tmp).exists():
+        shutil.rmtree(_download_tmp, ignore_errors=True)
 
     # Summary
     target_names = [t["name"] for t in valid_targets]

@@ -821,6 +821,34 @@ Action input and output definitions support these metadata properties:
 | `is_used_by_planner` | output | Whether the planner uses this for routing decisions |
 | `is_user_input` | input | Whether the value comes from the end user |
 | `label` | input, output | Human-readable label for the UI |
+| `complex_data_type_name` | input, output | Lightning platform type for non-primitive types (see below) |
+
+#### CRITICAL: Numeric Types in Action I/O
+
+Bare `number` works for **variables** but **fails at publish** for action inputs/outputs. Action I/O numeric fields require `object` type + `complex_data_type_name`:
+
+| WRONG (publish failure) | CORRECT |
+|------------------------|---------|
+| `minPrice: number` | `minPrice: object` with `complex_data_type_name: "lightning__integerType"` |
+| `score: number` | `score: object` with `complex_data_type_name: "lightning__doubleType"` |
+
+Example:
+```
+actions:
+	search_homes:
+		target: "flow://Search_Homes"
+		inputs:
+			city: string
+			minPrice: object
+				complex_data_type_name: "lightning__integerType"
+		outputs:
+			resultCount: object
+				complex_data_type_name: "lightning__integerType"
+```
+
+> **Rule of thumb:** `number` → variables only. Action I/O → always `object` + `complex_data_type_name`.
+
+See `references/complex-data-types.md` for the full mapping table.
 
 ---
 
@@ -850,6 +878,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | No `@inputs` in `set` clauses | `set @variables.x = @inputs.y` | Use `@outputs.y` or `@utils.setVariables` |
 | No `default:` sub-property on variables | `order_id: mutable string` + `default: ""` | `order_id: mutable string = ""` (inline default) |
 | No nested `type:` in action I/O | `order_id:` + `type: string` | `order_id: string` (inline type) |
+| Numeric action I/O needs complex type | `minPrice: number` in inputs/outputs | `minPrice: object` + `complex_data_type_name: "lightning__integerType"` |
 
 ### Syntax Pitfalls (Compiler Errors)
 
@@ -1362,7 +1391,7 @@ planner prompt.
 |------|-----------|
 | Credit consumption, lifecycle hooks, supervision, limits | `references/production-gotchas.md` (planned) |
 | Which properties work in which contexts | `references/feature-validity.md` (planned) |
-| Agent Script to Lightning type mapping | `references/complex-data-types.md` (planned) |
+| Agent Script to Lightning type mapping | `references/complex-data-types.md` |
 | Preview smoke test loop (Phase 3.5 rapid feedback) | `references/preview-test-loop.md` |
 | Action definitions, targets, I/O binding, troubleshooting | `references/actions-reference.md` (planned) |
 | How instructions resolve at runtime (3-phase model) | `references/instruction-resolution.md` (planned) |

@@ -13,6 +13,18 @@ _TYPE_MAP = {
     "object": "Apex",
 }
 
+# Mapping from complex_data_type_name to Flow variable dataTypes (for action I/O)
+_COMPLEX_TYPE_MAP = {
+    "lightning__integerType": "Number",
+    "lightning__doubleType": "Number",
+    "lightning__currencyType": "Currency",
+    "lightning__dateTimeStringType": "DateTime",
+    "lightning__recordInfoType": "SObject",
+    "lightning__objectType": "Apex",
+    "lightning__listType": "Apex",
+    "lightning__textType": "String",
+}
+
 API_VERSION = "66.0"
 
 
@@ -58,7 +70,7 @@ def generate_flow_xml(
 
     # Input variables
     for inp in inputs:
-        flow_type = _TYPE_MAP.get(inp.get("type", "string"), "String")
+        flow_type = _COMPLEX_TYPE_MAP.get(inp.get("complex_data_type_name", ""), _TYPE_MAP.get(inp.get("type", "string"), "String"))
         is_output = inp["name"] in bidirectional_names
         lines.extend([
             '    <variables>',
@@ -76,7 +88,7 @@ def generate_flow_xml(
     for out in outputs:
         if out["name"] in bidirectional_names:
             continue
-        flow_type = _TYPE_MAP.get(out.get("type", "string"), "String")
+        flow_type = _COMPLEX_TYPE_MAP.get(out.get("complex_data_type_name", ""), _TYPE_MAP.get(out.get("type", "string"), "String"))
         lines.extend([
             '    <variables>',
             f'        <name>{out["name"]}</name>',

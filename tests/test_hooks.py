@@ -74,6 +74,43 @@ class TestAgentValidator:
         assert any("REPLACE_WITH_EINSTEIN_AGENT_USER" in w for w in warnings)
 
 
+    def test_numeric_action_io_warning(self):
+        """Bare 'number' in action I/O should warn about complex_data_type_name."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "start_agent entry:\n\tdescription: \"Entry\"\n"
+            "topic search:\n\tdescription: \"Search\"\n"
+            "\tactions:\n"
+            "\t\tsearch_homes:\n"
+            "\t\t\ttarget: \"flow://Search_Homes\"\n"
+            "\t\t\tinputs:\n"
+            "\t\t\t\tminPrice: number\n"
+            "\t\t\t\tcity: string\n"
+            "\t\t\toutputs:\n"
+            "\t\t\t\tresultCount: number\n"
+        )
+        result = self._validate(content)
+        warnings = [w[2] for w in result["warnings"]]
+        # Should warn about minPrice and resultCount
+        assert any("minPrice" in w and "number" in w for w in warnings)
+        assert any("resultCount" in w and "number" in w for w in warnings)
+        # Should NOT warn about city (string type)
+        assert not any("city" in w for w in warnings)
+
+    def test_numeric_variable_no_warning(self):
+        """Bare 'number' in variables should NOT trigger the action I/O warning."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "variables:\n\tmax_price: mutable number\n"
+            "start_agent entry:\n\tdescription: \"Entry\"\n"
+        )
+        result = self._validate(content)
+        warnings = [w[2] for w in result["warnings"]]
+        assert not any("number" in w and "action I/O" in w.lower() for w in warnings)
+
+
 class TestGuardrails:
     """Test the guardrails.py PreToolUse hook patterns."""
 

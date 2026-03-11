@@ -4,10 +4,22 @@
 
 > **"#1 source of compile errors"** - Use this table when defining action inputs/outputs in Agentforce Assets.
 
+## Decision Tree: When Do I Need `complex_data_type_name`?
+
+1. **Variable** with `number`? → Use `number` directly, no complex type needed
+2. **Action input/output** with integer value? → Use `object` + `complex_data_type_name: "lightning__integerType"`
+3. **Action input/output** with decimal value? → Use `object` + `complex_data_type_name: "lightning__doubleType"`
+4. **Variable** with any other primitive? → Use the type directly (`string`, `boolean`, `date`)
+5. **Action I/O** with non-primitive? → Use `object` + appropriate `complex_data_type_name` from table below
+
+> **Key insight:** Bare `number` works in **variable declarations** but **fails at publish** in action inputs/outputs. This is the #1 cause of publish-fix-republish cycles.
+
+## Full Mapping Table
+
 | Data Type | `complex_data_type_name` Value | Notes |
 |-----------|-------------------------------|-------|
-| `string` | *(none needed)* | Primitive type |
-| `number` | *(none needed)* | Primitive type |
+| `string` | *(none needed)* | Primitive type — works in both variables and action I/O |
+| `number` (variable only) | *(none needed)* | **Variables only** — do NOT use bare `number` in action I/O |
 | `boolean` | *(none needed)* | Primitive type |
 | `object` (SObject) | `lightning__recordInfoType` | Use for Account, Contact, etc. |
 | `list[string]` | `lightning__textType` | Collection of text values |

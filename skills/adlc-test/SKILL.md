@@ -113,8 +113,11 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
     --utterance "$UTTERANCE" \
     --target-org <org> --json 2>/dev/null)
 
+  # Strip control characters before jq (sf agent preview may emit them)
+  CLEAN=$(echo "$RESPONSE" | tr -d '\000-\010\013\014\016-\037')
+
   # Capture plan ID for trace analysis
-  PLAN_ID=$(echo "$RESPONSE" | jq -r '.result.messages[-1].planId')
+  PLAN_ID=$(echo "$CLEAN" | jq -r '.result.messages[-1].planId')
   PLAN_IDS+=("$PLAN_ID")
 done
 
@@ -730,6 +733,26 @@ Both adlc-test and adlc-optimize write to the `tests/` directory using the agent
 | Trace not found | CLI version issue | Update to sf CLI 2.121.7+ |
 | Action mock fails | Complex inputs | Use `--use-live-actions` flag |
 | Context variables missing | Preview limitation | Use Runtime API for context tests |
+| `jq` parse error on preview output | Control characters in CLI output | Strip with `tr -d '\000-\010\013\014\016-\037'` before piping to `jq`, or use Python `json.loads()` as fallback |
+
+#### Defensive JSON Parsing
+
+`sf agent preview` output may contain control characters that break `jq`. Always sanitize before parsing:
+
+```bash
+# Option 1: Strip control characters before jq
+CLEAN=$(echo "$RESPONSE" | tr -d '\000-\010\013\014\016-\037')
+echo "$CLEAN" | jq -r '.result.messages[-1].planId'
+
+# Option 2: Python fallback (more robust)
+python3 -c "
+import json, sys, re
+raw = sys.stdin.read()
+clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+data = json.loads(clean)
+print(json.dumps(data.get('result', {}), indent=2))
+" <<< "$RESPONSE"
+```
 
 ### Debug Mode
 

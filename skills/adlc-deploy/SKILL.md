@@ -325,6 +325,7 @@ if __name__ == '__main__':
 | `Duplicate value found: GenAiPluginDefinition` | `start_agent` and a `topic` share the same name (both create `GenAiPluginDefinition` records), or orphaned records from prior failed publishes | Rename `start_agent` or the colliding topic so they have different names, then re-publish. Orphaned records cannot be deleted (dependency errors). See known-issues.md Issue 13. |
 | `No .agent file found` | developer_name mismatch | Ensure folder name matches developer_name |
 | `Flow not found` | Metadata not deployed | Deploy flows before publishing agent |
+| `SetupEntityType is not supported for DML` or `DML not allowed on PermissionSet` | Tried to create/update PermissionSet via Apex DML | Permission sets are **read-only via DML** — must use `sf project deploy start` (Metadata API). Generate `.permissionset-meta.xml` and deploy with the rest of the metadata. |
 
 ### Rollback Procedure
 

@@ -46,6 +46,18 @@ class TestFlowXml:
         xml = generate_flow_xml("TestFlow")
         assert "<name>placeholder_result</name>" in xml
 
+    def test_complex_type_integer(self):
+        """complex_data_type_name should map to correct Flow type."""
+        inputs = [{"name": "minPrice", "type": "object", "complex_data_type_name": "lightning__integerType"}]
+        xml = generate_flow_xml("TestFlow", inputs=inputs)
+        assert "<dataType>Number</dataType>" in xml
+
+    def test_complex_type_currency(self):
+        """lightning__currencyType should map to Currency."""
+        outputs = [{"name": "total", "type": "object", "complex_data_type_name": "lightning__currencyType"}]
+        xml = generate_flow_xml("TestFlow", outputs=outputs)
+        assert "<dataType>Currency</dataType>" in xml
+
 
 class TestApexStub:
     def test_basic_class(self):
@@ -80,6 +92,24 @@ class TestApexStub:
         xml = generate_apex_meta_xml()
         assert "<apiVersion>66.0</apiVersion>" in xml
         assert "<status>Active</status>" in xml
+
+    def test_escape_apex_backslash(self):
+        """Backslashes in descriptions should be escaped."""
+        inputs = [{"name": "query", "type": "string", "description": "Path like C:\\Users\\test"}]
+        code = generate_apex_class("TestClass", inputs=inputs)
+        assert "C:\\\\Users\\\\test" in code
+
+    def test_complex_type_integer(self):
+        """complex_data_type_name should map to correct Apex type."""
+        inputs = [{"name": "minPrice", "type": "object", "complex_data_type_name": "lightning__integerType"}]
+        code = generate_apex_class("TestClass", inputs=inputs)
+        assert "public Integer minPrice;" in code
+
+    def test_complex_type_double(self):
+        """lightning__doubleType should map to Double."""
+        outputs = [{"name": "score", "type": "object", "complex_data_type_name": "lightning__doubleType"}]
+        code = generate_apex_class("TestClass", outputs=outputs)
+        assert "public Double score;" in code
 
 
 class TestPermissionSetXml:

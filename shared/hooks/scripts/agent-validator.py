@@ -70,6 +70,7 @@ class AgentScriptValidator:
         self._check_bundle_meta_xml()
         self._check_default_subproperty()
         self._check_type_subproperty()
+        self._check_numeric_action_io()
         self._auto_resolve_placeholder()
 
         return {
@@ -354,6 +355,34 @@ class AgentScriptValidator:
                 self.errors.append((i, "ERROR",
                     f"'type:' sub-property in action I/O is invalid — use inline type "
                     f"(e.g., `fieldName: string`) (line {i})"))
+
+    def _check_numeric_action_io(self):
+        """Check for bare 'number' type in action inputs/outputs.
+
+        Action I/O requires object + complex_data_type_name for numeric types.
+        Bare 'number' works for variables but fails in action I/O at deploy time.
+        """
+        in_action_io = False
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            tab_count = len(line) - len(line.lstrip("\t"))
+
+            # Detect inputs:/outputs: blocks at action depth (3+ tabs)
+            if stripped in ("inputs:", "outputs:") and tab_count >= 3:
+                in_action_io = True
+                continue
+
+            # Exit action I/O block when indent drops
+            if in_action_io and stripped and tab_count < 4:
+                in_action_io = False
+
+            # Check for bare number type in action I/O
+            if in_action_io and re.match(r'\w+:\s*number\s*$', stripped):
+                field_name = stripped.split(":")[0].strip()
+                self.warnings.append((i, "WARN",
+                    f"Action I/O field '{field_name}' uses bare 'number' type (line {i}) — "
+                    f"use 'object' with complex_data_type_name: \"lightning__integerType\" "
+                    f"or \"lightning__doubleType\" instead. Bare 'number' causes publish failures."))
 
     def _auto_resolve_placeholder(self):
         """Auto-resolve REPLACE_WITH_EINSTEIN_AGENT_USER placeholder."""

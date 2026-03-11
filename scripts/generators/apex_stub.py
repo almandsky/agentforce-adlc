@@ -13,6 +13,18 @@ _TYPE_MAP = {
     "object": "Map<String, Object>",
 }
 
+# Mapping from complex_data_type_name to Apex types (for action I/O)
+_COMPLEX_TYPE_MAP = {
+    "lightning__integerType": "Integer",
+    "lightning__doubleType": "Double",
+    "lightning__currencyType": "Decimal",
+    "lightning__dateTimeStringType": "Datetime",
+    "lightning__recordInfoType": "SObject",
+    "lightning__objectType": "Map<String, Object>",
+    "lightning__listType": "List<Object>",
+    "lightning__textType": "String",
+}
+
 API_VERSION = "66.0"
 
 
@@ -47,7 +59,7 @@ def generate_apex_class(
     # Request inner class
     lines.append('    public class Request {')
     for inp in inputs:
-        apex_type = _TYPE_MAP.get(inp.get("type", "string"), "String")
+        apex_type = _COMPLEX_TYPE_MAP.get(inp.get("complex_data_type_name", ""), _TYPE_MAP.get(inp.get("type", "string"), "String"))
         desc = inp.get("description", "")
         is_req = inp.get("required", True)
         if desc:
@@ -62,7 +74,7 @@ def generate_apex_class(
     # Response inner class
     lines.append('    public class Response {')
     for out in outputs:
-        apex_type = _TYPE_MAP.get(out.get("type", "string"), "String")
+        apex_type = _COMPLEX_TYPE_MAP.get(out.get("complex_data_type_name", ""), _TYPE_MAP.get(out.get("type", "string"), "String"))
         desc = out.get("description", "")
         if desc:
             lines.append(f'        @InvocableVariable(label=\'{_escape_apex(desc)}\')')
@@ -111,8 +123,13 @@ def generate_apex_meta_xml(api_version: str = API_VERSION) -> str:
 
 
 def _escape_apex(text: str) -> str:
-    """Escape single quotes for Apex strings."""
-    return text.replace("'", "\\'")
+    """Escape special characters for Apex strings."""
+    return (text
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t"))
 
 
 def _apex_bool(value: bool) -> str:

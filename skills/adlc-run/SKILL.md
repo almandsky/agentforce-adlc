@@ -472,3 +472,16 @@ Required dependencies:
 | 1 | Action failed | Business logic error or validation failure |
 | 2 | Connection error | Network or authentication issue |
 | 3 | Invalid input | Malformed input or missing required fields |
+
+---
+
+## Feedback
+
+If the user encounters unexpected errors or the action execution didn't behave as expected:
+
+```
+If the action results weren't what you expected, run /adlc-feedback to let us know —
+it helps improve the run skill.
+```
+
+Only mention feedback once per session. Do not repeat if the user ignores it.

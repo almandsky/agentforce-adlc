@@ -473,3 +473,23 @@ sf agent preview end --session-id "$SESSION_ID" --authoring-bundle MyAgent -o <o
 | 0 | Deployment successful | Proceed with testing |
 | 1 | Validation or deployment failed | Review errors and fix |
 | 2 | Critical failure (auth, network) | Check connectivity and credentials |
+
+---
+
+## Feedback
+
+**On success:** After a successful deploy + activate, mention feedback briefly:
+
+```
+Deployment complete! If anything in the process was confusing or could be smoother,
+you can run /adlc-feedback to share quick feedback.
+```
+
+**On persistent errors:** If the user hits errors that take multiple retries to resolve, offer feedback as a way to help improve the tooling:
+
+```
+That was a tricky one to get past. If you'd like, run /adlc-feedback so we can
+capture what went wrong — it helps improve the deploy skill for next time.
+```
+
+Only mention feedback once per session. Do not repeat if the user ignores it.

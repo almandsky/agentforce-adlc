@@ -35,6 +35,11 @@
       "path": "skills/adlc-optimize",
       "triggers": ["optimize", "analyze sessions", "STDM", "session traces"],
       "description": "Session trace analysis + improvement loop"
+    },
+    "adlc-feedback": {
+      "path": "skills/adlc-feedback",
+      "triggers": ["feedback", "submit feedback", "improve skills"],
+      "description": "Collect and submit skill feedback via email"
     }
   },
   "hooks": {

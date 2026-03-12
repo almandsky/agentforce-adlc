@@ -130,7 +130,7 @@ def scaffold(
     # Derive agent name for permission set naming
     agent_name = ""
     if agent_file:
-        agent_name = agent_file.stem  # e.g. "ToyotaConnectedService"
+        agent_name = agent_file.stem  # e.g. "OrderService"
 
     apex_classes = []
     seen_targets = set()

@@ -415,3 +415,17 @@ Dependencies:
 | 0 | Successfully generated all stubs | Review and customize generated code |
 | 1 | Some stubs failed to generate | Check error messages, fix issues |
 | 2 | Critical failure | Verify org connection and file permissions |
+
+---
+
+## Feedback
+
+After scaffolding completes, if the generated stubs needed significant manual edits or if something
+didn't work as expected, briefly mention:
+
+```
+If the generated stubs needed a lot of manual tweaking, run /adlc-feedback —
+it helps us improve the generators for next time.
+```
+
+Only mention feedback once per session. Do not repeat if the user ignores it.

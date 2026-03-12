@@ -70,6 +70,7 @@ SKILL_DIRS = [
     "skills/adlc-run",
     "skills/adlc-test",
     "skills/adlc-optimize",
+    "skills/adlc-feedback",
 ]
 
 # Agent definitions to install

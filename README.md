@@ -125,9 +125,9 @@ Skills are 100% portable — the same SKILL.md files work in both IDEs. Agents a
 ```
 /adlc-author
 
-Build a service agent for Lennar that helps home buyers search communities,
-find floor plans, and check pricing. It should verify identity before
-showing pricing details.
+Build a service agent that helps customers check order status,
+request returns, and track shipments. It should verify identity
+before showing order details.
 ```
 
 Claude generates a `.agent` file with topics, actions, variables, and deterministic logic.
@@ -137,7 +137,7 @@ Claude generates a `.agent` file with topics, actions, variables, and determinis
 ```
 /adlc-discover
 
-Check what targets exist for LennarHomeSearch.agent against the epson org.
+Check what targets exist for OrderService.agent against my-org.
 ```
 
 Reports which Flow/Apex/Retriever targets already exist and which need creation.
@@ -157,7 +157,7 @@ Creates metadata XML for Flows and `@InvocableMethod` Apex classes matching the 
 ```
 /adlc-deploy
 
-Deploy LennarHomeSearch to the epson org.
+Deploy OrderService to my-org.
 ```
 
 Validates the bundle, deploys prerequisites, publishes the authoring bundle, and activates the agent.
@@ -167,10 +167,10 @@ Validates the bundle, deploys prerequisites, publishes the authoring bundle, and
 ```
 /adlc-test
 
-Smoke test LennarHomeSearch against epson with these utterances:
-- "I'm looking for homes in Austin"
-- "Show me floor plans under $400k"
-- "What communities have 4 bedrooms?"
+Smoke test OrderService against my-org with these utterances:
+- "Where is my order #12345?"
+- "I want to return my recent purchase"
+- "What's the shipping status?"
 ```
 
 Runs preview sessions, analyzes traces, and reports topic routing accuracy and action success rates.
@@ -180,7 +180,7 @@ Runs preview sessions, analyzes traces, and reports topic routing accuracy and a
 ```
 /adlc-optimize
 
-Analyze the last 50 sessions for LennarHomeSearch on epson.
+Analyze the last 50 sessions for OrderService on my-org.
 Find routing failures and suggest improvements.
 ```
 

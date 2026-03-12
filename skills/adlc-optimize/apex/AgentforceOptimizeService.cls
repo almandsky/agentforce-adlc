@@ -499,7 +499,7 @@ public with sharing class AgentforceOptimizeService {
         try {
             // Search by MasterLabel (exact match) OR DeveloperName pattern.
             // Agent Script agents create GenAiPlannerDefinition with DeveloperName
-            // like 'LennarHomeAgent_v1' and MasterLabel like 'Lennar Home Agent'.
+            // like 'OrderService_v1' and MasterLabel like 'Order Service'.
             // Accept the API name (no spaces) and match both patterns.
             String devNamePattern = agentApiName + '_%';
             List<GenAiPlannerDefinition> planners = [

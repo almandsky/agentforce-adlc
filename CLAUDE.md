@@ -14,7 +14,8 @@ agentforce-adlc/
 │   ├── adlc-deploy/  # Deploy + publish + activate
 │   ├── adlc-run/     # Execute individual actions
 │   ├── adlc-test/    # Agent preview + batch testing
-│   └── adlc-optimize/ # STDM trace analysis + fix loop
+│   ├── adlc-optimize/ # STDM trace analysis + fix loop
+│   └── adlc-feedback/ # Collect and submit skill feedback
 ├── shared/           # Cross-skill shared code
 │   ├── hooks/        # PreToolUse/PostToolUse hook scripts
 │   └── sf-cli/       # SF CLI subprocess wrapper
@@ -36,6 +37,7 @@ agentforce-adlc/
 | `/adlc-run` | "run action", "execute", "test action" | Execute individual actions against live org |
 | `/adlc-test` | "test agent", "preview", "smoke test" | Agent preview + batch testing |
 | `/adlc-optimize` | "optimize", "analyze sessions", "STDM" | Session trace analysis + improvement loop |
+| `/adlc-feedback` | "feedback", "submit feedback" | Collect and submit skill feedback via email |
 
 ## Key Conventions
 

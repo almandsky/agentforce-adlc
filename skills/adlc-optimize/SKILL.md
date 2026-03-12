@@ -43,9 +43,9 @@ sf data query \
   -o <org> --json
 ```
 
-- `MasterLabel` = display name used by STDM `findSessions` and Agent Builder UI (e.g. "Lennar Agent")
-- `DeveloperName` = API name with version suffix used in metadata (e.g. "LennarAgent_v9")
-- The `--api-name` flag for `sf agent preview/activate/publish` uses `DeveloperName` **without** the `_vN` suffix (e.g. "LennarAgent")
+- `MasterLabel` = display name used by STDM `findSessions` and Agent Builder UI (e.g. "Order Service")
+- `DeveloperName` = API name with version suffix used in metadata (e.g. "OrderService_v9")
+- The `--api-name` flag for `sf agent preview/activate/publish` uses `DeveloperName` **without** the `_vN` suffix (e.g. "OrderService")
 
 Store these values:
 - `AGENT_MASTER_LABEL` -- for `findSessions()` agent filter

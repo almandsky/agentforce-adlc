@@ -1,0 +1,299 @@
+# Order Service Agent
+# ========================
+#
+# A complex real-world agent for e-commerce customer service featuring:
+# - Multiple specialized topics for different service workflows
+# - Actions with Flow targets for order lookup and return processing
+# - Linked variables with visibility: "External" for service agents
+# - after_reasoning patterns for follow-up actions
+# - Proper two-level action system (Level 1 definitions + Level 2 invocations)
+# - available when guards for conditional action visibility
+
+system:
+   instructions: |
+      You are a Customer Service Assistant helping customers with their orders.
+      Be helpful, empathetic, and efficient in resolving order-related issues.
+      Always verify customer identity before sharing order details.
+      When presenting results, provide clear status updates and actionable next steps.
+   messages:
+      welcome: "Hello! I'm here to help you with your orders. How can I assist you today?"
+      error: "I apologize for the inconvenience. Let me try a different approach to help you."
+
+config:
+   developer_name: "OrderServiceAgent"
+   agent_label: "Order Service Assistant"
+   description: "Helps customers check order status, process returns, and track shipments"
+   default_agent_user: "agent@example.com"  # REQUIRED: Change to valid Einstein Agent User
+   agent_type: "AgentforceServiceAgent"
+
+variables:
+   # Service agent linked vars (required)
+   EndUserId: linked string
+      source: @MessagingSession.MessagingEndUserId
+      description: "Messaging End User ID"
+      visibility: "External"
+   RoutableId: linked string
+      source: @MessagingSession.Id
+      description: "Messaging Session ID"
+      visibility: "External"
+   ContactId: linked string
+      source: @MessagingEndUser.ContactId
+      description: "Contact ID"
+      visibility: "External"
+
+   # Customer context
+   customer_email: mutable string = ""
+      description: "Customer email for verification"
+   customer_verified: mutable boolean = False
+      description: "Whether customer identity has been verified"
+
+   # Order context
+   order_number: mutable string = ""
+      description: "Current order number"
+   order_status: mutable string = ""
+      description: "Current order status"
+   order_total: mutable number = 0
+      description: "Order total amount"
+   tracking_number: mutable string = ""
+      description: "Shipment tracking number"
+
+   # Return context
+   return_reason: mutable string = ""
+      description: "Reason for return"
+   return_initiated: mutable boolean = False
+      description: "Whether a return has been initiated"
+   return_label_url: mutable string = ""
+      description: "URL for return shipping label"
+
+language:
+   default_locale: "en_US"
+   additional_locales: ""
+   all_additional_locales: False
+
+# ============================================================
+# ENTRY POINT: Identity Verification
+# ============================================================
+
+start_agent: verification
+
+topic verification:
+   label: "Identity Verification"
+   description: "Verify customer identity before accessing order information"
+
+   actions:
+      # Level 1: Action DEFINITION with target and I/O schema
+      verify_customer:
+         description: "Verify customer identity by email"
+         target: "flow://Verify_Customer_Identity"
+         inputs:
+            email: string
+               description: "Customer email address"
+         outputs:
+            verified: boolean
+               description: "Whether verification succeeded"
+            customer_name: string
+               description: "Verified customer name"
+
+   reasoning:
+      instructions: ->
+         # Check if already verified
+         if @variables.customer_verified == True:
+            | Welcome back! How can I help you today?
+            transition to @topic.order_status
+
+         # Ask for verification
+         | To help you with your order, I'll need to verify your identity.
+         | What is the email address associated with your account?
+
+      actions:
+         # Level 2: Action INVOCATION with with/set bindings
+         verify: @actions.verify_customer
+            description: "Verify customer identity by email"
+            with email = ...
+            set @variables.customer_verified = @outputs.verified
+            set @variables.customer_email = @outputs.customer_name
+
+         proceed_to_orders: @utils.transition to @topic.order_status
+            description: "Move to order lookup"
+            available when @variables.customer_verified == True
+
+# ============================================================
+# ORDER STATUS: Look up and display order details
+# ============================================================
+
+topic order_status:
+   label: "Order Status"
+   description: "Look up order details and provide status updates"
+
+   actions:
+      # Level 1: Action DEFINITION (target + I/O schema)
+      lookup_order:
+         description: "Look up order by order number"
+         target: "flow://Lookup_Order"
+         inputs:
+            order_number: string
+               description: "Order number to look up"
+            customer_email: string
+               description: "Customer email for validation"
+         outputs:
+            status: string
+               description: "Order status"
+               is_displayable: True
+            total: number
+               description: "Order total"
+               is_displayable: True
+            tracking_number: string
+               description: "Shipment tracking number"
+               is_displayable: True
+            estimated_delivery: string
+               description: "Estimated delivery date"
+               is_displayable: True
+
+   reasoning:
+      instructions: ->
+         # Post-action: Show order details
+         if @variables.order_status != "":
+            | Here are your order details:
+            | Order: {!@variables.order_number}
+            | Status: {!@variables.order_status}
+            | Would you like to track your shipment or initiate a return?
+
+         # Initial prompt
+         | What is your order number? You can find it in your confirmation email.
+
+      actions:
+         # Level 2: Action INVOCATION
+         find_order: @actions.lookup_order
+            description: "Look up order details"
+            with order_number = ...
+            with customer_email = @variables.customer_email
+            set @variables.order_status = @outputs.status
+            set @variables.order_total = @outputs.total
+            set @variables.tracking_number = @outputs.tracking_number
+
+         initiate_return: @utils.transition to @topic.returns
+            description: "Start a return"
+            available when @variables.order_status != ""
+
+         track_shipment: @utils.transition to @topic.shipment_tracking
+            description: "Track shipment"
+            available when @variables.tracking_number != ""
+
+   after_reasoning:
+      # Follow up if order found
+      if @variables.order_status != "":
+         | Is there anything else I can help you with regarding this order?
+
+# ============================================================
+# SHIPMENT TRACKING: Track package delivery
+# ============================================================
+
+topic shipment_tracking:
+   label: "Shipment Tracking"
+   description: "Track shipment status and estimated delivery"
+
+   actions:
+      # Level 1: Action DEFINITION
+      get_tracking_details:
+         description: "Get detailed tracking information"
+         target: "flow://Get_Tracking_Details"
+         inputs:
+            tracking_number: string
+               description: "Shipment tracking number"
+         outputs:
+            current_location: string
+               description: "Current package location"
+               is_displayable: True
+            estimated_delivery: string
+               description: "Estimated delivery date"
+               is_displayable: True
+            delivery_status: string
+               description: "Delivery status"
+               is_displayable: True
+
+   reasoning:
+      instructions: ->
+         | Let me look up the tracking information for your shipment.
+         | Tracking number: {!@variables.tracking_number}
+
+      actions:
+         # Level 2: Action INVOCATION
+         track: @actions.get_tracking_details
+            description: "Get tracking details"
+            with tracking_number = @variables.tracking_number
+
+         back_to_order: @utils.transition to @topic.order_status
+            description: "Return to order details"
+
+         start_return: @utils.transition to @topic.returns
+            description: "Initiate a return"
+
+# ============================================================
+# RETURNS: Process return requests
+# ============================================================
+
+topic returns:
+   label: "Returns"
+   description: "Process return requests and generate return labels"
+
+   actions:
+      # Level 1: Action DEFINITION
+      initiate_return:
+         description: "Initiate a return for an order"
+         target: "flow://Initiate_Return"
+         inputs:
+            order_number: string
+               description: "Order number to return"
+            reason: string
+               description: "Reason for return"
+         outputs:
+            return_label_url: string
+               description: "URL for return shipping label"
+               is_displayable: True
+               is_used_by_planner: True
+            return_deadline: string
+               description: "Deadline to ship return"
+               is_displayable: True
+
+   reasoning:
+      instructions: ->
+         # Check if return already initiated
+         if @variables.return_initiated == True:
+            | Your return has been initiated!
+            | Return label: {!@variables.return_label_url}
+            transition to @topic.follow_up
+
+         | I can help you with a return for order {!@variables.order_number}.
+         | What is the reason for your return?
+
+      actions:
+         # Level 2: Action INVOCATION (with slot-filling via ...)
+         process_return: @actions.initiate_return
+            description: "Process the return request"
+            with order_number = @variables.order_number
+            with reason = ...
+            set @variables.return_initiated = True
+            set @variables.return_label_url = @outputs.return_label_url
+
+         back_to_order: @utils.transition to @topic.order_status
+            description: "Go back to order details"
+
+# ============================================================
+# FOLLOW-UP: Post-action next steps
+# ============================================================
+
+topic follow_up:
+   label: "Follow Up"
+   description: "Handle follow-up actions and next steps"
+
+   reasoning:
+      instructions: |
+         Is there anything else I can help you with today?
+         I can look up another order, track a shipment, or help with a different return.
+
+      actions:
+         new_order: @utils.transition to @topic.order_status
+            description: "Look up another order"
+
+         new_search: @utils.transition to @topic.verification
+            description: "Start over"

@@ -44,7 +44,7 @@ Review templates in `/skills/adlc-author/assets/`:
 - `multi-topic.agent` — Multiple topics with transitions
 - `verification-gate.agent` — Security/validation patterns
 - `hub-and-spoke.agent` — Central router pattern
-- `lennar-home-search.agent` — Complex real-world example
+- `order-service.agent` — Complex real-world example
 
 ### 3. Agent Script Generation
 Create .agent file with:

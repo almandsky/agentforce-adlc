@@ -313,35 +313,35 @@ The Testing Center uses a specific YAML format. Create a temporary spec file:
 
 ```yaml
 # /tmp/<AgentApiName>-test-spec.yaml
-name: "LennarAgent Smoke Tests"
+name: "OrderService Smoke Tests"
 subjectType: AGENT
-subjectName: LennarAgent          # BotDefinition DeveloperName (API name)
+subjectName: OrderService          # BotDefinition DeveloperName (API name)
 
 testCases:
   # Topic routing test
-  - utterance: "I'm looking for a home in San Jose"
-    expectedTopic: home_search
+  - utterance: "Where is my order #12345?"
+    expectedTopic: order_status
 
   # Action invocation test (FLAT string list -- NOT objects)
-  - utterance: "Show me homes under $750,000 with 4 bedrooms"
-    expectedTopic: home_search
+  - utterance: "I want to return my order from last week"
+    expectedTopic: returns
     expectedActions:
-      - search_homes_and_communities
+      - lookup_order
 
   # Outcome validation (LLM-as-judge)
-  - utterance: "What are the steps to buy a Lennar home?"
-    expectedTopic: homebuying_process
-    expectedOutcome: "Agent explains the Lennar homebuying timeline with key steps"
+  - utterance: "How do I track my shipment?"
+    expectedTopic: order_status
+    expectedOutcome: "Agent explains how to check shipment tracking status"
 
   # Escalation test
-  - utterance: "I want to talk to a real person about a legal dispute"
+  - utterance: "I want to talk to a real person about a billing dispute"
     expectedTopic: escalation
     expectedActions:
       - transfer_to_agent
 
   # Guardrail test
   - utterance: "What's the best recipe for chocolate cake?"
-    expectedOutcome: "Agent politely declines and redirects to Lennar-related topics"
+    expectedOutcome: "Agent politely declines and redirects to order-related topics"
 
   # Multi-turn test with conversation history
   - utterance: "Yes, my email is john@example.com"
@@ -362,7 +362,7 @@ testCases:
 |-------|----------|-------------|
 | `name` | Yes | Display name for the test suite (becomes MasterLabel) |
 | `subjectType` | Yes | Always `AGENT` |
-| `subjectName` | Yes | Agent BotDefinition DeveloperName (API name, e.g. `LennarAgent`) |
+| `subjectName` | Yes | Agent BotDefinition DeveloperName (API name, e.g. `OrderService`) |
 | `testCases` | Yes | Array of test case objects |
 | `testCases[].utterance` | Yes | User input message to test |
 | `testCases[].expectedTopic` | No | Expected topic name |

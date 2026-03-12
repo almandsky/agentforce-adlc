@@ -1428,7 +1428,7 @@ planner prompt.
 | Multi-Topic | Two topics with routing | `assets/multi-topic.agent` (planned) |
 | Verification Gate | Identity verification before protected topics | `assets/verification-gate.agent` (planned) |
 | Hub-and-Spoke | Central router with specialized spokes | `assets/hub-and-spoke.agent` (planned) |
-| Lennar Home Search | Complex real-world agent with flows | `assets/lennar-home-search.agent` (planned) |
+| Order Service | Complex real-world agent with flows | `assets/order-service.agent` (planned) |
 | Bundle Metadata | Companion XML template | `assets/metadata/bundle-meta.xml` (planned) |
 
 When generating a new agent, use the inline examples in Sections 9 (Minimal Service Agent)

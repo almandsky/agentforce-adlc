@@ -76,6 +76,10 @@ def generate_flow_xml(
             '    <variables>',
             f'        <name>{inp["name"]}</name>',
             f'        <dataType>{flow_type}</dataType>',
+        ])
+        if flow_type == "Number":
+            lines.append(f'        <scale>{_infer_scale(inp["name"])}</scale>')
+        lines.extend([
             '        <isCollection>false</isCollection>',
             '        <isInput>true</isInput>',
             f'        <isOutput>{"true" if is_output else "false"}</isOutput>',
@@ -93,6 +97,10 @@ def generate_flow_xml(
             '    <variables>',
             f'        <name>{out["name"]}</name>',
             f'        <dataType>{flow_type}</dataType>',
+        ])
+        if flow_type == "Number":
+            lines.append(f'        <scale>{_infer_scale(out["name"])}</scale>')
+        lines.extend([
             '        <isCollection>false</isCollection>',
             '        <isInput>false</isInput>',
             '        <isOutput>true</isOutput>',
@@ -153,6 +161,16 @@ def generate_flow_xml(
     ])
 
     return "\n".join(lines) + "\n"
+
+
+def _infer_scale(name: str) -> int:
+    """Infer decimal scale from variable name. Currency/amount/price → 2, else 0."""
+    currency_hints = {"balance", "amount", "price", "cost", "total", "credit", "fee", "rate", "pct", "percent", "utilization"}
+    lower = name.lower()
+    for hint in currency_hints:
+        if hint in lower:
+            return 2
+    return 0
 
 
 def _escape_xml(text: str) -> str:

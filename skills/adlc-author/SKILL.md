@@ -582,9 +582,10 @@ reasoning:
 Key rules for Level 2:
 - Reference Level 1 via `@actions.action_name`
 - Use `with param = value` for input binding (NOT `inputs:`)
-- Use `set @variables.target = @outputs.source` for output capture
+- Use `set @variables.target = @outputs.source` for output capture (direct assignment ONLY — expressions like `(@outputs.x == "value")` are NOT supported)
 - Use `with param = ...` for LLM slot-filling (extracts from conversation)
 - Use `available when @variables.x == True` for conditional visibility
+- `transition to @topic.X` CANNOT appear inside `instructions:` blocks — use transition action invocations instead
 
 ### 3.11 Instruction Syntax
 

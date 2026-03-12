@@ -462,13 +462,23 @@ Without these blocks, the entry point has zero enabled tools after initial routi
 start_agent router:
    reasoning:
       instructions: |
-         Determine the customer's intent and route to the appropriate topic.
+         You are a router only. Do NOT answer questions or provide help directly.
+         Always use a transition action to route to the correct topic immediately.
+         - Order questions → use to_orders
+         - Return requests → use to_returns
+         Never attempt to help the user yourself. Always route.
       actions:
          to_orders: @utils.transition to @topic.order_support
             description: "Route to order support"
          to_returns: @utils.transition to @topic.return_support
             description: "Route to returns"
 ```
+
+**CRITICAL: Router-only instructions.** The `start_agent` instructions MUST explicitly say
+"You are a router only. Do NOT answer questions directly. Always use a transition action."
+Without this directive, the LLM will attempt to answer the user's question itself instead
+of routing to the specialized topic — resulting in SMALL_TALK grounding and the user never
+reaching the topic with the actual actions.
 
 A `start_agent` with only a name and no `reasoning:` block will compile but produce an agent that cannot route — all utterances land in `DefaultTopic` with zero actions.
 
@@ -873,6 +883,12 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent: topic_name` |
 | `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
+| `start_agent` instructions MUST say "router only" | `instructions: \| Determine intent and route.` | `instructions: \| You are a router only. Do NOT answer directly. Always use a transition action.` |
+| `knowledge` is a reserved topic name | `topic knowledge:` | `topic knowledge_base:` or `topic faq:` |
+| `fallback:` is NOT a valid message key | `messages: fallback: "..."` | Only `welcome:` and `error:` are valid under `messages:` |
+| `datetime` not supported for mutable vars | `session_time: mutable datetime` | `session_time: mutable string` |
+| Reasoning actions MUST use `@actions.` prefix | `validate: validate_vin` | `validate: @actions.validate_vin` |
+| `required: True` invalid on reasoning invocations | Reasoning action with `required: True` | Only valid on Level 1 action definition inputs |
 | No comment-only if bodies | `if @variables.x:` with only `# comment` | Add executable statement: `\| text`, `run`, `set`, or `transition` |
 | `connection` not `connections` | `connections messaging:` | `connection messaging:` |
 | No `@inputs` in `set` clauses | `set @variables.x = @inputs.y` | Use `@outputs.y` or `@utils.setVariables` |
@@ -1030,7 +1046,8 @@ topic topic_selector:
    description: "Route based on user intent"
    reasoning:
       instructions: |
-         Determine what the customer needs and route accordingly.
+         You are a router only. Do NOT answer questions directly.
+         Always use a transition action to route immediately.
       actions:
          to_orders: @utils.transition to @topic.order_support
             description: "Order questions"

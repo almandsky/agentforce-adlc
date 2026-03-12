@@ -286,6 +286,15 @@ For each trace file, run these diagnostic checks:
 jq '[.plan[] | select(.type == "ReasoningStep")] | length' "$TRACE"
 ```
 
+**DefaultTopic trace quirk:** With `--authoring-bundle`, the root `.topic` field often shows `"DefaultTopic"` even when routing works correctly. Always use `NodeEntryStateStep.data.agent_name` to see the actual topic chain:
+```bash
+# Root .topic is unreliable — use NodeEntryStateStep instead
+jq -r '.plan[] | select(.type=="NodeEntryStateStep") | .data.agent_name' "$TRACE"
+# Output: "entry" then "password_reset" (shows the actual routing chain)
+```
+
+**Entry topic answering directly (SMALL_TALK pattern):** If `start_agent` trace shows `SMALL_TALK` grounding and only transition tools were visible but none were invoked, the LLM answered the user's question itself instead of routing. Fix: add "You are a router only. Do NOT answer questions directly." to the `start_agent` instructions.
+
 ### 1-ALT.5 Identify issues and present findings
 
 Classify issues using the same categories as Phase 1.4 (Agent Configuration Gap, Knowledge Gap, Platform/Runtime Issue). Present findings with trace evidence:
@@ -559,6 +568,7 @@ Check each session for these patterns and classify by root cause category:
 | Publish fails with `duplicate value found: GenAiPluginDefinition` | **Name collision** -- `start_agent` and a `topic` share the same name, both creating `GenAiPluginDefinition` metadata records | `Platform / Runtime Issue` -- rename `start_agent` or the colliding topic so they have different names (see known-issues.md Issue 13) |
 | `start_agent` has no `reasoning: actions:` block and all utterances land in `DefaultTopic` | **Missing `start_agent` actions** -- without `reasoning: actions:`, the entry point has zero enabled tools. The LLM cannot route to any topic. | `Agent Configuration Gap` -- add `reasoning: instructions:` and `reasoning: actions:` with transition actions to `start_agent` |
 | A routing-only topic (e.g. `main_menu`) adds an extra LLM turn before reaching the real topic, but does no work of its own | **Dead hub anti-pattern** -- intermediate routing topic that only re-routes adds an unnecessary LLM hop (~3-5s latency per hop). The `start_agent` block already routes. | `Agent Configuration Gap` -- consolidate routing transitions into `start_agent > reasoning > actions:` directly and remove the intermediate topic |
+| `start_agent` trace shows `SMALL_TALK` grounding, transition tools visible but none invoked, user stays in entry topic | **Entry answering directly** -- `start_agent` instructions are too passive (e.g. "Determine intent and route accordingly"). The LLM interprets this as permission to answer the user's question itself instead of invoking a transition action. | `Agent Configuration Gap` -- add "You are a router only. Do NOT answer questions directly. Always use a transition action." to `start_agent` instructions |
 
 **Root cause categories:**
 - `Knowledge Gap -- Infrastructure` -- no `DataKnowledgeSpace`, no sources indexed, or knowledge action not deployed

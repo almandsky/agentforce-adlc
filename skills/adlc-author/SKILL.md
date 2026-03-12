@@ -1455,3 +1455,17 @@ Common review findings:
 - `instructions: |` used where `instructions: ->` is needed (conditionals present)
 - Boolean values not capitalized (`true` instead of `True`)
 - Missing `after_reasoning` for post-action routing
+
+---
+
+## 15. FEEDBACK
+
+After completing agent authoring (or if the user ran into issues), offer to collect feedback:
+
+```
+Your agent file is ready! If you have a moment, I can help you share quick feedback
+on how the authoring process went — what worked, what was confusing, or ideas for improvement.
+Just say /adlc-feedback and I'll draft it for you.
+```
+
+Only mention this once, at the natural end of the workflow. Do not repeat or push if the user ignores it.

@@ -798,3 +798,23 @@ This skill uses `sf` CLI commands directly. Required tools:
 | 1 | Some tests failed | Review failures before deploying |
 | 2 | Critical test failure | Block deployment |
 | 3 | Test execution error | Fix test infrastructure |
+
+---
+
+## Feedback
+
+**On test completion:** After presenting the test summary report, offer feedback naturally:
+
+```
+Testing complete! If any part of the testing process was unclear or you have ideas
+for better test coverage, you can run /adlc-feedback to share quick feedback.
+```
+
+**On stuck/flaky tests:** If the user struggles with test failures that seem tool-related rather than agent-related:
+
+```
+It looks like this issue might be a gap in the testing skill itself.
+Want to run /adlc-feedback? I'll draft a quick note so the maintainers can look into it.
+```
+
+Only mention feedback once per session. Do not repeat if the user ignores it.

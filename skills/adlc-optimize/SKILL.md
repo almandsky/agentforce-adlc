@@ -1369,3 +1369,24 @@ The only Salesforce metadata object that should be queried directly is `GenAiPla
 - `GenAiFunction` (actions) -- read from `.agent` file `reasoning: actions:` blocks
 
 The `.agent` file is the single source of truth. All fixes should be applied to it and deployed via the Phase 3.5 deployment chain.
+
+---
+
+## Feedback
+
+**After optimization cycle:** When the fix loop completes (issues identified, fixes applied, re-tested):
+
+```
+Optimization cycle complete. If the trace analysis missed something or
+you have suggestions for better issue detection, run /adlc-feedback — I'll
+draft a quick summary for you to review and submit.
+```
+
+**When STDM data is unavailable:** If the user can't access Data Cloud or DMOs aren't activated:
+
+```
+Since STDM data wasn't available, we used the fallback path. If you'd like to
+let the team know about your Data Cloud setup experience, run /adlc-feedback.
+```
+
+Only mention feedback once per session. Do not repeat if the user ignores it.

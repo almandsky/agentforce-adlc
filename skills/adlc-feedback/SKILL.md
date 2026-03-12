@@ -9,65 +9,33 @@ argument-hint: "[--about <skill-name>]"
 
 Collect structured feedback about the ADLC skills and submit it via a Google Form so the maintainers can improve the toolchain.
 
+## Design Principles
+
+- **Minimize user effort** — Auto-draft feedback from conversation context. The user only needs to confirm or tweak.
+- **One confirmation** — Combine consent + review into a single step. Show the draft, let them approve/edit/cancel.
+- **Non-intrusive** — Never push. If the user ignores the suggestion, move on.
+
 ## Feedback Form URL
 
 ```
 https://docs.google.com/forms/d/e/1FAIpQLSdBbFIW0Q71NoVts6oboqDcjkGcrryXEzu0W2FypNS8bBF5cg/viewform?usp=pp_url&entry.2121871774=<URL-encoded suggestions>
 ```
 
-The `entry.2121871774` parameter pre-fills the Suggestions field. The user can fill in other fields directly on the form.
+The `entry.2121871774` parameter pre-fills the Suggestions field. The user fills in other fields directly on the form.
 
 ## Workflow
 
-### Step 1: Ask for Permission
+### Step 1: Auto-Draft Feedback from Conversation
 
-Before gathering any data, you MUST get explicit user consent:
+Silently review the current conversation to extract:
 
-```
-I'd like to collect feedback about your experience with the ADLC skills.
-This will include:
-- A summary of what you were working on (skill used, agent name)
-- What went well and what didn't
-- Any errors or unexpected behavior encountered
-- Your suggestions for improvement
-
-No source code, credentials, or org data will be included.
-
-Do you consent to sharing this feedback? (yes/no)
-```
-
-**If the user says no, stop immediately.** Do not collect or generate any feedback.
-
-### Step 2: Gather Context from the Conversation
-
-Review the current conversation to extract:
-
-1. **Skills used** — Which `/adlc-*` skills were invoked in this session
+1. **Skills used** — Which `/adlc-*` skills were invoked
 2. **Agent name** — The `.agent` file being worked on (if any)
-3. **Org alias** — The target org (if any, do NOT include org IDs or credentials)
-4. **Outcome** — Did the task succeed? Were there errors or retries?
-5. **Pain points** — Any friction, confusion, or unexpected behavior
-6. **Workarounds** — Did the user have to work around skill limitations?
+3. **Outcome** — Did the task succeed? Were there errors or retries?
+4. **Pain points** — Any friction, confusion, or unexpected behavior
+5. **Workarounds** — Did the user have to work around skill limitations?
 
-### Step 3: Ask the User for Their Input
-
-After gathering context, ask the user directly:
-
-```
-Based on our session, here's what I observed. Please add your thoughts:
-
-1. What were you trying to accomplish?
-2. What worked well?
-3. What was frustrating or confusing?
-4. Any feature requests or suggestions?
-```
-
-### Step 4: Generate Feedback Summary
-
-Compose a concise feedback summary. This will be pre-filled into the form's Suggestions field.
-Keep it under 1500 characters to fit in a URL parameter.
-
-Format:
+Compose a concise feedback summary (under 1500 characters):
 
 ```
 Skills: <comma-separated list>
@@ -82,29 +50,37 @@ Issues:
 
 Suggestions:
 - <bullet points>
-
-User Comments:
-<verbatim user input from Step 3>
 ```
 
-### Step 5: User Review
+### Step 2: Present Draft and Ask for Consent + Approval (Single Step)
 
-Show the feedback summary and ask the user to review:
+Show the auto-drafted feedback and combine consent with review in one message:
 
 ```
-Here's the feedback I've prepared:
+I drafted some quick feedback based on our session. This will be submitted via
+a Google Form — no source code, credentials, or org data is included.
 
-<summary>
+<draft summary>
 
-Would you like to:
-1. Submit as-is (opens form with pre-filled suggestions)
-2. Edit something (tell me what to change)
-3. Cancel
+Want to:
+1. Submit (opens form with this pre-filled)
+2. Edit (tell me what to change)
+3. Skip
 ```
 
-### Step 6: Submit via Google Form
+This is the ONLY question you need to ask. Do not add a separate consent step.
 
-Once approved, URL-encode the feedback summary and open the form in the browser:
+**If the user says skip/no/cancel**, stop immediately. Do not ask why.
+
+**If the user says edit**, apply their changes and show the updated draft once more.
+
+**If the user says submit/yes/1**, proceed to Step 3.
+
+**If the user provides additional comments** (e.g., "yes, also the scaffold was slow"), incorporate their comments into the summary before submitting.
+
+### Step 3: Submit via Google Form
+
+URL-encode the feedback summary and open the form:
 
 ```bash
 # URL-encode the feedback summary
@@ -118,11 +94,31 @@ open "$FORM_URL"
 # Linux: xdg-open "$FORM_URL"
 ```
 
-Inform the user:
+Tell the user:
+
 ```
-Feedback form opened in your browser with pre-filled suggestions.
-Please review the form, fill in any additional fields, and click Submit.
+Form opened in your browser. Review it and click Submit when ready.
 ```
+
+That's it. Do not follow up or ask if they submitted.
+
+## When This Skill Gets Triggered
+
+This skill is invoked in two ways:
+
+### 1. Directly by the user
+The user says `/adlc-feedback` or "I want to give feedback". Follow the full workflow above.
+
+### 2. Suggested by other ADLC skills
+Other skills suggest `/adlc-feedback` at natural moments:
+
+- **On completion** — After a successful author/deploy/test/optimize cycle
+- **On persistent errors** — After the user struggles with repeated failures
+- **On workarounds** — When the user had to work around a skill limitation
+
+When triggered by suggestion, the user has already been working with ADLC skills,
+so the conversation context is rich. The auto-draft should be high quality with
+minimal user input needed.
 
 ## Configuration
 
@@ -137,45 +133,44 @@ Please review the form, fill in any additional fields, and click Submit.
 - NEVER include SOQL query results or record data
 - NEVER include credentials or API keys
 - Only include skill names, error messages, and user-provided comments
-- Always get explicit consent before collecting feedback
 - If the user declines, respect their decision immediately
 
 ## Example
 
 User: `/adlc-feedback`
 
-```
-I'd like to collect feedback about your experience with the ADLC skills.
-This will include a summary of what you worked on, what went well,
-and what could be improved. No source code or credentials will be shared.
+Agent auto-drafts from conversation context and presents:
 
-Do you consent to sharing this feedback? (yes/no)
 ```
+I drafted some quick feedback based on our session. This will be submitted via
+a Google Form — no source code, credentials, or org data is included.
 
-User: "yes, the deploy skill kept failing on publish"
-
-Generated summary:
-```
 Skills: adlc-author, adlc-deploy
 Agent: OrderService
 Date: 2026-03-12
 
 What Worked:
-- Agent authoring completed successfully
-- Deployment of prerequisites worked
+- Agent authoring generated valid .agent file on first try
+- Discover correctly identified 3 missing flow targets
 
 Issues:
-- sf agent publish failed 3 times with timeout errors
-- Had to manually retry with longer timeout
+- sf agent publish timed out twice before succeeding on third attempt
+- Had to manually add --wait 10 flag
 
 Suggestions:
-- Add automatic retry with backoff for publish failures
-- Show clearer progress indicator during publish
+- Add automatic retry with backoff for publish timeouts
+- Default to longer wait time for publish command
 
-User Comments:
-"the deploy skill kept failing on publish"
+Want to:
+1. Submit (opens form with this pre-filled)
+2. Edit (tell me what to change)
+3. Skip
 ```
 
-Then opens: `https://docs.google.com/forms/d/e/1FAIpQLSdBbFIW0Q71NoVts6oboqDcjkGcrryXEzu0W2FypNS8bBF5cg/viewform?usp=pp_url&entry.2121871774=Skills%3A%20adlc-author%2C%20adlc-deploy%0A...`
+User: "yes"
 
-The user reviews the form in the browser and clicks Submit.
+Agent opens: `https://docs.google.com/forms/d/e/1FAIpQLSdBbFIW0Q71NoVts6oboqDcjkGcrryXEzu0W2FypNS8bBF5cg/viewform?usp=pp_url&entry.2121871774=Skills%3A%20adlc-author%2C%20adlc-deploy%0A...`
+
+```
+Form opened in your browser. Review it and click Submit when ready.
+```

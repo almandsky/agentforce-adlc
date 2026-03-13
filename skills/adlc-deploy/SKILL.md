@@ -179,6 +179,11 @@ Success response:
 }
 ```
 
+**Troubleshooting "Internal Error, try again later":**
+- If re-publishing an EXISTING agent works but creating a NEW agent fails with "Internal Error", this is a known platform issue (not an agent script problem).
+- Workaround: Create the agent manually in Setup UI first (just the shell — name + type), then publish the authoring bundle to it. Re-publishing to an existing agent works reliably.
+- This is a transient Salesforce platform issue. Retry after some time if the workaround isn't viable.
+
 ### Phase 4: Activate Agent
 
 ```bash

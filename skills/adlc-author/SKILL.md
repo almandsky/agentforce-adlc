@@ -89,7 +89,7 @@ Ask the user for the following. Do not proceed until each is answered or explici
 |----------|---------------|
 | Target org alias | Needed to query Einstein Agent User |
 | Agent name (PascalCase) | Becomes `developer_name`, folder name, and bundle name |
-| **Agent type: Service Agent or Employee Agent?** | **Service** → include linked variables (`EndUserId`, `RoutableId`, `ContactId`) and `connection` block. **Employee** → omit linked variables and connection block. Always ask — do not assume. |
+| **Agent type: Service Agent or Employee Agent?** | **Service** → include linked variables (`EndUserId`, `RoutableId`, `ContactId`) and `connection messaging:` block. **Employee** → omit linked variables and connection block. Always ask — do not assume. |
 | Topics and what each handles | Each topic becomes a state in the FSM |
 | Actions per topic (flow/apex/retriever targets) | Determines Level 1 action definitions |
 | Variables (mutable state vs linked context) | Defines the `variables:` block |
@@ -336,7 +336,7 @@ you should not need any external reference document for common agent authoring t
 config:           # 1. REQUIRED: Agent metadata
 variables:        # 2. Optional: Mutable state and linked context
 system:           # 3. REQUIRED: Global instructions and messages
-connection:       # 4. Optional: Escalation routing (service agents)
+connection messaging:  # 4. Optional: Escalation routing (service agents)
 knowledge:        # 5. Optional: Knowledge base config
 language:         # 6. Optional: Locale settings
 start_agent <name>:  # 7. REQUIRED: Entry point block (exactly one)
@@ -1087,6 +1087,9 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | No `default:` sub-property on variables | `order_id: mutable string` + `default: ""` | `order_id: mutable string = ""` (inline default) |
 | No nested `type:` in action I/O | `order_id:` + `type: string` | `order_id: string` (inline type) |
 | Numeric action I/O needs complex type | `minPrice: number` in inputs/outputs | `minPrice: object` + `complex_data_type_name: "lightning__integerType"` |
+| Linked var `source` uses `@` references | `source: "$Context.EndUserId"` | `source: @MessagingSession.MessagingEndUserId` |
+| No `connection:` without `messaging` | `connection:` + `type: "OmniChannel"` | `connection messaging:` with `routing_type:` inside |
+| No nested description under `...` | `with x = ...` + indented `description:` | `with x = ...` (description inherited from Level 1 definition) |
 | Use `developer_name` not `agent_name` | `agent_name: "MyAgent"` | `developer_name: "MyAgent"` (do not use both — causes "only one can be provided" error) |
 | `target:` must be quoted | `target: apex://Handler` | `target: "apex://Handler"` |
 | `system:` needs `instructions:` sub-block | Raw text under `system:` | `system:` → `instructions: \|` → text |

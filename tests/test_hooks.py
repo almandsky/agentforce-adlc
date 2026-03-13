@@ -110,6 +110,47 @@ class TestAgentValidator:
         warnings = [w[2] for w in result["warnings"]]
         assert not any("number" in w and "action I/O" in w.lower() for w in warnings)
 
+    def test_linked_var_context_source(self):
+        """Linked variable source must use @ references, not $Context."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "variables:\n\tEndUserId: linked string\n\t\tsource: \"$Context.EndUserId\"\n"
+            "start_agent entry:\n\tdescription: \"Entry\"\n"
+        )
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("$Context" in e for e in errors)
+
+    def test_invalid_connection_block(self):
+        """connection: without messaging is invalid syntax."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "connection:\n\ttype: \"OmniChannel\"\n"
+            "start_agent entry:\n\tdescription: \"Entry\"\n"
+        )
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("connection messaging" in e for e in errors)
+
+    def test_slot_fill_nested_description(self):
+        """Slot-fill ... must not have a nested description block."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "start_agent entry:\n\tdescription: \"E\"\n"
+            "topic t:\n\tdescription: \"T\"\n"
+            "\tactions:\n\t\ta:\n\t\t\ttarget: \"apex://A\"\n"
+            "\treasoning:\n\t\tactions:\n"
+            "\t\t\tdo_a: @actions.a\n"
+            "\t\t\t\twith x = ...\n"
+            "\t\t\t\t\tdescription: \"bad\"\n"
+        )
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        assert any("Slot-fill" in e for e in errors)
+
     def test_no_regex_safety_checks(self):
         """Validator should NOT have regex safety checks — safety is delegated to /adlc-safety skill."""
         # Harmful content should NOT be caught by the syntax validator

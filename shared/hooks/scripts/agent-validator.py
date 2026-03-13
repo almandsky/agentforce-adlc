@@ -15,6 +15,9 @@ Checks:
 11. bundle-meta.xml extra fields that break publish
 12. `default:` sub-property on variables (must use inline `= value`)
 13. `type:` sub-property on action I/O fields (must use inline type)
+14. Linked variable source using `$Context` instead of `@MessagingSession`/`@MessagingEndUser`
+15. Invalid `connection:` block (must be `connection messaging:`)
+16. Nested `description:` under slot-fill `...` token
 
 Safety/content review is handled by the /adlc-safety skill (LLM-driven, not regex).
 
@@ -73,6 +76,9 @@ class AgentScriptValidator:
         self._check_default_subproperty()
         self._check_type_subproperty()
         self._check_numeric_action_io()
+        self._check_linked_var_source()
+        self._check_connection_block()
+        self._check_slot_fill_description()
         self._auto_resolve_placeholder()
 
         return {
@@ -385,6 +391,40 @@ class AgentScriptValidator:
                     f"Action I/O field '{field_name}' uses bare 'number' type (line {i}) — "
                     f"use 'object' with complex_data_type_name: \"lightning__integerType\" "
                     f"or \"lightning__doubleType\" instead. Bare 'number' causes publish failures."))
+
+    def _check_linked_var_source(self):
+        """Check that linked variable source uses @ references, not $Context."""
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if stripped.startswith("source:") and "$Context" in stripped:
+                self.errors.append((i, "ERROR",
+                    f"Linked variable source uses '$Context' (line {i}) — "
+                    f"use @MessagingSession.* or @MessagingEndUser.* references instead"))
+
+    def _check_connection_block(self):
+        """Check that connection block uses 'connection messaging:' syntax."""
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if stripped == "connection:":
+                self.errors.append((i, "ERROR",
+                    f"Invalid 'connection:' block (line {i}) — "
+                    f"use 'connection messaging:' with routing_type inside"))
+
+    def _check_slot_fill_description(self):
+        """Check for nested description under slot-fill '...' token."""
+        for i, line in enumerate(self.lines, 1):
+            stripped = line.strip()
+            if re.match(r'with\s+\w+\s*=\s*\.\.\.\s*$', stripped):
+                # Check if next non-empty line is an indented description
+                for j in range(i, min(i + 3, len(self.lines))):
+                    next_line = self.lines[j].strip()
+                    if next_line.startswith("description:"):
+                        self.errors.append((i, "ERROR",
+                            f"Slot-fill '...' has nested description (line {i}) — "
+                            f"description is inherited from Level 1 definition; remove the nested block"))
+                        break
+                    if next_line and not next_line.startswith("#"):
+                        break
 
     def _auto_resolve_placeholder(self):
         """Auto-resolve REPLACE_WITH_EINSTEIN_AGENT_USER placeholder."""

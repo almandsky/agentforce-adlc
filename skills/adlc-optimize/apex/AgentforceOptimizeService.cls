@@ -154,6 +154,28 @@ public with sharing class AgentforceOptimizeService {
      * @return JSON-serialized List<SessionSummary>
      */
     public static String findSessions(String dataSpaceName, String startIso, String endIso, Integer maxRows, String agentApiName) {
+        // Step 1: Find sessions that have actual TURN interactions (skip empty preview sessions).
+        // Empty sessions (sf agent preview, builder pings) create AiAgentSession + SESSION_END
+        // interaction records but never TURN records. Querying for TURN directly ensures we only
+        // return sessions with real conversation data.
+        String turnSessionSql =
+              'SELECT DISTINCT ssot__AiAgentSessionId__c '
+            + 'FROM "ssot__AiAgentInteraction__dlm" '
+            + 'WHERE ssot__AiAgentInteractionType__c = \'TURN\' '
+            + '  AND ssot__StartTimestamp__c >= \'' + startIso + '\' '
+            + '  AND ssot__StartTimestamp__c <= \'' + endIso   + '\'';
+
+        ConnectApi.CdpQueryOutputV2 turnResult = runQuery(turnSessionSql, dataSpaceName);
+        Set<String> sessionsWithTurns = new Set<String>();
+        if (turnResult != null && turnResult.data != null) {
+            for (ConnectApi.CdpQueryV2Row row : turnResult.data) {
+                String sid = col(row.rowData, 0);
+                if (sid != null) sessionsWithTurns.add(sid);
+            }
+        }
+        System.debug(LoggingLevel.DEBUG, 'Sessions with turns in date range: ' + sessionsWithTurns.size());
+
+        // Step 2: Build agent filter (optional)
         String sessionFilter = '';
         if (String.isNotBlank(agentApiName)) {
             // Strategy 1: filter directly by ssot__AiAgentApiName__c (simplest, no SOQL)
@@ -196,6 +218,13 @@ public with sharing class AgentforceOptimizeService {
             }
         }
 
+        // Step 3: Query sessions, preferring those with actual turns
+        String turnFilter = '';
+        if (!sessionsWithTurns.isEmpty()) {
+            List<String> turnList = new List<String>(sessionsWithTurns);
+            turnFilter = '  AND ssot__Id__c IN (\'' + String.join(turnList, '\',\'') + '\') ';
+        }
+
         String sql =
               'SELECT ssot__Id__c, ssot__StartTimestamp__c, ssot__EndTimestamp__c, '
             + '       ssot__AiAgentChannelType__c, ssot__AiAgentSessionEndType__c '
@@ -203,6 +232,7 @@ public with sharing class AgentforceOptimizeService {
             + 'WHERE ssot__StartTimestamp__c >= \'' + startIso + '\' '
             + '  AND ssot__StartTimestamp__c <= \'' + endIso   + '\' '
             + sessionFilter
+            + turnFilter
             + 'ORDER BY ssot__StartTimestamp__c DESC '
             + 'LIMIT ' + maxRows;
 

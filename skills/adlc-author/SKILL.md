@@ -82,7 +82,7 @@ ensures correct parameter names.
 sf data query -q "SELECT ApiName, IsActive, Description FROM FlowDefinitionView WHERE IsActive = true AND ProcessType = 'AutoLaunchedFlow'" -o <org> --json
 
 # For each candidate flow, check its actual input/output parameters
-sf api request rest "/services/data/v63.0/actions/custom/flow/<FlowApiName>" -o <org>
+sf api request rest "/services/data/v66.0/actions/custom/flow/<FlowApiName>" -o <org>
 ```
 
 NOTE: `FlowDefinitionView` does NOT have a `Status` column. Use `IsActive` (boolean):
@@ -239,6 +239,39 @@ If trace analysis reveals issues (wrong topic, missing action, ungrounded respon
 ### Phase 7: Deploy
 
 Once preview confirms the agent works correctly:
+
+#### Step 1: Check action targets exist
+
+Before publishing, verify all flow/apex targets referenced in the `.agent` file exist in the org. Publishing will fail if any target is missing.
+
+```bash
+# Parse flow targets from the .agent file
+grep -o 'flow://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# Parse apex targets
+grep -o 'apex://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# For each flow target, check if it exists and is active
+sf data query -q "SELECT ApiName FROM FlowDefinitionView WHERE ApiName = '<FlowApiName>' AND IsActive = true" -o <org> --json
+
+# For each apex target, check if it exists
+sf data query -q "SELECT Name FROM ApexClass WHERE Name = '<ClassName>' AND Status = 'Active'" -o <org> --json
+```
+
+If targets are missing, scaffold and deploy them **before** publishing:
+
+```bash
+# Option A: Use adlc-scaffold to generate stubs
+# python3 scripts/scaffold.py --agent-file <path> -o <org> --output-dir force-app/main/default
+
+# Option B: Manually create stubs (flows/apex) then deploy
+sf project deploy start --source-dir force-app/main/default/flows -o <org> --json
+sf project deploy start --source-dir force-app/main/default/classes -o <org> --json
+```
+
+Do NOT attempt `sf agent publish` until all targets exist — it will fail with "Invocable action does not exist".
+
+#### Step 2: Publish and activate
 
 ```bash
 # Publish (compiles .agent into org metadata)
@@ -1075,7 +1108,7 @@ Score every generated agent against this rubric before presenting to the user.
 | Deterministic Logic | 25 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
 | Instruction Resolution | 20 | Clear, actionable instructions. Procedural mode (`->`) where conditionals are needed. Literal mode (`\|`) where static text suffices. Variable injection where dynamic. Conditional instructions based on state. |
 | FSM Architecture | 15 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
-| Action Configuration | 10 | Proper Level 1 definitions with targets and I/O schemas. Correct Level 2 invocations with `with`/`set`. Slot-filling (`...`) for conversational inputs. Output capture into variables. |
+| Action Configuration | 10 | Proper Level 1 definitions with targets and I/O schemas. Correct Level 2 invocations with `with`/`set`. Slot-filling (`...`) for conversational inputs. Output capture into variables. Numeric I/O uses `object` + `complex_data_type_name` (never bare `number`). |
 | Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present with `<bundleType>AGENT</bundleType>`. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
 
 ### Score Interpretation

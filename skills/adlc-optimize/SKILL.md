@@ -428,7 +428,7 @@ The result is a JSON array of `SessionSummary` objects:
 - `end_time` and `duration_ms` may be `null` when the session has no recorded end event -- this is a normal STDM data quality gap, not an error.
 - `end_type` values: `USER_ENDED`, `AGENT_ENDED`, or `null` (in-progress or not recorded). A `null` `end_type` may indicate an abandoned session.
 
-**Session quality filter:** Before selecting sessions for `getMultipleConversationDetails`, prefer sessions from real channels over builder previews. `"Builder: Voice Preview"` and `"Builder: Text Preview"` sessions are often empty (zero turns) because they are quick test pings from Agent Builder. Prioritize `SCRT2 - EmbeddedMessaging`, `Runtime API`, or other production channels. If only builder sessions exist, use them but note the limitation.
+**Session quality filter:** `findSessions` automatically filters to sessions with actual conversation turns by querying `AiAgentInteraction` first. Sessions from `sf agent preview`, `sf agent test`, and Agent Builder that created `AiAgentSession` records but no `AiAgentInteraction` (TURN) records are excluded. If `findSessions` returns an empty list, there are no sessions with actionable data — go directly to Phase 1-ALT (local traces).
 
 **How agent filtering works** -- `findSessions` tries two strategies in order:
 
@@ -619,7 +619,7 @@ Priority: P1 = action errors, topic misroutes, LOW adherence; P2 = missing actio
 | Agent Configuration Gap | N | N | +N sessions fully resolved |
 | Knowledge Gap | N | N | +N sessions partially resolved |
 
-**If all queried sessions have `turn_count == 0`** (common when only builder preview sessions exist), STDM data is insufficient for analysis. Inform the user:
+**If `findSessions` returns an empty list** (no sessions with actual turns exist for this agent/date range), STDM data is insufficient for analysis. Inform the user:
 
 > STDM sessions found but contain no conversation data (likely builder previews or abandoned sessions). Supplementing with local trace testing to generate actionable diagnostic data.
 

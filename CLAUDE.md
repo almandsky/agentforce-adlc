@@ -30,7 +30,7 @@ agentforce-adlc/
 
 | Skill | Trigger | Description |
 |---|---|---|
-| `/adlc-author` | "build agent", "create agent", "write .agent" | Generate .agent file directly from requirements |
+| `/adlc-author` | "build agent", "create agent", "write .agent", "new agent", "agentforce agent" | **Primary skill** — generate .agent file directly from requirements |
 | `/adlc-discover` | "discover", "check org", "what targets exist" | Check org for Flow/Apex/Retriever targets |
 | `/adlc-scaffold` | "scaffold", "generate stubs", "create flow" | Generate Flow XML / Apex stubs for missing targets |
 | `/adlc-deploy` | "deploy", "publish", "activate" | Full deployment lifecycle |
@@ -38,6 +38,12 @@ agentforce-adlc/
 | `/adlc-test` | "test agent", "preview", "smoke test" | Agent preview + batch testing |
 | `/adlc-optimize` | "optimize", "analyze sessions", "STDM" | Session trace analysis + improvement loop |
 | `/adlc-feedback` | "feedback", "submit feedback" | Collect and submit skill feedback via email |
+
+## Important: Agent Creation Routing
+
+When a user wants to **create, build, or write an Agentforce agent**, ALWAYS use `/adlc-author`. This skill generates `.agent` files directly using the Agent Script DSL — the correct approach for this project.
+
+Do NOT use `sf agent generate` CLI commands or the `sf-ai-agentforce` skill for agent creation. Those tools work with Setup UI metadata XML, not Agent Script. The `/adlc-author` skill is the primary tool for all agent authoring in this project.
 
 ## Key Conventions
 

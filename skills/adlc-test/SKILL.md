@@ -121,11 +121,15 @@ for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
     --utterance "$UTTERANCE" \
     --target-org <org> --json 2>/dev/null)
 
-  # Strip control characters before jq (sf agent preview may emit them)
-  CLEAN=$(echo "$RESPONSE" | tr -d '\000-\010\013\014\016-\037')
-
-  # Capture plan ID for trace analysis
-  PLAN_ID=$(echo "$CLEAN" | jq -r '.result.messages[-1].planId')
+  # Strip control characters with Python (more reliable than tr through bash pipes)
+  PLAN_ID=$(python3 -c "
+import json, sys, re
+raw = sys.stdin.read()
+clean = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f]', '', raw)
+d = json.loads(clean)
+msgs = d.get('result', {}).get('messages', [])
+print(msgs[-1].get('planId', '') if msgs else '')
+" <<< "$RESPONSE")
   PLAN_IDS+=("$PLAN_ID")
 done
 
@@ -741,18 +745,16 @@ Both adlc-test and adlc-optimize write to the `tests/` directory using the agent
 | Trace not found | CLI version issue | Update to sf CLI 2.121.7+ |
 | Action mock fails | Complex inputs | Use `--use-live-actions` flag |
 | Context variables missing | Preview limitation | Use Runtime API for context tests |
-| `jq` parse error on preview output | Control characters in CLI output | Strip with `tr -d '\000-\010\013\014\016-\037'` before piping to `jq`, or use Python `json.loads()` as fallback |
+| `jq` parse error on preview output | Control characters in CLI output | Use Python `re.sub` + `json.loads` (see below). `tr` via bash pipes is unreliable — control chars survive `echo "$VAR"` expansion. |
 
 #### Defensive JSON Parsing
 
-`sf agent preview` output may contain control characters that break `jq`. Always sanitize before parsing:
+`sf agent preview` output may contain control characters (e.g. `\x08`, `\x1b`) that break `jq` and `json.loads`. Always sanitize before parsing.
+
+**Use Python `re.sub`** — this is the only reliable approach. The `tr` command via `echo "$VAR" | tr -d ...` is unreliable because bash variable expansion and `echo` can re-introduce or mangle control characters:
 
 ```bash
-# Option 1: Strip control characters before jq
-CLEAN=$(echo "$RESPONSE" | tr -d '\000-\010\013\014\016-\037')
-echo "$CLEAN" | jq -r '.result.messages[-1].planId'
-
-# Option 2: Python fallback (more robust)
+# Recommended: Python re.sub (handles all control characters reliably)
 python3 -c "
 import json, sys, re
 raw = sys.stdin.read()

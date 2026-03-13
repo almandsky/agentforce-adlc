@@ -330,7 +330,7 @@ config:
 | `description` | Yes | Agent purpose (used for routing) |
 | `default_agent_user` | Yes | Must be a valid Einstein Agent User in the target org |
 
-**WARNING:** `agent_type` is technically supported (`"AgentforceServiceAgent"` or `"AgentforceEmployeeAgent"`) but has caused null pointer crashes on some server versions (especially `AgentforceEmployeeAgent`). **Omit it unless required** — the agent type defaults to `AgentforceServiceAgent` and can be set via Setup UI after publish. Always ask the user which type they want (see Phase 1) to determine linked variables and connection block.
+**NOTE on `agent_type`:** Technically supported (`"AgentforceServiceAgent"` or `"AgentforceEmployeeAgent"`). Include it when the user specifies an agent type — it works on current server versions. If publish fails with a null pointer crash (seen on older versions), remove it and set the type via Setup UI after publish. Always ask the user which type they want (see Phase 1) to determine linked variables and connection block.
 
 CRITICAL: `developer_name` must exactly match the folder name under `aiAuthoringBundles/`.
 If the folder is `AcmeAgent`, the `developer_name` must be `"AcmeAgent"`.
@@ -447,6 +447,8 @@ language:
 	additional_locales: ""
 	all_additional_locales: False
 ```
+
+Valid locale codes: `ar, bg, ca, cs, da, de, el, en_AU, en_GB, en_US, es, es_MX, et, fi, fr, fr_CA, he, hi, hr, hu, id, in, it, iw, ja, ko, ms, nl_NL, no, pl, pt_BR, pt_PT, ro, sv, th, tl, tr, vi, zh_CN, zh_TW`. Common mistakes: `ja_JP` → use `ja`, `es_US` → use `es` or `es_MX`.
 
 ### 3.7 Knowledge Block
 
@@ -997,6 +999,12 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | No `default:` sub-property on variables | `order_id: mutable string` + `default: ""` | `order_id: mutable string = ""` (inline default) |
 | No nested `type:` in action I/O | `order_id:` + `type: string` | `order_id: string` (inline type) |
 | Numeric action I/O needs complex type | `minPrice: number` in inputs/outputs | `minPrice: object` + `complex_data_type_name: "lightning__integerType"` |
+| Use `developer_name` not `agent_name` | `agent_name: "MyAgent"` | `developer_name: "MyAgent"` (do not use both — causes "only one can be provided" error) |
+| `target:` must be quoted | `target: apex://Handler` | `target: "apex://Handler"` |
+| `system:` needs `instructions:` sub-block | Raw text under `system:` | `system:` → `instructions: \|` → text |
+| `messages:` inside `system:` block | Top-level `messages:` block | `system:` → `messages:` → `welcome:` / `error:` |
+| Invalid locale codes | `ja_JP`, `es_US` | `ja`, `es` or `es_MX` |
+| `after_reasoning` no pipe literals | `\| text` in `after_reasoning:` | Only `set`, `if`/`else`, `transition to` |
 
 ### Syntax Pitfalls (Compiler Errors)
 
@@ -1063,12 +1071,12 @@ Score every generated agent against this rubric before presenting to the user.
 
 | Category | Points | Key Criteria |
 |----------|--------|--------------|
-| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent tab indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. No `agent_type` in config. |
+| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent tab indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. All string values double-quoted. |
 | Deterministic Logic | 25 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
 | Instruction Resolution | 20 | Clear, actionable instructions. Procedural mode (`->`) where conditionals are needed. Literal mode (`\|`) where static text suffices. Variable injection where dynamic. Conditional instructions based on state. |
 | FSM Architecture | 15 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
 | Action Configuration | 10 | Proper Level 1 definitions with targets and I/O schemas. Correct Level 2 invocations with `with`/`set`. Slot-filling (`...`) for conversational inputs. Output capture into variables. |
-| Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present. No `agent_type` in config. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
+| Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present with `<bundleType>AGENT</bundleType>`. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
 
 ### Score Interpretation
 
@@ -1348,16 +1356,33 @@ language:
 	all_additional_locales: False
 
 start_agent multi_router:
-
-topic main_menu:
-	label: "Main Router"
-	description: "Determine customer intent and route to the right topic"
+	description: "Route customers to the right support topic"
 	reasoning:
 		instructions: |
-			Determine what the customer needs:
-			- Order status or tracking -> order_support
-			- Returns or refunds -> return_support
-			- General questions -> general_support
+			You are a router only. Do NOT answer questions or provide help directly.
+			Always use a transition action to route to the correct topic immediately.
+			- Order status or tracking → use to_orders
+			- Returns or refunds → use to_returns
+			- General questions → use to_general
+			Never attempt to help the customer yourself. Always route.
+		actions:
+			to_orders: @utils.transition to @topic.order_support
+				description: "Check order status or tracking"
+			to_returns: @utils.transition to @topic.return_support
+				description: "Process a return or refund"
+			to_general: @utils.transition to @topic.general_support
+				description: "General questions and support"
+
+topic main_menu:
+	label: "Main Menu"
+	description: "Re-route returning customers to the right topic"
+	reasoning:
+		instructions: |
+			The customer wants to do something else.
+			Ask what they need and route them accordingly.
+			- Order status or tracking → use to_orders
+			- Returns or refunds → use to_returns
+			- General questions → use to_general
 		actions:
 			to_orders: @utils.transition to @topic.order_support
 				description: "Check order status or tracking"

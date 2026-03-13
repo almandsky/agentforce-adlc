@@ -677,7 +677,7 @@ Check each session for these patterns and classify by root cause category:
 | Local trace shows `topic: "DefaultTopic"` and `BeforeReasoningIterationStep.data.action_names[]` contains only `__state_update_action__` entries | **No actions in topic** -- topic has no `reasoning: actions:` block, so LLM has zero tools after routing | `Agent Configuration Gap` -- add `reasoning: actions:` with transition and/or invocation actions to each topic |
 | Publish fails with `duplicate value found: GenAiPluginDefinition` | **Name collision** -- `start_agent` and a `topic` share the same name, both creating `GenAiPluginDefinition` metadata records | `Platform / Runtime Issue` -- rename `start_agent` or the colliding topic so they have different names (see known-issues.md Issue 13) |
 | `start_agent` has no `reasoning: actions:` block and all utterances land in `DefaultTopic` | **Missing `start_agent` actions** -- without `reasoning: actions:`, the entry point has zero enabled tools. The LLM cannot route to any topic. | `Agent Configuration Gap` -- add `reasoning: instructions:` and `reasoning: actions:` with transition actions to `start_agent` |
-| A routing-only topic (e.g. `main_menu`) adds an extra LLM turn before reaching the real topic, but does no work of its own | **Dead hub anti-pattern** -- intermediate routing topic that only re-routes adds an unnecessary LLM hop (~3-5s latency per hop). The `start_agent` block already routes. | `Agent Configuration Gap` -- consolidate routing transitions into `start_agent > reasoning > actions:` directly and remove the intermediate topic |
+| A routing-only topic (e.g. `main_menu`) adds an extra LLM turn before reaching the real topic, but does no work of its own | **Dead hub anti-pattern** -- intermediate routing topic that only re-routes adds an unnecessary LLM hop (~3-5s latency per hop). The `start_agent` block already routes. **Detection heuristic:** topic has ONLY `@utils.transition` actions with zero `@actions.*` invocations (flagged by Step 1c `DEAD HUB` check). **STDM verification:** look for `entry → hub → real_topic` chains in session traces where the hub turn adds latency (typically 3-5s) with no domain work — the hub turn will show only `LLM_STEP` followed by transition, no `ACTION_STEP` for domain logic. | `Agent Configuration Gap` -- consolidate routing transitions into `start_agent > reasoning > actions:` directly and remove the intermediate topic |
 | `start_agent` trace shows `SMALL_TALK` grounding, transition tools visible but none invoked, user stays in entry topic | **Entry answering directly** -- `start_agent` instructions are too passive (e.g. "Determine intent and route accordingly"). The LLM interprets this as permission to answer the user's question itself instead of invoking a transition action. | `Agent Configuration Gap` -- add "You are a router only. Do NOT answer questions directly. Always use a transition action." to `start_agent` instructions |
 
 **Root cause categories:**
@@ -786,6 +786,64 @@ grep -c "^    instructions:" "$AGENT_FILE" | head -1
 ```
 
 If any topic lacks an `actions:` block, flag it immediately — the LLM will have zero tools in that topic.
+
+**Step 1c -- Structural analysis checks:**
+
+Run these automated checks against the `.agent` file to detect structural anti-patterns early:
+
+```bash
+AGENT_FILE="<path_to_agent_file>"
+
+# 1. Dead hub detection — topics with only @utils.transition actions and zero @actions.* invocations
+echo "=== DEAD HUB CHECK ==="
+for TOPIC in $(grep -oP '^topic \K\S+(?=:)' "$AGENT_FILE"); do
+  TOPIC_BLOCK=$(sed -n "/^topic ${TOPIC}:/,/^topic \|^start_agent\|^$/p" "$AGENT_FILE")
+  ACTION_REFS=$(echo "$TOPIC_BLOCK" | grep -c '@actions\.' || true)
+  TRANSITION_REFS=$(echo "$TOPIC_BLOCK" | grep -c '@utils\.transition' || true)
+  if [ "$TRANSITION_REFS" -gt 0 ] && [ "$ACTION_REFS" -eq 0 ]; then
+    echo "  DEAD HUB: topic $TOPIC — has $TRANSITION_REFS transitions but 0 domain actions"
+  elif [ "$ACTION_REFS" -eq 0 ] && [ "$TRANSITION_REFS" -eq 0 ]; then
+    echo "  NO ACTIONS: topic $TOPIC — has zero tools (no actions, no transitions)"
+  fi
+done
+
+# 2. Orphan action detection — @actions.X invocations without matching Level 1 definitions
+echo "=== ORPHAN ACTION CHECK ==="
+# Extract all action invocations (Level 2: used in reasoning: actions: blocks)
+INVOKED=$(grep -oP '@actions\.\K\S+' "$AGENT_FILE" | sort -u)
+# Extract all action definitions (Level 1: top-level keys in actions: blocks)
+DEFINED=$(grep -P '^\s+\w+:\s+@actions\.' "$AGENT_FILE" | grep -oP '@actions\.\K\S+' | sort -u)
+for ACTION in $INVOKED; do
+  if ! echo "$DEFINED" | grep -qx "$ACTION"; then
+    echo "  ORPHAN ACTION: @actions.$ACTION — invoked but never defined in any topic"
+  fi
+done
+
+# 3. Cross-topic variable dependency scan
+echo "=== CROSS-TOPIC VARIABLE DEPENDENCIES ==="
+# Find writers: topics that set @variables.*
+grep -nP 'set @variables\.\S+' "$AGENT_FILE" | while read -r line; do
+  VAR=$(echo "$line" | grep -oP '@variables\.\K\S+')
+  echo "  WRITER: $VAR (line: $line)"
+done
+# Find readers: topics that use with param = @variables.*
+grep -nP 'with .+ = @variables\.\S+' "$AGENT_FILE" | while read -r line; do
+  VAR=$(echo "$line" | grep -oP '@variables\.\K\S+')
+  echo "  READER: $VAR (line: $line)"
+done
+```
+
+Flag categories and their implications:
+
+| Flag | Meaning | Impact |
+|------|---------|--------|
+| `DEAD HUB` | Topic has only `@utils.transition` actions, zero `@actions.*` invocations | Adds ~3-5s latency per conversation hop with no domain work; consolidate into `start_agent` |
+| `NO ACTIONS` | Topic has zero tools (no actions, no transitions) | LLM is trapped with nothing to invoke; will answer generically or hallucinate |
+| `ORPHAN ACTION` | Action invoked in `reasoning: actions:` but never defined as a Level 1 action definition | Will fail at runtime — target not resolvable; likely missing from org |
+| `CROSS-TOPIC DEP` | Variable written by Topic A, read by Topic B | Changes to Topic A's `set` bindings may silently break Topic B |
+| `MULTI-WRITER` | Multiple topics write the same `@variables.*` via `set` | Potential stale/overwritten values depending on topic execution order |
+
+Record all flags in the findings report (Step 3). `ORPHAN ACTION` flags feed directly into Phase 3.0 pre-flight checks.
 
 **Step 2 -- Analyze the `.agent` file structure:**
 
@@ -1005,6 +1063,59 @@ For `[NOT REPRODUCED]` issues: re-examine the Phase 1 STDM evidence. The session
 
 Phase 3 edits the `.agent` file directly using the Edit tool. No intermediate markdown conversion step. After editing, validate and publish the authoring bundle.
 
+### 3.0 Pre-flight: Verify action target availability
+
+Before making any `.agent` file edits, verify that all action targets actually exist and are registered in the org. Editing actions that reference non-existent targets wastes iterations and fails at validation.
+
+**Step 1 -- Extract all action targets from the `.agent` file:**
+
+```bash
+AGENT_FILE="<path_to_agent_file>"
+# Extract all target: URIs (flow://, apex://, retriever://)
+grep -oP 'target:\s*"\K[^"]+' "$AGENT_FILE" | sort -u
+```
+
+**Step 2 -- Query GenAiFunction records in the org:**
+
+```bash
+sf data query -q "SELECT DeveloperName, MasterLabel, InvocableActionDeveloperName FROM GenAiFunction WHERE IsActive = true" -o <ORG_ALIAS> --json
+```
+
+**Step 3 -- Compare and flag missing targets:**
+
+For each `target:` URI in the `.agent` file, check if a matching `GenAiFunction` record exists. Also verify the underlying target exists:
+
+```bash
+# For flow:// targets — check if the flow exists
+sf flow list -o <ORG_ALIAS> --json | python3 -c "import json,sys; flows=[f['ApiName'] for f in json.load(sys.stdin)['result']]; print('\n'.join(flows))"
+
+# For apex:// targets — check if the class exists
+sf data query -q "SELECT Name FROM ApexClass WHERE Name IN ('ClassName1','ClassName2')" -o <ORG_ALIAS> --json
+```
+
+**Step 4 -- Present target availability report:**
+
+```
+Action Target Availability:
+  ✓ @actions.schedule_test_drive  → flow://Schedule_Test_Drive (exists + registered)
+  ✓ @actions.lookup_vehicle       → apex://VehicleLookup (exists + registered)
+  ✗ @actions.check_inventory      → apex://InventoryCheck (class missing from org)
+  ✗ @actions.process_payment      → flow://Process_Payment (flow exists but NOT registered as GenAiFunction)
+```
+
+**Step 5 -- Present options to user:**
+
+If any targets are missing or unregistered, present these options before proceeding:
+
+1. **Deploy missing targets first** — Use `/adlc-scaffold` to generate stubs, then `/adlc-deploy` to deploy them
+2. **Remove unresolvable actions** — Delete the action definitions from the `.agent` file and focus Phase 3 on routing/instruction improvements
+3. **Register via Agent Builder UI** — For targets that exist but aren't registered as `GenAiFunction`, user can register them through Setup > Agent Builder
+4. **Proceed anyway** — If the planned fix only touches routing logic or instructions (not action targets)
+
+**Guideline:** If 50%+ of action targets are missing or unregistered, pivoting to routing and instruction fixes is usually the most pragmatic path. Action target issues require deployment cycles that are outside the optimize loop.
+
+**WARNING:** Do NOT use `flow://` syntax directly in `.agent` file action `target:` URIs as a workaround — the Agent Script lexer does not support URI prefixes in target fields. Action targets must reference the canonical names registered as `GenAiFunction` records.
+
 ### 3.1 Understand the .agent file structure
 
 The `.agent` file uses Agent Script -- a tab-indented DSL that compiles to Agentforce metadata. Key sections:
@@ -1069,6 +1180,37 @@ This mapping is what Phase 1.5b verifies by reading the retrieved `.agent` file 
 | `Knowledge Gap -- Infrastructure` | Knowledge question answered generically | Add knowledge action definition to the relevant topic | Define action with `retriever://` target |
 | `Knowledge Gap -- Content` | Knowledge question -- wrong/missing answer | N/A (org data issue) | Add missing articles to knowledge space; verify `DataKnowledgeSrcFileRef` |
 | `Platform / Runtime Issue` | Action timeout / latency > 10s | Flow or Apex class (not .agent) | Optimize query/processing logic; add timeout handling |
+| `Agent Configuration Gap` | Action defined but target not resolvable (flagged by Phase 3.0 pre-flight) | `target:` URI on action definition | See target resolution checklist below |
+| `Agent Configuration Gap` | Dead hub anti-pattern (flagged by Step 1c `DEAD HUB` check) | Entire intermediate topic block | Move transitions to `start_agent > reasoning > actions:`, delete dead hub topic |
+
+**Target resolution checklist:**
+
+When Phase 3.0 flags an unresolvable action target, follow this decision tree:
+
+```bash
+# 1. Extract action targets from .agent file
+grep -oP 'target:\s*"\K[^"]+' "$AGENT_FILE"
+
+# 2. Check if the underlying target exists in the org
+# For flows:
+sf data query -q "SELECT ApiName FROM FlowDefinitionView WHERE ApiName = '<FlowName>' AND IsActive = true" -o <ORG_ALIAS> --json
+# For Apex:
+sf data query -q "SELECT Name FROM ApexClass WHERE Name = '<ClassName>'" -o <ORG_ALIAS> --json
+# For retrievers:
+sf data query -q "SELECT DeveloperName FROM DataKnowledgeSpace" -o <ORG_ALIAS> --json
+
+# 3. Check if registered as GenAiFunction
+sf data query -q "SELECT DeveloperName, InvocableActionDeveloperName FROM GenAiFunction WHERE DeveloperName = '<ActionName>'" -o <ORG_ALIAS> --json
+```
+
+Decision tree:
+
+| Target exists? | Registered as GenAiFunction? | Action |
+|---|---|---|
+| Yes | Yes | Issue is elsewhere (check action bindings, instructions) |
+| Yes | No | Deploy/register: use `/adlc-deploy` or register via Agent Builder UI |
+| No | N/A | Scaffold first: use `/adlc-scaffold` to generate stub, then deploy |
+| Can't deploy now | N/A | Pivot to routing fixes: remove action from `.agent`, focus on instructions and transitions |
 
 **When fixing topic instructions**, always quote the current instruction from the `.agent` file before proposing a replacement:
 
@@ -1141,6 +1283,32 @@ When editing topic instructions, follow these principles to avoid regressions:
 
 5. **One fix per publish cycle** — Do not batch multiple instruction changes into a
    single publish. Fix one issue, verify, then move to the next.
+
+6. **Check cross-topic dependencies before editing** — Before changing Topic A, identify:
+   - **Variable dependencies:** Does Topic A `set @variables.X` that Topic B reads via `with param = @variables.X`?
+   - **Transition chains:** Does Topic A route to Topic B (or vice versa)?
+   - **Shared variable mutations:** Do multiple topics write the same variable?
+
+   ```bash
+   # Find all variable writers and readers across topics
+   grep -n 'set @variables\.' "$AGENT_FILE"
+   grep -n 'with .* = @variables\.' "$AGENT_FILE"
+   # Find all transition targets
+   grep -n '@utils.transition to @topic\.' "$AGENT_FILE"
+   ```
+
+   If Topic A sets a variable that Topic B reads, changing Topic A's `set` bindings
+   or removing the action that populates the variable will silently break Topic B.
+
+7. **Test adjacent topics after each fix** — After fixing Topic A, also test utterances
+   for Topic B if they share transitions, variables, or similar intents. Include at
+   least one cross-topic test in Phase 3.7 verification — e.g., an utterance that
+   should route to Topic B (not A) to confirm the fix didn't cause spillover routing.
+
+8. **Verify start_agent routing after topic removal** — If removing a dead hub or
+   merging topics, verify that `start_agent > reasoning > actions:` still has transition
+   actions to all remaining topics. Run preview with one utterance per topic to confirm
+   routing still works end-to-end.
 
 ### 3.5 Apply fixes
 

@@ -335,7 +335,15 @@ After presenting findings, **automatically proceed to Phase 1.5b** (Agent Config
 
 ### 1.0 Deploy helper class (once per org)
 
-`AgentforceOptimizeService` is a bundled Apex class that queries all five STDM DMOs and returns clean JSON. Deploy it once; subsequent runs reuse the deployed class.
+`AgentforceOptimizeService` is a bundled Apex class that queries STDM DMOs and returns clean JSON. Deploy it once; subsequent runs reuse the deployed class.
+
+Methods:
+- `findSessions(dataSpaceName, startIso, endIso, maxRows, agentName)` -> `List<SessionSummary>`
+- `getConversationDetails(dataSpaceName, sessionId)` -> `ConversationData`
+- `getMultipleConversationDetails(dataSpaceName, sessionIds)` -> `List<ConversationData>`
+- `getLlmStepDetails(dataSpaceName, stepIds)` -> `List<LlmStepDetail>`
+- `getMomentInsights(dataSpaceName, sessionIds)` -> `List<SessionInsights>` (moments, turn counts, retriever metrics)
+- `getAggregatedMetrics(dataSpaceName, startIso, endIso, maxRows, agentName)` -> `AggregatedMetrics` (session rates, top intents, RAG quality)
 
 **Step 1 -- copy the class into the project:**
 
@@ -536,6 +544,99 @@ Returns a JSON array of `LlmStepDetail` objects:
 - `llm_response` -- model response from `GenAIGeneration__dlm.responseText__c` (null if not available)
 
 Use these to confirm whether the agent's instructions were included in the prompt and whether the response deviated from them.
+
+### 1.2c Get aggregated metrics (recommended first step)
+
+Before drilling into individual sessions, get a high-level health dashboard with `getAggregatedMetrics()`. This gives session rates, top intents, and RAG quality averages across the date range.
+
+```apex
+String result = AgentforceOptimizeService.getAggregatedMetrics(
+    'DATA_SPACE',
+    'START_ISO',
+    'END_ISO',
+    50,
+    'AGENT_MASTER_LABEL'
+);
+System.debug('STDM_RESULT:' + result);
+```
+
+Returns an `AggregatedMetrics` object:
+```json
+{
+  "total_sessions": 36,
+  "total_moments": 32,
+  "total_turns": 101,
+  "avg_quality_score": 4.34,
+  "avg_session_duration_sec": 45.2,
+  "end_type_counts": { "USER_ENDED": 5, "AGENT_ENDED": 10, "UNKNOWN": 21 },
+  "quality_distribution": { "5": 20, "4": 6, "3": 4, "2": 1, "1": 1 },
+  "abandonment_rate": 0.14,
+  "deflection_rate": 0.28,
+  "escalation_rate": 0.0,
+  "top_intents": { "I want help finding homes in San Jose.": 3, "Check order status": 2 },
+  "avg_faithfulness": 0.85,
+  "avg_answer_relevance": 0.72,
+  "avg_context_precision": 0.91,
+  "unavailable_dmos": []
+}
+```
+
+Key signals:
+- `avg_quality_score` < 4.0 -> agent has Medium/Low quality responses, investigate low-scoring moments. Score labels: 5=High, 3-4=Medium, 2=Low, 1=Very Low
+- `quality_distribution` skewed toward 1-3 -> systemic agent quality issue; focus on moments with score ≤ 3
+- High `abandonment_rate` (> 0.3) -> users giving up, check for dead-ends or missing actions
+- Low `avg_faithfulness` / `avg_answer_relevance` -> RAG retrieval issues, check knowledge base content
+- `top_intents` shows what users ask about most -- verify the agent has topics/actions for each
+- `unavailable_dmos` lists any DMOs that couldn't be queried (graceful degradation)
+
+### 1.2d Get moment insights (per-session detail)
+
+For deeper analysis of specific sessions, use `getMomentInsights()` to get intent summaries, moment durations, and retriever quality metrics per session.
+
+```apex
+String result = AgentforceOptimizeService.getMomentInsights(
+    'DATA_SPACE',
+    new List<String>{ 'SESSION_ID_1', 'SESSION_ID_2' }
+);
+System.debug('STDM_RESULT:' + result);
+```
+
+Returns a JSON array of `SessionInsights` objects:
+```json
+[
+  {
+    "session_id": "...",
+    "start_time": "...", "end_time": "...", "end_type": null,
+    "duration_ms": null, "turn_count": 3, "moment_count": 2,
+    "avg_quality_score": 4.5,
+    "action_error_count": 0,
+    "moments": [
+      {
+        "moment_id": "...",
+        "session_id": "...",
+        "start_time": "...", "end_time": "...", "duration_ms": 10000,
+        "request_summary": "I want help finding homes in San Jose.",
+        "response_summary": "The agent provided details on three homes...",
+        "agent_api_name": "LennarAgent",
+        "agent_version": null,
+        "quality_score": 5,
+        "quality_reasoning": "The agent provided a detailed and helpful response..."
+      }
+    ],
+    "retriever_metrics": [],
+    "debug_message": null
+  }
+]
+```
+
+Key fields:
+- `quality_score` (1-5) -- per-moment quality score from `AiAgentTagAssociation → AiAgentTag.Value`. Maps to UI labels: 5=High, 3-4=Medium, 2=Low, 1=Very Low
+- `quality_reasoning` -- LLM-generated explanation for the score (from `AssociationReasonText`)
+- `avg_quality_score` -- session-level average across all scored moments
+- `request_summary` / `response_summary` -- LLM-generated intent and response summaries per moment
+- `moment_count` vs `turn_count` -- if `turn_count` >> `moment_count`, the agent needed many turns per intent (inefficient)
+- `retriever_metrics` -- RAG quality scores per retrieval (empty if agent doesn't use knowledge retrieval)
+- `debug_message` -- non-null if a DMO was unavailable (e.g. "AiAgentMoment DMO not available in this org")
 
 ### 1.3 Reconstruct conversations
 
@@ -1300,9 +1401,17 @@ All test cases derived from Phase 2 `[CONFIRMED]` issues should pass after the P
 AiAgentSession (1)
 +-- AiAgentSessionParticipant (N)       -- agent planner IDs and user IDs linked to this session
 +-- AiAgentInteraction (N)              -- one per conversational turn
-    +-- AiAgentInteractionMessage (N)   -- user and agent messages
-    +-- AiAgentInteractionStep (N)      -- internal steps (LLM, actions)
+|   +-- AiAgentInteractionMessage (N)   -- user and agent messages
+|   +-- AiAgentInteractionStep (N)      -- internal steps (LLM, actions)
++-- AiAgentMoment (N)                   -- one per intent/moment in the session
+|   +-- AiAgentMomentInteraction (N)    -- junction: links moments to interactions
+|   +-- AiAgentTagAssociation (N)       -- junction: links moments to tags (quality scores)
+|       +-- AiAgentTag (1)              -- score value (1-5)
+|           +-- AiAgentTagDefinition (1)-- tag type definition
+AiRetrieverQualityMetric (N)            -- RAG quality scores, linked via gateway request ID
 ```
+
+**Quality score join chain:** `AiAgentTagAssociation` (FK `AiAgentMomentId` + FK `AiAgentTagId`) → `AiAgentTag.Value` (1-5 integer). The `AssociationReasonText` field contains the LLM-generated reasoning for the score.
 
 ### Key fields
 
@@ -1347,6 +1456,73 @@ AiAgentSession (1)
 - `prompt__c` -- Full prompt text including system instructions -> `LlmStepDetail.prompt`
 
 These two DMOs are only populated when Einstein Audit & Feedback is enabled in the org's Data Cloud setup.
+
+**AiAgentMoment** (`ssot__AiAgentMoment__dlm`) -- queried via `getMomentInsights()` and `getAggregatedMetrics()`
+
+Each moment represents a distinct user intent within a session. One session may have multiple moments.
+- `ssot__Id__c` -- Moment ID
+- `ssot__AiAgentSessionId__c` -- FK to AiAgentSession
+- `ssot__StartTimestamp__c` / `ssot__EndTimestamp__c` -- Moment timing -> `MomentData.duration_ms`
+- `ssot__RequestSummaryText__c` -- LLM-generated summary of user intent -> `MomentData.request_summary`
+- `ssot__ResponseSummaryText__c` -- LLM-generated summary of agent response -> `MomentData.response_summary`
+- `ssot__AiAgentApiName__c` -- Agent API name that handled this moment
+- `ssot__AiAgentVersionApiName__c` -- Agent version API name
+
+**AiAgentMomentInteraction** (`ssot__AiAgentMomentInteraction__dlm`) -- junction: Moment ↔ Interaction
+
+Links moments to the interactions (turns) they span. One moment may cover multiple turns.
+- `ssot__Id__c` -- Junction record ID
+- `ssot__AiAgentMomentId__c` -- FK to AiAgentMoment
+- `ssot__AiAgentInteractionId__c` -- FK to AiAgentInteraction
+- `ssot__StartTimestamp__c` -- When this moment-interaction link was created
+
+**AiAgentTagAssociation** (`ssot__AiAgentTagAssociation__dlm`) -- junction: Moment → Tag (quality scores)
+
+The key junction table for quality scores. Links a moment to a tag (score 1-5) with LLM reasoning.
+- `ssot__Id__c` -- Association ID
+- `ssot__AiAgentMomentId__c` -- FK to AiAgentMoment
+- `ssot__AiAgentTagId__c` -- FK to AiAgentTag (join to get the score value)
+- `ssot__AiAgentSessionId__c` -- FK to AiAgentSession (denormalized for efficient filtering)
+- `ssot__AiAgentInteractionId__c` -- FK to AiAgentInteraction
+- `ssot__AiAgentTagDefinitionAssociationId__c` -- FK to TagDefinitionAssociation
+- `ssot__AssociationReasonText__c` -- LLM-generated reasoning for the quality score -> `MomentData.quality_reasoning`
+- `ssot__IsPassed__c` -- Whether the moment passed quality threshold
+
+Quality score query: `TagAssociation JOIN Tag ON TagId → Tag.Value` gives the 1-5 integer score per moment.
+
+**AiAgentTag** (`ssot__AiAgentTag__dlm`) -- quality score values
+
+Contains the 5 quality score levels (1-5). Each tag has a numeric value.
+- `ssot__Id__c` -- Tag ID
+- `ssot__AiAgentTagDefinitionId__c` -- FK to tag definition
+- `ssot__Value__c` -- Score value (e.g. "1", "2", "3", "4", "5") -> `MomentData.quality_score`
+- `ssot__Description__c` -- Score description (null in current orgs)
+- `ssot__IsActive__c` -- Whether this tag is active
+
+**AiAgentTagDefinition** (`ssot__AiAgentTagDefinition__dlm`) -- tag type definitions
+
+Defines tag categories per agent. Each agent gets its own tag definition (e.g. "Optimization Request Category").
+- `ssot__Id__c` -- Tag Definition ID
+- `ssot__Name__c` -- Display name (e.g. "Optimization Request Category")
+- `ssot__DeveloperName__c` -- API name (e.g. "AIE_Request_Category_LennarHomeSearch")
+- `ssot__DataType__c` -- Data type (e.g. "Text")
+- `ssot__EngineType__c` -- Engine that generates the tags
+- `ssot__Status__c` -- Definition status
+
+**AiRetrieverQualityMetric** (`ssot__AiRetrieverQualityMetric__dlm`) -- RAG quality scores
+
+Per-retrieval quality metrics for agents using knowledge retrieval. Links to sessions via gateway request ID (not directly to moments).
+- `ssot__Id__c` -- Metric ID
+- `ssot__AiGatewayRequestId__c` -- FK to GenAIGatewayRequest (links to session via interaction step)
+- `ssot__AiRetrieverRequestId__c` -- Retriever request ID
+- `ssot__RetrieverApiName__c` -- API name of the retriever
+- `ssot__UserUtteranceText__c` -- User utterance that triggered retrieval
+- `ssot__AgentGeneratedResponseText__c` -- Agent response text
+- `ssot__FaithfulnessRelevancyScoreNumber__c` -- Faithfulness score (0-1) -> `RetrieverMetricData.faithfulness`
+- `ssot__AnswerRelevancyScoreNumber__c` -- Answer relevance score (0-1) -> `RetrieverMetricData.answer_relevance`
+- `ssot__ContextPrecisionScoreNumber__c` -- Context precision score (0-1) -> `RetrieverMetricData.context_precision`
+
+Only populated when the agent uses knowledge retrieval actions (e.g. `retriever://` targets). May have 0 rows if the agent has no RAG actions.
 
 **`TRUST_GUARDRAILS_STEP`** -- A safety/compliance step that measures whether the agent's response followed its instructions:
 - `step.name` is typically `InstructionAdherence`

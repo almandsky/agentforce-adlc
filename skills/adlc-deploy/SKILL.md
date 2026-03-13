@@ -57,6 +57,19 @@ python3 "$ADLC_SCRIPTS/deploy.py" \
 
 ## Deployment Phases
 
+### Phase 0: Safety Gate (Required)
+
+Before deploying, read the `.agent` file and run a safety review using the `adlc-safety`
+criteria (see `skills/adlc-safety/SKILL.md`). Evaluate against all 7 categories:
+Identity & Transparency, User Safety, Data Handling, Content Safety, Fairness,
+Deception & Manipulation, and Scope & Boundaries.
+
+**If any BLOCK finding exists, STOP deployment and report the findings to the user.**
+WARN findings should be reported but do not block deployment.
+
+This is especially important for agents being deployed to production orgs — once published
+and activated, a harmful agent is live and interacting with real users.
+
 ### Phase 1: Pre-Deployment Validation
 
 ```bash

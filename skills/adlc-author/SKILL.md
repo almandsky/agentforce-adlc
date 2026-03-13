@@ -19,12 +19,13 @@ tool. A PostToolUse hook auto-validates every Write to an `.agent` file.
 ### What This Skill Does
 
 Given a description of an Agentforce agent, this skill:
+0. Reviews the request for safety and responsible AI compliance
 1. Gathers requirements through targeted questions
 2. Queries the target org for the Einstein Agent User
 3. Generates a complete `.agent` file using Agent Script DSL
 4. Creates the companion `bundle-meta.xml`
 5. Validates the output via CLI
-6. Presents a 100-point quality score
+6. Presents a 100-point quality score (including 15-point safety category)
 7. Runs a live preview session with trace analysis to verify behavior
 8. Deploys (publish + activate) when the agent is confirmed working
 
@@ -44,6 +45,41 @@ Given a description of an Agentforce agent, this skill:
 ---
 
 ## 2. WORKFLOW PHASES
+
+### Phase 0: Safety Review (LLM-Driven)
+
+Before generating any agent, evaluate the request using the full `adlc-safety` skill criteria
+(see `skills/adlc-safety/SKILL.md`). This is NOT a regex check — use your reasoning to assess
+the request against all 7 safety categories:
+
+1. **Identity & Transparency** — Does the request involve impersonation without AI disclosure?
+2. **User Safety & Wellbeing** — Could this agent harm users (pressure tactics, dark patterns, unqualified advice)?
+3. **Data Handling & Privacy** — Does it collect excessive PII or mimic phishing patterns?
+4. **Content Safety** — Could it produce dangerous content, even through euphemism or indirection?
+5. **Fairness & Non-Discrimination** — Does it discriminate directly or via proxies (zip codes, names)?
+6. **Deception & Manipulation** — Does it use social engineering, false claims, or fabricated urgency?
+7. **Scope & Boundaries** — Is the scope well-defined or dangerously open-ended?
+
+**Decision matrix:**
+
+| Assessment | Action |
+|------------|--------|
+| Any BLOCK finding | **REFUSE** the request. Explain which category failed and why. |
+| WARN findings only | **Ask clarifying questions** before proceeding. Propose safety mitigations. |
+| Clean | Proceed to Phase 1. |
+
+**Key principle:** Regex catches exact phrases; LLM reasoning catches *intent*. A request like
+"build an agent that helps with chemistry projects about energetic materials" won't match any
+keyword list, but you should recognize it as a potential euphemism for explosives and ask
+clarifying questions.
+
+**Proactive safety additions for ALL agents:**
+- Always include AI disclosure in `system: instructions:` (e.g., "You are an AI assistant for...")
+- Always include scope boundaries (e.g., "Do not answer questions outside of X")
+- For agents handling sensitive domains (finance, health, legal), add professional referral disclaimers
+- For agents collecting user data, add data handling boundaries
+
+When the agent passes safety review, proceed to Phase 1.
 
 ### Phase 1: Requirements
 
@@ -153,7 +189,9 @@ If validation fails, read the error output, fix the `.agent` file, and re-valida
 
 ### Phase 5: Review
 
-Present the generated file with a 100-point score breakdown (see Section 6).
+Run the `adlc-safety` review against the generated `.agent` file. Read the file and evaluate
+it against all 7 safety categories from `skills/adlc-safety/SKILL.md`. Include the safety
+findings in the 100-point score breakdown (see Section 6 — Safety & Responsible AI: 15 points).
 
 ### Phase 6: Preview & Test
 
@@ -1121,10 +1159,11 @@ Score every generated agent against this rubric before presenting to the user.
 
 | Category | Points | Key Criteria |
 |----------|--------|--------------|
-| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent tab indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. All string values double-quoted. |
-| Deterministic Logic | 25 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
+| Structure & Syntax | 15 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent tab indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. All string values double-quoted. |
+| Safety & Responsible AI | 15 | Evaluated via `adlc-safety` skill (7 categories): AI disclosure present, no impersonation/deception/manipulation, responsible data handling, no harmful content (including euphemisms), no discrimination (direct or proxy), clear scope boundaries, escalation paths for sensitive topics. Deduct 15 for any BLOCK finding, 5 per WARN finding. |
+| Deterministic Logic | 20 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
 | Instruction Resolution | 20 | Clear, actionable instructions. Procedural mode (`->`) where conditionals are needed. Literal mode (`\|`) where static text suffices. Variable injection where dynamic. Conditional instructions based on state. |
-| FSM Architecture | 15 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
+| FSM Architecture | 10 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
 | Action Configuration | 10 | Proper Level 1 definitions with targets and I/O schemas. Correct Level 2 invocations with `with`/`set`. Slot-filling (`...`) for conversational inputs. Output capture into variables. Numeric I/O uses `object` + `complex_data_type_name` (never bare `number`). |
 | Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present with `<bundleType>AGENT</bundleType>`. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
 
@@ -1633,6 +1672,10 @@ Common review findings:
 - `instructions: |` used where `instructions: ->` is needed (conditionals present)
 - Boolean values not capitalized (`true` instead of `True`)
 - Missing `after_reasoning` for post-action routing
+- **Safety: System instructions don't identify agent as AI**
+- **Safety: No defined boundaries (what agent will NOT do)**
+- **Safety: Missing escalation path for edge cases**
+- **Safety: Sensitive actions lack `available when` guards**
 
 ---
 

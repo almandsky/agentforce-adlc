@@ -53,7 +53,7 @@ Ask the user for the following. Do not proceed until each is answered or explici
 |----------|---------------|
 | Target org alias | Needed to query Einstein Agent User |
 | Agent name (PascalCase) | Becomes `developer_name`, folder name, and bundle name |
-| Agent type: Service or Employee | Determines linked variables and connection block |
+| **Agent type: Service Agent or Employee Agent?** | **Service** → include linked variables (`EndUserId`, `RoutableId`, `ContactId`) and `connection` block. **Employee** → omit linked variables and connection block. Always ask — do not assume. |
 | Topics and what each handles | Each topic becomes a state in the FSM |
 | Actions per topic (flow/apex/retriever targets) | Determines Level 1 action definitions |
 | Variables (mutable state vs linked context) | Defines the `variables:` block |
@@ -147,7 +147,7 @@ sf agent validate authoring-bundle --api-name <AgentName> -o <org> --json
 Before running the CLI validator, manually verify:
 - [ ] Every `@actions.X` reference in `reasoning > actions:` has a corresponding `X:` definition in `topic > actions:`
 - [ ] Every Level 1 action has `target:`, `inputs:`, and `outputs:`
-- [ ] Indentation is consistent throughout (3-space default)
+- [ ] Indentation is consistent throughout (tab-indented)
 
 If validation fails, read the error output, fix the `.agent` file, and re-validate.
 
@@ -268,48 +268,47 @@ system:           # 3. REQUIRED: Global instructions and messages
 connection:       # 4. Optional: Escalation routing (service agents)
 knowledge:        # 5. Optional: Knowledge base config
 language:         # 6. Optional: Locale settings
-start_agent:      # 7. REQUIRED: Entry point (exactly one)
+start_agent <name>:  # 7. REQUIRED: Entry point block (exactly one)
 topic:            # 8. REQUIRED: Conversation topics (one or more)
 ```
 
 ### 3.1b Indentation
 
-Agent Script uses **3-space indentation** (three literal space characters per level).
-This is a compiler requirement — the validator will reject files with tabs, 2-space,
-or 4-space indentation.
+Agent Script uses **tab indentation** (one literal tab character per level).
+This is a compiler requirement — the server rejects files with space-based indentation.
 
 ```
 # Level 0 (no indent)
 config:
-   # Level 1 (3 spaces)
-   developer_name: "MyAgent"
+	# Level 1 (1 tab)
+	developer_name: "MyAgent"
 
 topic my_topic:
-   # Level 1
-   description: "Topic description"
+	# Level 1
+	description: "Topic description"
 
-   actions:
-      # Level 2 (6 spaces)
-      my_action:
-         # Level 3 (9 spaces)
-         description: "Action description"
-         target: "flow://My_Flow"
-         inputs:
-            # Level 4 (12 spaces)
-            param: string
-               # Level 5 (15 spaces)
-               description: "Parameter"
+	actions:
+		# Level 2 (2 tabs)
+		my_action:
+			# Level 3 (3 tabs)
+			description: "Action description"
+			target: "flow://My_Flow"
+			inputs:
+				# Level 4 (4 tabs)
+				param: string
+					# Level 5 (5 tabs)
+					description: "Parameter"
 ```
 
 **CRITICAL:** Before generating, read any existing `.agent` file in the project to match
-its indentation style exactly. Different compiler versions may use different indentation:
+its indentation style exactly:
 
 ```bash
 # Check existing agent file indentation
 find force-app -name "*.agent" -exec head -20 {} \;
 ```
 
-If no existing file, default to 3-space indentation.
+If no existing file, default to tab indentation.
 
 ### 3.2 Config Block
 
@@ -317,11 +316,10 @@ The `config:` block defines agent metadata. Field names are exact -- do not subs
 
 ```
 config:
-   developer_name: "MyAgent"
-   agent_label: "My Agent"
-   description: "What this agent does"
-   default_agent_user: "einsteinagent@00dxx000001234.ext"
-   agent_type: "AgentforceServiceAgent"
+	developer_name: "MyAgent"
+	agent_label: "My Agent"
+	description: "What this agent does"
+	default_agent_user: "einsteinagent@00dxx000001234.ext"
 ```
 
 | Field | Required | Notes |
@@ -330,7 +328,8 @@ config:
 | `agent_label` | Yes | Human-readable display name |
 | `description` | Yes | Agent purpose (used for routing) |
 | `default_agent_user` | Yes | Must be a valid Einstein Agent User in the target org |
-| `agent_type` | Yes | `AgentforceServiceAgent` or `AgentforceEmployeeAgent` |
+
+**WARNING:** Do NOT include `agent_type` in the config block. The server crashes with a null pointer when `agent_type: "AgentforceEmployeeAgent"` is present. The agent type is inferred from other metadata (linked variables, connection block).
 
 CRITICAL: `developer_name` must exactly match the folder name under `aiAuthoringBundles/`.
 If the folder is `AcmeAgent`, the `developer_name` must be `"AcmeAgent"`.
@@ -342,29 +341,29 @@ Variables define agent state. Two modifiers exist:
 #### Mutable Variables (read-write state)
 ```
 variables:
-   order_id: mutable string = ""
-      description: "Current order being discussed"
-   is_verified: mutable boolean = False
-      description: "Whether customer has been verified"
-   attempt_count: mutable number = 0
-      description: "Number of verification attempts"
+	order_id: mutable string = ""
+		description: "Current order being discussed"
+	is_verified: mutable boolean = False
+		description: "Whether customer has been verified"
+	attempt_count: mutable number = 0
+		description: "Number of verification attempts"
 ```
 
 #### Linked Variables (read-only context)
 ```
 variables:
-   EndUserId: linked string
-      source: @MessagingSession.MessagingEndUserId
-      description: "Messaging End User ID"
-      visibility: "External"
-   RoutableId: linked string
-      source: @MessagingSession.Id
-      description: "Messaging Session ID"
-      visibility: "External"
-   ContactId: linked string
-      source: @MessagingEndUser.ContactId
-      description: "Contact ID"
-      visibility: "External"
+	EndUserId: linked string
+		source: @MessagingSession.MessagingEndUserId
+		description: "Messaging End User ID"
+		visibility: "External"
+	RoutableId: linked string
+		source: @MessagingSession.Id
+		description: "Messaging Session ID"
+		visibility: "External"
+	ContactId: linked string
+		source: @MessagingEndUser.ContactId
+		description: "Contact ID"
+		visibility: "External"
 ```
 
 NOTE: `visibility: "External"` is recommended on linked variables for service agents.
@@ -393,19 +392,19 @@ Rules:
 
 ```
 system:
-   instructions: "Global instructions that apply across all topics."
-   messages:
-      welcome: "Hello! How can I help you today?"
-      error: "Something went wrong. Please try again."
+	instructions: "Global instructions that apply across all topics."
+	messages:
+		welcome: "Hello! How can I help you today?"
+		error: "Something went wrong. Please try again."
 ```
 
 The `instructions:` value can be a single-line string or a multi-line block using `|`:
 ```
 system:
-   instructions: |
-      You are a customer service agent for Acme Corp.
-      Be professional, concise, and helpful.
-      Never disclose internal policies to customers.
+	instructions: |
+		You are a customer service agent for Acme Corp.
+		Be professional, concise, and helpful.
+		Never disclose internal policies to customers.
 ```
 
 Topics can override the agent-level `system:` with their own topic-level `system:` block.
@@ -414,16 +413,16 @@ Topics can override the agent-level `system:` with their own topic-level `system
 
 ```
 connection messaging:
-   adaptive_response_allowed: True
+	adaptive_response_allowed: True
 ```
 
 For escalation routing (with Omni-Channel Flow):
 ```
 connection messaging:
-   outbound_route_type: "OmniChannelFlow"
-   outbound_route_name: "flow://Route_From_Agent"
-   escalation_message: "Connecting you with a specialist."
-   adaptive_response_allowed: False
+	outbound_route_type: "OmniChannelFlow"
+	outbound_route_name: "flow://Route_From_Agent"
+	escalation_message: "Connecting you with a specialist."
+	adaptive_response_allowed: False
 ```
 
 NOTE: Use `connection messaging:` (singular). NOT `connections:`. When
@@ -434,16 +433,16 @@ Valid channel types: `messaging`, `voice`, `web`.
 
 ```
 language:
-   default_locale: "en_US"
-   additional_locales: ""
-   all_additional_locales: False
+	default_locale: "en_US"
+	additional_locales: ""
+	all_additional_locales: False
 ```
 
 ### 3.7 Knowledge Block
 
 ```
 knowledge:
-   citations_enabled: True
+	citations_enabled: True
 ```
 
 ### 3.8 Start Agent
@@ -460,18 +459,18 @@ Without these blocks, the entry point has zero enabled tools after initial routi
 
 ```
 start_agent router:
-   reasoning:
-      instructions: |
-         You are a router only. Do NOT answer questions or provide help directly.
-         Always use a transition action to route to the correct topic immediately.
-         - Order questions → use to_orders
-         - Return requests → use to_returns
-         Never attempt to help the user yourself. Always route.
-      actions:
-         to_orders: @utils.transition to @topic.order_support
-            description: "Route to order support"
-         to_returns: @utils.transition to @topic.return_support
-            description: "Route to returns"
+	reasoning:
+		instructions: |
+			You are a router only. Do NOT answer questions or provide help directly.
+			Always use a transition action to route to the correct topic immediately.
+			- Order questions → use to_orders
+			- Return requests → use to_returns
+			Never attempt to help the user yourself. Always route.
+		actions:
+			to_orders: @utils.transition to @topic.order_support
+				description: "Route to order support"
+			to_returns: @utils.transition to @topic.return_support
+				description: "Route to returns"
 ```
 
 **CRITICAL: Router-only instructions.** The `start_agent` instructions MUST explicitly say
@@ -486,9 +485,9 @@ A `start_agent` with only a name and no `reasoning:` block will compile but prod
 
 | Pattern | WRONG | CORRECT |
 |---------|-------|---------|
-| Hub-and-spoke | `start_agent: router` + `topic router:` | `start_agent router:` + `topic main_menu:` |
-| Verification gate | `start_agent: entry` + `topic entry:` | `start_agent router:` + `topic welcome:` |
-| Linear | `start_agent: greeting` + `topic greeting:` | `start_agent router:` + `topic greeting:` |
+| Hub-and-spoke | `start_agent router:` + `topic router:` (name collision!) | `start_agent hub_router:` + `topic main_menu:` |
+| Verification gate | `start_agent entry:` + `topic entry:` (name collision!) | `start_agent gate_router:` + `topic welcome:` |
+| Linear | `start_agent greeting:` + `topic greeting:` (name collision!) | `start_agent linear_router:` + `topic greeting:` |
 
 ### 3.9 Topic Block
 
@@ -496,38 +495,38 @@ Topics are the states in the agent's finite state machine. Each topic has:
 
 ```
 topic order_support:
-   label: "Order Support"
-   description: "Handle order status inquiries and tracking"
+	label: "Order Support"
+	description: "Handle order status inquiries and tracking"
 
-   actions:
-      # Level 1: Action DEFINITIONS (target, inputs, outputs)
-      get_order_status:
-         description: "Look up order status by order ID"
-         target: "flow://Get_Order_Status"
-         inputs:
-            order_id: string
-               description: "The order ID to look up"
-         outputs:
-            status: string
-               description: "Current order status"
-               is_displayable: True
-            tracking_number: string
-               description: "Shipping tracking number"
+	actions:
+		# Level 1: Action DEFINITIONS (target, inputs, outputs)
+		get_order_status:
+			description: "Look up order status by order ID"
+			target: "flow://Get_Order_Status"
+			inputs:
+				order_id: string
+					description: "The order ID to look up"
+			outputs:
+				status: string
+					description: "Current order status"
+					is_displayable: True
+				tracking_number: string
+					description: "Shipping tracking number"
 
-   reasoning:
-      instructions: ->
-         | Help the customer check their order status.
-         | Ask for their order number if not already provided.
+	reasoning:
+		instructions: ->
+			| Help the customer check their order status.
+			| Ask for their order number if not already provided.
 
-      actions:
-         # Level 2: Action INVOCATIONS (with/set bindings)
-         lookup_order: @actions.get_order_status
-            description: "Look up order details"
-            with order_id = @variables.order_id
-            set @variables.order_status = @outputs.status
+		actions:
+			# Level 2: Action INVOCATIONS (with/set bindings)
+			lookup_order: @actions.get_order_status
+				description: "Look up order details"
+				with order_id = @variables.order_id
+				set @variables.order_status = @outputs.status
 
-         back_to_menu: @utils.transition to @topic.topic_selector
-            description: "Return to main menu"
+			back_to_menu: @utils.transition to @topic.topic_selector
+				description: "Return to main menu"
 ```
 
 ### 3.10 Two-Level Action System (CRITICAL)
@@ -541,19 +540,19 @@ Defines WHAT the action is:
 
 ```
 actions:
-   create_case:
-      description: "Create a support case"
-      target: "flow://Create_Support_Case"
-      inputs:
-         subject: string
-            description: "Case subject"
-         desc_text: string
-            description: "Case description"
-      outputs:
-         case_id: string
-            description: "Created case ID"
-            is_displayable: True
-            is_used_by_planner: True
+	create_case:
+		description: "Create a support case"
+		target: "flow://Create_Support_Case"
+		inputs:
+			subject: string
+				description: "Case subject"
+			desc_text: string
+				description: "Case description"
+		outputs:
+			case_id: string
+				description: "Created case ID"
+				is_displayable: True
+				is_used_by_planner: True
 ```
 
 Target protocols:
@@ -571,12 +570,12 @@ Located inside `topic > reasoning > actions:`. Defines HOW to call the action:
 
 ```
 reasoning:
-   actions:
-      create_new_case: @actions.create_case
-         description: "Create a new support case"
-         with subject = @variables.case_subject
-         with desc_text = @variables.case_description
-         set @variables.case_id = @outputs.case_id
+	actions:
+		create_new_case: @actions.create_case
+			description: "Create a new support case"
+			with subject = @variables.case_subject
+			with desc_text = @variables.case_description
+			set @variables.case_id = @outputs.case_id
 ```
 
 Key rules for Level 2:
@@ -595,32 +594,32 @@ Two instruction modes:
 Static text that goes directly to the LLM. No expressions evaluated:
 ```
 instructions: |
-   Help the customer with their order.
-   Be friendly and professional.
+	Help the customer with their order.
+	Be friendly and professional.
 ```
 
 #### Procedural Mode (`->`)
 Enables conditionals, variable injection, inline actions:
 ```
 instructions: ->
-   # Post-action check at TOP (deterministic)
-   if @variables.case_id != "":
-      | Your case {!@variables.case_id} has been created.
-      transition to @topic.confirmation
+	# Post-action check at TOP (deterministic)
+	if @variables.case_id != "":
+		| Your case {!@variables.case_id} has been created.
+		transition to @topic.confirmation
 
-   # Pre-LLM data loading
-   run @actions.load_customer_data
-      with customer_id = @variables.customer_id
-      set @variables.risk_score = @outputs.risk_score
+	# Pre-LLM data loading
+	run @actions.load_customer_data
+		with customer_id = @variables.customer_id
+		set @variables.risk_score = @outputs.risk_score
 
-   # Dynamic instructions based on state
-   | Customer risk score: {!@variables.risk_score}
+	# Dynamic instructions based on state
+	| Customer risk score: {!@variables.risk_score}
 
-   if @variables.risk_score >= 80:
-      | HIGH RISK - Offer full cash refund to retain this customer.
+	if @variables.risk_score >= 80:
+		| HIGH RISK - Offer full cash refund to retain this customer.
 
-   if @variables.risk_score < 80:
-      | STANDARD - Offer $10 store credit as goodwill.
+	if @variables.risk_score < 80:
+		| STANDARD - Offer $10 store credit as goodwill.
 ```
 
 #### Variable Injection in Text
@@ -635,24 +634,24 @@ Agent Script supports `if`, `else:`, and compound conditions:
 
 ```
 if @variables.is_verified == True:
-   | You are verified. Full access granted.
+	| You are verified. Full access granted.
 
 if @variables.is_verified == False:
-   | Please verify your identity first.
+	| Please verify your identity first.
 ```
 
 With `else:`:
 ```
 if @variables.churn_risk >= 80:
-   | HIGH RISK - Offer retention package.
+	| HIGH RISK - Offer retention package.
 else:
-   | STANDARD - Follow normal procedure.
+	| STANDARD - Follow normal procedure.
 ```
 
 Compound conditions (use instead of nested if):
 ```
 if @variables.is_verified == True and @variables.is_premium == True:
-   | Premium verified customer. VIP treatment.
+	| Premium verified customer. VIP treatment.
 ```
 
 #### Expression Operators
@@ -674,20 +673,20 @@ if @variables.is_verified == True and @variables.is_premium == True:
 Inline transition (inside `instructions: ->`):
 ```
 if @variables.all_collected == True:
-   transition to @topic.confirmation
+	transition to @topic.confirmation
 ```
 
 Transition as action (inside `reasoning > actions:`):
 ```
 go_to_orders: @utils.transition to @topic.order_support
-   description: "Route to order support"
-   available when @variables.has_order == True
+	description: "Route to order support"
+	available when @variables.has_order == True
 ```
 
 Escalation to human:
 ```
 escalate_now: @utils.escalate
-   description: "Transfer to human agent"
+	description: "Transfer to human agent"
 ```
 
 ### 3.14 The after_reasoning Pattern
@@ -700,29 +699,29 @@ Place `after_reasoning:` at the topic level (same level as `reasoning:`):
 
 ```
 topic collect_case_info:
-   description: "Collect case details from the customer"
+	description: "Collect case details from the customer"
 
-   reasoning:
-      instructions: ->
-         | Please provide the case subject and description.
-         | I need both before I can create the case.
+	reasoning:
+		instructions: ->
+			| Please provide the case subject and description.
+			| I need both before I can create the case.
 
-      actions:
-         set_fields: @actions.capture_case_fields
-            description: "Capture case subject and description"
-            with subject = ...
-            with desc_text = ...
-            set @variables.case_subject = @outputs.subject
-            set @variables.case_description = @outputs.desc_text
+		actions:
+			set_fields: @actions.capture_case_fields
+				description: "Capture case subject and description"
+				with subject = ...
+				with desc_text = ...
+				set @variables.case_subject = @outputs.subject
+				set @variables.case_description = @outputs.desc_text
 
-   after_reasoning:
-      if @variables.case_subject != "" and @variables.case_description != "":
-         run @actions.create_case
-            with subject=@variables.case_subject
-            with description=@variables.case_description
-            set @variables.case_id = @outputs.case_id
-      if @variables.case_id != "":
-         transition to @topic.case_confirmation
+	after_reasoning:
+		if @variables.case_subject != "" and @variables.case_description != "":
+			run @actions.create_case
+				with subject=@variables.case_subject
+				with description=@variables.case_description
+				set @variables.case_id = @outputs.case_id
+		if @variables.case_id != "":
+			transition to @topic.case_confirmation
 ```
 
 Use `after_reasoning` when:
@@ -754,11 +753,11 @@ Control when actions are visible to the LLM:
 
 ```
 actions:
-   process_refund: @actions.issue_refund
-      description: "Process a refund"
-      available when @variables.is_verified == True
-      available when @variables.has_order == True
-      with order_id = @variables.order_id
+	process_refund: @actions.issue_refund
+		description: "Process a refund"
+		available when @variables.is_verified == True
+		available when @variables.has_order == True
+		with order_id = @variables.order_id
 ```
 
 Multiple `available when` clauses on the same action are valid (evaluated as AND).
@@ -774,10 +773,10 @@ the conversation:
 
 ```
 actions:
-   search: @actions.search_inventory
-      description: "Search for products"
-      with query = ...
-      with category = ...
+	search: @actions.search_inventory
+		description: "Search for products"
+		with query = ...
+		with category = ...
 ```
 
 The LLM reads the conversation history and fills in the values. Use this for
@@ -791,33 +790,33 @@ place the full definition at the topic level under `actions:`, separate from
 
 ```
 topic home_search:
-   label: "Home Search"
-   description: "Search inventory for matching homes"
+	label: "Home Search"
+	description: "Search inventory for matching homes"
 
-   actions:
-      search_homes:
-         description: "Search available homes"
-         target: "flow://Search_Inventory"
-         inputs:
-            city: string
-               description: "City to search"
-            max_price: number
-               description: "Maximum price"
-         outputs:
-            results_count: number
-               description: "Number of homes found"
-               is_displayable: True
+	actions:
+		search_homes:
+			description: "Search available homes"
+			target: "flow://Search_Inventory"
+			inputs:
+				city: string
+					description: "City to search"
+				max_price: number
+					description: "Maximum price"
+			outputs:
+				results_count: number
+					description: "Number of homes found"
+					is_displayable: True
 
-   reasoning:
-      instructions: ->
-         | I can search for homes matching your criteria.
+	reasoning:
+		instructions: ->
+			| I can search for homes matching your criteria.
 
-      actions:
-         run_search: @actions.search_homes
-            description: "Search for homes"
-            with city = @variables.preferred_city
-            with max_price = @variables.max_price
-            set @variables.results_count = @outputs.results_count
+		actions:
+			run_search: @actions.search_homes
+				description: "Search for homes"
+				with city = @variables.preferred_city
+				with max_price = @variables.max_price
+				set @variables.results_count = @outputs.results_count
 ```
 
 ### 3.18 Action I/O Metadata Properties
@@ -882,7 +881,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Always use `@actions.` prefix | `run set_user_name` | `run @actions.set_user_name` |
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
-| Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent: topic_name` |
+| Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent topic_name:` (block syntax, NOT `start_agent: name`) |
 | `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
 | `start_agent` instructions MUST say "router only" | `instructions: \| Determine intent and route.` | `instructions: \| You are a router only. Do NOT answer directly. Always use a transition action.` |
 | `knowledge` is a reserved topic name | `topic knowledge:` | `topic knowledge_base:` or `topic faq:` |
@@ -903,20 +902,20 @@ These patterns look reasonable but cause compiler errors. Use the correct forms:
 
 ```
 ❌ WRONG — `default:` as sub-property:
-   order_id: mutable string
-      default: ""
+	order_id: mutable string
+		default: ""
 
 ✅ CORRECT — inline default:
-   order_id: mutable string = ""
+	order_id: mutable string = ""
 
 ❌ WRONG — nested `type:` in action I/O:
-   inputs:
-      order_id:
-         type: string
+	inputs:
+		order_id:
+			type: string
 
 ✅ CORRECT — inline type:
-   inputs:
-      order_id: string
+	inputs:
+		order_id: string
 ```
 
 ### Reserved Field Names
@@ -962,12 +961,12 @@ Score every generated agent against this rubric before presenting to the user.
 
 | Category | Points | Key Criteria |
 |----------|--------|--------------|
-| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent 3-space indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. |
+| Structure & Syntax | 20 | All required blocks present (`config`, `system`, `start_agent`, at least one `topic`). Proper nesting. Consistent tab indentation (see Section 3.1b). No mixed tabs/spaces. Valid field names. No `agent_type` in config. |
 | Deterministic Logic | 25 | `after_reasoning` patterns for post-action routing. FSM transitions with no dead-end topics. `available when` guards for security-sensitive actions. Post-action checks at TOP of `instructions: ->`. |
 | Instruction Resolution | 20 | Clear, actionable instructions. Procedural mode (`->`) where conditionals are needed. Literal mode (`\|`) where static text suffices. Variable injection where dynamic. Conditional instructions based on state. |
 | FSM Architecture | 15 | Hub-and-spoke or verification gate pattern. Every topic reachable. Every topic has an exit (transition or escalation). No orphan topics. Start topic routes correctly. |
 | Action Configuration | 10 | Proper Level 1 definitions with targets and I/O schemas. Correct Level 2 invocations with `with`/`set`. Slot-filling (`...`) for conversational inputs. Output capture into variables. |
-| Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present. Correct `agent_type`. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
+| Deployment Readiness | 10 | Valid `default_agent_user`. `developer_name` matches folder. `bundle-meta.xml` present. No `agent_type` in config. Linked variables for service agents (`EndUserId`, `RoutableId`, `ContactId`). |
 
 ### Score Interpretation
 
@@ -1044,27 +1043,27 @@ A central `topic_selector` routes to specialized spoke topics. Each spoke has a
 start_agent hub_router:
 
 topic topic_selector:
-   description: "Route based on user intent"
-   reasoning:
-      instructions: |
-         You are a router only. Do NOT answer questions directly.
-         Always use a transition action to route immediately.
-      actions:
-         to_orders: @utils.transition to @topic.order_support
-            description: "Order questions"
-         to_returns: @utils.transition to @topic.return_support
-            description: "Return or refund requests"
-         to_general: @utils.transition to @topic.general_support
-            description: "General questions"
+	description: "Route based on user intent"
+	reasoning:
+		instructions: |
+			You are a router only. Do NOT answer questions directly.
+			Always use a transition action to route immediately.
+		actions:
+			to_orders: @utils.transition to @topic.order_support
+				description: "Order questions"
+			to_returns: @utils.transition to @topic.return_support
+				description: "Return or refund requests"
+			to_general: @utils.transition to @topic.general_support
+				description: "General questions"
 
 topic order_support:
-   description: "Handle order inquiries"
-   reasoning:
-      instructions: ->
-         | Help the customer with their order.
-      actions:
-         back: @utils.transition to @topic.topic_selector
-            description: "Return to main menu"
+	description: "Handle order inquiries"
+	reasoning:
+		instructions: ->
+			| Help the customer with their order.
+		actions:
+			back: @utils.transition to @topic.topic_selector
+				description: "Return to main menu"
 ```
 
 > Note: `start_agent hub_router:` uses a different name from `topic topic_selector:` to avoid `GenAiPluginDefinition` name collision on publish.
@@ -1080,39 +1079,39 @@ Use when handling sensitive data, payments, or PII.
 start_agent gate_router:
 
 topic welcome:
-   description: "Entry - routes through verification"
-   reasoning:
-      instructions: |
-         Welcome the customer and begin verification.
-      actions:
-         verify: @utils.transition to @topic.identity_verification
-            description: "Begin verification"
+	description: "Entry - routes through verification"
+	reasoning:
+		instructions: |
+			Welcome the customer and begin verification.
+		actions:
+			verify: @utils.transition to @topic.identity_verification
+				description: "Begin verification"
 
 topic identity_verification:
-   description: "Verify customer identity"
-   reasoning:
-      instructions: ->
-         if @variables.failed_attempts >= 3:
-            | Too many failed attempts. Transferring to human agent.
-            transition to @topic.escalation
+	description: "Verify customer identity"
+	reasoning:
+		instructions: ->
+			if @variables.failed_attempts >= 3:
+				| Too many failed attempts. Transferring to human agent.
+				transition to @topic.escalation
 
-         if @variables.is_verified == True:
-            | Identity verified! How can I help?
+			if @variables.is_verified == True:
+				| Identity verified! How can I help?
 
-         if @variables.is_verified == False:
-            | Please verify your identity.
+			if @variables.is_verified == False:
+				| Please verify your identity.
 
-      actions:
-         verify_email: @actions.verify_identity
-            description: "Verify customer email"
-            set @variables.is_verified = @outputs.verified
+		actions:
+			verify_email: @actions.verify_identity
+				description: "Verify customer email"
+				set @variables.is_verified = @outputs.verified
 
-         to_account: @utils.transition to @topic.account_mgmt
-            description: "Account management"
-            available when @variables.is_verified == True
+			to_account: @utils.transition to @topic.account_mgmt
+				description: "Account management"
+				available when @variables.is_verified == True
 
-         escalate_now: @utils.escalate
-            description: "Transfer to human"
+			escalate_now: @utils.escalate
+				description: "Transfer to human"
 ```
 
 ### Post-Action Loop
@@ -1122,24 +1121,24 @@ TOP of `instructions: ->` so they trigger on the loop:
 
 ```
 reasoning:
-   instructions: ->
-      # POST-ACTION CHECK (at TOP - triggers on re-resolution)
-      if @variables.refund_status == "Approved":
-         run @actions.create_crm_case
-            with customer_id = @variables.customer_id
-         transition to @topic.confirmation
+	instructions: ->
+		# POST-ACTION CHECK (at TOP - triggers on re-resolution)
+		if @variables.refund_status == "Approved":
+			run @actions.create_crm_case
+				with customer_id = @variables.customer_id
+			transition to @topic.confirmation
 
-      # PRE-LLM: Load data
-      run @actions.load_risk_score
-         with customer_id = @variables.customer_id
-         set @variables.risk_score = @outputs.score
+		# PRE-LLM: Load data
+		run @actions.load_risk_score
+			with customer_id = @variables.customer_id
+			set @variables.risk_score = @outputs.score
 
-      # DYNAMIC INSTRUCTIONS
-      | Risk score: {!@variables.risk_score}
-      if @variables.risk_score >= 80:
-         | HIGH RISK - Offer retention package.
-      else:
-         | STANDARD - Follow normal process.
+		# DYNAMIC INSTRUCTIONS
+		| Risk score: {!@variables.risk_score}
+		if @variables.risk_score >= 80:
+			| HIGH RISK - Offer retention package.
+		else:
+			| STANDARD - Follow normal process.
 ```
 
 ---
@@ -1150,46 +1149,45 @@ This is the absolute minimum for a deployable service agent:
 
 ```
 system:
-   instructions: "You are a helpful customer service agent."
-   messages:
-      welcome: "Hello! How can I help you today?"
-      error: "Something went wrong. Please try again."
+	instructions: "You are a helpful customer service agent."
+	messages:
+		welcome: "Hello! How can I help you today?"
+		error: "Something went wrong. Please try again."
 
 config:
-   developer_name: "MinimalAgent"
-   agent_label: "Minimal Agent"
-   description: "A minimal service agent"
-   default_agent_user: "agent@00dxx000001234.ext"
-   agent_type: "AgentforceServiceAgent"
+	developer_name: "MinimalAgent"
+	agent_label: "Minimal Agent"
+	description: "A minimal service agent"
+	default_agent_user: "agent@00dxx000001234.ext"
 
 variables:
-   EndUserId: linked string
-      source: @MessagingSession.MessagingEndUserId
-      description: "Messaging End User ID"
-      visibility: "External"
-   RoutableId: linked string
-      source: @MessagingSession.Id
-      description: "Messaging Session ID"
-      visibility: "External"
-   ContactId: linked string
-      source: @MessagingEndUser.ContactId
-      description: "Contact ID"
-      visibility: "External"
+	EndUserId: linked string
+		source: @MessagingSession.MessagingEndUserId
+		description: "Messaging End User ID"
+		visibility: "External"
+	RoutableId: linked string
+		source: @MessagingSession.Id
+		description: "Messaging Session ID"
+		visibility: "External"
+	ContactId: linked string
+		source: @MessagingEndUser.ContactId
+		description: "Contact ID"
+		visibility: "External"
 
 language:
-   default_locale: "en_US"
-   additional_locales: ""
-   all_additional_locales: False
+	default_locale: "en_US"
+	additional_locales: ""
+	all_additional_locales: False
 
 start_agent linear_router:
 
 topic greeting:
-   label: "Greeting"
-   description: "Greet users and provide help"
-   reasoning:
-      instructions: ->
-         | Welcome the user warmly.
-         | Ask how you can help them today.
+	label: "Greeting"
+	description: "Greet users and provide help"
+	reasoning:
+		instructions: ->
+			| Welcome the user warmly.
+			| Ask how you can help them today.
 ```
 
 Companion `bundle-meta.xml` (MUST be this exact content — no extra fields):
@@ -1206,165 +1204,164 @@ Companion `bundle-meta.xml` (MUST be this exact content — no extra fields):
 
 ```
 system:
-   instructions: |
-      You are a customer service agent for TechCorp.
-      Be professional, concise, and solution-oriented.
-      Always verify the customer before sensitive operations.
-   messages:
-      welcome: "Welcome to TechCorp Support! How can I assist you?"
-      error: "I apologize for the issue. Please try again."
+	instructions: |
+		You are a customer service agent for TechCorp.
+		Be professional, concise, and solution-oriented.
+		Always verify the customer before sensitive operations.
+	messages:
+		welcome: "Welcome to TechCorp Support! How can I assist you?"
+		error: "I apologize for the issue. Please try again."
 
 config:
-   developer_name: "TechCorpAgent"
-   agent_label: "TechCorp Support Agent"
-   description: "Handles order inquiries, returns, and general support"
-   default_agent_user: "einstein@00dxx000001234.ext"
-   agent_type: "AgentforceServiceAgent"
+	developer_name: "TechCorpAgent"
+	agent_label: "TechCorp Support Agent"
+	description: "Handles order inquiries, returns, and general support"
+	default_agent_user: "einstein@00dxx000001234.ext"
 
 variables:
-   EndUserId: linked string
-      source: @MessagingSession.MessagingEndUserId
-      description: "Messaging End User ID"
-      visibility: "External"
-   RoutableId: linked string
-      source: @MessagingSession.Id
-      description: "Messaging Session ID"
-      visibility: "External"
-   ContactId: linked string
-      source: @MessagingEndUser.ContactId
-      description: "Contact ID"
-      visibility: "External"
-   order_id: mutable string = ""
-      description: "Current order being discussed"
-   order_status: mutable string = ""
-      description: "Status of the current order"
-   is_verified: mutable boolean = False
-      description: "Customer verification status"
-   case_id: mutable string = ""
-      description: "Created case ID"
+	EndUserId: linked string
+		source: @MessagingSession.MessagingEndUserId
+		description: "Messaging End User ID"
+		visibility: "External"
+	RoutableId: linked string
+		source: @MessagingSession.Id
+		description: "Messaging Session ID"
+		visibility: "External"
+	ContactId: linked string
+		source: @MessagingEndUser.ContactId
+		description: "Contact ID"
+		visibility: "External"
+	order_id: mutable string = ""
+		description: "Current order being discussed"
+	order_status: mutable string = ""
+		description: "Status of the current order"
+	is_verified: mutable boolean = False
+		description: "Customer verification status"
+	case_id: mutable string = ""
+		description: "Created case ID"
 
 language:
-   default_locale: "en_US"
-   additional_locales: ""
-   all_additional_locales: False
+	default_locale: "en_US"
+	additional_locales: ""
+	all_additional_locales: False
 
 start_agent multi_router:
 
 topic main_menu:
-   label: "Main Router"
-   description: "Determine customer intent and route to the right topic"
-   reasoning:
-      instructions: |
-         Determine what the customer needs:
-         - Order status or tracking -> order_support
-         - Returns or refunds -> return_support
-         - General questions -> general_support
-      actions:
-         to_orders: @utils.transition to @topic.order_support
-            description: "Check order status or tracking"
-         to_returns: @utils.transition to @topic.return_support
-            description: "Process a return or refund"
-         to_general: @utils.transition to @topic.general_support
-            description: "General questions and support"
+	label: "Main Router"
+	description: "Determine customer intent and route to the right topic"
+	reasoning:
+		instructions: |
+			Determine what the customer needs:
+			- Order status or tracking -> order_support
+			- Returns or refunds -> return_support
+			- General questions -> general_support
+		actions:
+			to_orders: @utils.transition to @topic.order_support
+				description: "Check order status or tracking"
+			to_returns: @utils.transition to @topic.return_support
+				description: "Process a return or refund"
+			to_general: @utils.transition to @topic.general_support
+				description: "General questions and support"
 
 topic order_support:
-   label: "Order Support"
-   description: "Handle order status and tracking inquiries"
+	label: "Order Support"
+	description: "Handle order status and tracking inquiries"
 
-   actions:
-      get_order:
-         description: "Look up order by ID"
-         target: "flow://Get_Order_Status"
-         inputs:
-            order_id: string
-               description: "Order ID"
-         outputs:
-            status: string
-               description: "Order status"
-               is_displayable: True
-            tracking_url: string
-               description: "Tracking URL"
-               is_displayable: True
+	actions:
+		get_order:
+			description: "Look up order by ID"
+			target: "flow://Get_Order_Status"
+			inputs:
+				order_id: string
+					description: "Order ID"
+			outputs:
+				status: string
+					description: "Order status"
+					is_displayable: True
+				tracking_url: string
+					description: "Tracking URL"
+					is_displayable: True
 
-   reasoning:
-      instructions: ->
-         if @variables.order_status != "":
-            | Order {!@variables.order_id} status: {!@variables.order_status}
+	reasoning:
+		instructions: ->
+			if @variables.order_status != "":
+				| Order {!@variables.order_id} status: {!@variables.order_status}
 
-         | What is your order number?
+			| What is your order number?
 
-      actions:
-         lookup: @actions.get_order
-            description: "Look up order"
-            with order_id = ...
-            set @variables.order_id = @outputs.order_id
-            set @variables.order_status = @outputs.status
+		actions:
+			lookup: @actions.get_order
+				description: "Look up order"
+				with order_id = ...
+				set @variables.order_id = @outputs.order_id
+				set @variables.order_status = @outputs.status
 
-         back: @utils.transition to @topic.main_menu
-            description: "Return to main menu"
+			back: @utils.transition to @topic.main_menu
+				description: "Return to main menu"
 
 topic return_support:
-   label: "Return Support"
-   description: "Handle returns and refund requests"
+	label: "Return Support"
+	description: "Handle returns and refund requests"
 
-   actions:
-      initiate_return:
-         description: "Start a return process"
-         target: "flow://Initiate_Return"
-         inputs:
-            order_id: string
-               description: "Order ID for the return"
-            reason: string
-               description: "Reason for return"
-         outputs:
-            return_id: string
-               description: "Return authorization ID"
-               is_displayable: True
+	actions:
+		initiate_return:
+			description: "Start a return process"
+			target: "flow://Initiate_Return"
+			inputs:
+				order_id: string
+					description: "Order ID for the return"
+				reason: string
+					description: "Reason for return"
+			outputs:
+				return_id: string
+					description: "Return authorization ID"
+					is_displayable: True
 
-   reasoning:
-      instructions: ->
-         | I can help with your return request.
-         | Please provide your order number and the reason for the return.
+	reasoning:
+		instructions: ->
+			| I can help with your return request.
+			| Please provide your order number and the reason for the return.
 
-      actions:
-         start_return: @actions.initiate_return
-            description: "Start a return"
-            with order_id = ...
-            with reason = ...
-            set @variables.case_id = @outputs.return_id
+		actions:
+			start_return: @actions.initiate_return
+				description: "Start a return"
+				with order_id = ...
+				with reason = ...
+				set @variables.case_id = @outputs.return_id
 
-         back: @utils.transition to @topic.main_menu
-            description: "Return to main menu"
+			back: @utils.transition to @topic.main_menu
+				description: "Return to main menu"
 
-   after_reasoning:
-      if @variables.case_id != "":
-         transition to @topic.confirmation
+	after_reasoning:
+		if @variables.case_id != "":
+			transition to @topic.confirmation
 
 topic general_support:
-   label: "General Support"
-   description: "Handle general support questions"
-   reasoning:
-      instructions: |
-         Help the customer with general questions.
-         If the question is about orders or returns, route appropriately.
-      actions:
-         escalate_now: @utils.escalate
-            description: "Transfer to human agent"
-         back: @utils.transition to @topic.main_menu
-            description: "Return to main menu"
+	label: "General Support"
+	description: "Handle general support questions"
+	reasoning:
+		instructions: |
+			Help the customer with general questions.
+			If the question is about orders or returns, route appropriately.
+		actions:
+			escalate_now: @utils.escalate
+				description: "Transfer to human agent"
+			back: @utils.transition to @topic.main_menu
+				description: "Return to main menu"
 
 topic confirmation:
-   label: "Confirmation"
-   description: "Confirm the completed action"
-   reasoning:
-      instructions: ->
-         | Your request has been processed. Reference: {!@variables.case_id}
-         | Is there anything else I can help with?
-      actions:
-         new_request: @utils.transition to @topic.main_menu
-            description: "Start a new request"
-         end_chat: @actions.end_conversation
-            description: "End the conversation"
+	label: "Confirmation"
+	description: "Confirm the completed action"
+	reasoning:
+		instructions: ->
+			| Your request has been processed. Reference: {!@variables.case_id}
+			| Is there anything else I can help with?
+		actions:
+			new_request: @utils.transition to @topic.main_menu
+				description: "Start a new request"
+			end_chat: @actions.end_conversation
+				description: "End the conversation"
 ```
 
 ---
@@ -1389,10 +1386,10 @@ topic confirmation:
 Use a boolean "latch" to prevent re-execution of one-time actions:
 ```
 if @variables.data_loaded == False:
-   run @actions.load_data
-      with id = @variables.customer_id
-      set @variables.customer_name = @outputs.name
-   set @variables.data_loaded = True
+	run @actions.load_data
+		with id = @variables.customer_id
+		set @variables.customer_name = @outputs.name
+	set @variables.data_loaded = True
 ```
 
 ### Token Limits

@@ -32,14 +32,14 @@ $ADLC_SCRIPTS = if (Test-Path "$env:USERPROFILE\.claude\adlc") { "$env:USERPROFI
 ## Usage
 
 ```bash
-# Discover targets in the default agent bundle location
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias>
-
-# Specify a particular .agent file
+# Discover targets for a specific .agent file
 python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
 
-# Auto-discover .agent files in project
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --auto-discover
+# Discover targets for all .agent files in a directory
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
+
+# Include I/O parameter validation for found targets
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-file MyAgent.agent --validate-io
 ```
 
 ## What it does
@@ -57,7 +57,7 @@ For each extracted target, queries the Salesforce org:
 |-------------|------------|----------------|
 | `flow://FlowName` | `SELECT ApiName FROM FlowDefinitionView WHERE ApiName = 'FlowName' AND IsActive = true` | Active flows only |
 | `apex://ClassName` | `SELECT Name FROM ApexClass WHERE Name = 'ClassName'` | Apex classes |
-| `retriever://RetrieverName` | `SELECT DeveloperName FROM DataCloudRetriever WHERE DeveloperName = 'RetrieverName'` | Data Cloud retrievers |
+| `retriever://RetrieverName` | `SELECT DeveloperName FROM DataKnowledgeSpace WHERE DeveloperName = 'RetrieverName'` | Data Cloud retrievers |
 | `externalService://ServiceName` | `SELECT DeveloperName FROM ExternalServiceRegistration WHERE DeveloperName = 'ServiceName'` | External services |
 | `generatePromptResponse://TemplateName` | `SELECT DeveloperName FROM PromptTemplate WHERE DeveloperName = 'TemplateName' AND Status = 'Active'` | Active prompt templates |
 
@@ -113,7 +113,7 @@ Exit code: 1 (missing targets detected)
 
 When the `--validate-io` flag is used, discover also validates that found targets have I/O parameters matching the `.agent` file declarations:
 
-- **Flows:** Queries `/services/data/v66.0/actions/custom/flow/{FlowApiName}` to get actual input/output parameter schema. Compares names (case-sensitive) and types against `.agent` file declarations.
+- **Flows:** Queries `/services/data/v63.0/actions/custom/flow/{FlowApiName}` to get actual input/output parameter schema. Compares names (case-sensitive) and types against `.agent` file declarations.
 - **Apex:** Queries `ApexClass` body to check `@InvocableVariable` field names match expected inputs/outputs.
 
 Validation results appear as warnings (non-blocking):
@@ -168,12 +168,12 @@ sf agent publish authoring-bundle --api-name <AgentName> -o <org-alias>
 
 ## Advanced Features
 
-### Batch Discovery
-When multiple `.agent` files exist, the tool processes all of them:
+### Directory Discovery
+When multiple `.agent` files exist, use `--agent-dir` to process all of them:
 
 ```bash
 # Discover all agents in project
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --batch
+python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
 ```
 
 ### CI/CD Integration
@@ -192,38 +192,6 @@ Exit codes for automation:
       exit 1
     fi
 ```
-
-### Custom Target Types
-The script is extensible for custom target protocols:
-
-```python
-# In discover.py
-CUSTOM_TARGETS = {
-    'customFlow://': ('CustomFlowObject', 'Name'),
-    'integration://': ('IntegrationEndpoint', 'EndpointName')
-}
-```
-
-## Script Location
-
-The discover script should be located at:
-```
-$ADLC_SCRIPTS/discover.py
-```
-(see Script Path section above)
-
-Required Python packages:
-- `simple-salesforce` for SOQL queries
-- `pyyaml` for parsing .agent files
-- `python-Levenshtein` for fuzzy matching
-- `colorama` for terminal output formatting
-
-## Performance Considerations
-
-- Caches org metadata queries to avoid redundant SOQL calls
-- Processes .agent files in parallel when multiple are found
-- Fuzzy matching limited to top 100 similar names to prevent performance degradation
-- Typical execution time: 2-5 seconds per agent file
 
 ## Exit Codes
 

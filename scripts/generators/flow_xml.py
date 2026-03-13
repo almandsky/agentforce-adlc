@@ -16,6 +16,7 @@ _TYPE_MAP = {
 # Mapping from complex_data_type_name to Flow variable dataTypes (for action I/O)
 _COMPLEX_TYPE_MAP = {
     "lightning__integerType": "Number",
+    "lightning__numberType": "Number",
     "lightning__doubleType": "Number",
     "lightning__currencyType": "Currency",
     "lightning__dateTimeStringType": "DateTime",
@@ -25,7 +26,7 @@ _COMPLEX_TYPE_MAP = {
     "lightning__textType": "String",
 }
 
-API_VERSION = "66.0"
+API_VERSION = "63.0"
 
 
 def generate_flow_xml(
@@ -62,7 +63,7 @@ def generate_flow_xml(
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<Flow xmlns="http://soap.sforce.com/2006/04/metadata">',
         f'    <apiVersion>{API_VERSION}</apiVersion>',
-        f'    <label>{api_name}</label>',
+        f'    <label>{api_name.replace("_", " ")}</label>',
         f'    <processType>{process_type}</processType>',
         '    <status>Active</status>',
         '    <interviewLabel>{!$Flow.CurrentDateTime}</interviewLabel>',
@@ -131,11 +132,12 @@ def generate_flow_xml(
     ])
 
     for out in outputs:
+        flow_type = _COMPLEX_TYPE_MAP.get(out.get("complex_data_type_name", ""), _TYPE_MAP.get(out.get("type", "string"), "String"))
         lines.extend([
             '        <assignmentItems>',
             f'            <assignToReference>{out["name"]}</assignToReference>',
             '            <operator>Assign</operator>',
-            f'            <value>{_default_value_element(out.get("type", "string"))}</value>',
+            f'            <value>{_default_value_element_by_flow_type(flow_type)}</value>',
             '        </assignmentItems>',
         ])
 
@@ -194,5 +196,18 @@ def _default_value_element(type_name: str) -> str:
     if type_name == "date":
         return "<stringValue>2000-01-01</stringValue>"
     if type_name == "datetime":
+        return "<stringValue>2000-01-01T00:00:00Z</stringValue>"
+    return "<stringValue>TODO</stringValue>"
+
+
+def _default_value_element_by_flow_type(flow_type: str) -> str:
+    """Return a type-appropriate XML value element based on resolved Flow dataType."""
+    if flow_type == "Boolean":
+        return "<booleanValue>false</booleanValue>"
+    if flow_type in ("Number", "Currency"):
+        return "<numberValue>0</numberValue>"
+    if flow_type == "Date":
+        return "<stringValue>2000-01-01</stringValue>"
+    if flow_type == "DateTime":
         return "<stringValue>2000-01-01T00:00:00Z</stringValue>"
     return "<stringValue>TODO</stringValue>"

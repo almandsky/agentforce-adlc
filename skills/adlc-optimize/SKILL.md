@@ -105,7 +105,7 @@ Store the resolved path as `AGENT_FILE` for Phase 3.
 Before running any STDM query, determine the correct Data Cloud Data Space API name.
 
 ```bash
-sf api request rest "/services/data/v66.0/ssot/data-spaces" -o <org>
+sf api request rest "/services/data/v63.0/ssot/data-spaces" -o <org>
 ```
 
 Note: `sf api request rest` is a beta command -- do not add `--json` (that flag is unsupported and causes an error).
@@ -363,7 +363,7 @@ cp ~/.claude/skills/adlc-optimize/apex/AgentforceOptimizeService.cls-meta.xml \
 ```json
 {
   "packageDirectories": [{ "path": "force-app", "default": true }],
-  "sourceApiVersion": "66.0"
+  "sourceApiVersion": "63.0"
 }
 ```
 
@@ -877,6 +877,8 @@ Verdict:  [CONFIRMED] / [INTERMITTENT] / [NOT REPRODUCED]
 
 Only `[CONFIRMED]` and `[INTERMITTENT]` issues proceed to Phase 3.
 
+For `[NOT REPRODUCED]` issues: re-examine the Phase 1 STDM evidence. The session data may be stale (issue was already fixed), the utterance may not match the original user input closely enough, or the issue may be environment-dependent. Report these to the user as "not reproducible" and move on — do not attempt fixes for issues that cannot be confirmed.
+
 ---
 
 ## Phase 3: Improve -- Edit .agent File Directly
@@ -1359,7 +1361,7 @@ Do not attempt to `JSON.parse()` these values. Only `ACTION_STEP` input/output i
 
 ### Data Space name
 
-Always run Phase 0 first to discover the correct Data Space `name` for the org. Use `sf api request rest "/services/data/v66.0/ssot/data-spaces" -o <org>` (no `--json` flag -- unsupported on this beta command). Never assume `'default'` without checking -- it is only a fallback if the API call fails. If STDM queries return zero rows after confirming the Data Space, direct the user to Salesforce Setup -> Data Cloud -> Data Spaces to verify the name.
+Always run Phase 0 first to discover the correct Data Space `name` for the org. Use `sf api request rest "/services/data/v63.0/ssot/data-spaces" -o <org>` (no `--json` flag -- unsupported on this beta command). Never assume `'default'` without checking -- it is only a fallback if the API call fails. If STDM queries return zero rows after confirming the Data Space, direct the user to Salesforce Setup -> Data Cloud -> Data Spaces to verify the name.
 
 ---
 

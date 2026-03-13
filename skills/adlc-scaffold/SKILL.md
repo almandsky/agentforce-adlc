@@ -46,7 +46,7 @@ python3 scripts/scaffold.py --agent-file path/to/Agent.agent -o <org-alias>
 
 ## What it does
 
-### 1. Discovery Phase (unless --skip-discover)
+### 1. Discovery Phase (unless --all)
 - Runs the discover workflow to identify missing targets
 - Extracts input/output schemas from the `.agent` file for each action
 - Maps Agent Script types to Salesforce data types
@@ -66,7 +66,7 @@ Example generated Flow structure:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>66.0</apiVersion>
+    <apiVersion>63.0</apiVersion>
     <description>Scaffolded flow for Get_Order_Status action</description>
     <label>Get Order Status</label>
 
@@ -323,23 +323,6 @@ python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
 python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
 ```
 
-### Template Customization
-
-Use custom templates for generated code:
-```bash
-python3 scripts/scaffold.py -o myorg \
-  --agent-file MyAgent.agent \
-  --flow-template templates/flow-template.xml \
-  --apex-template templates/apex-template.cls
-```
-
-### Validation Mode
-
-Check what would be generated without creating files:
-```bash
-python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent --validate-only
-```
-
 ## Error Handling
 
 | Error | Cause | Resolution |
@@ -402,16 +385,6 @@ Generated Apex classes need:
 - Generates files in parallel when multiple targets exist
 - Reuses templates to avoid repeated parsing
 - Typical generation time: <1 second per target
-
-## Script Requirements
-
-Located at: `$ADLC_SCRIPTS/scaffold.py` (see Script Path section above)
-
-Dependencies:
-- `simple-salesforce` - Org connection and metadata queries
-- `pyyaml` - Parse .agent files
-- `lxml` - Generate valid Flow XML
-- `jinja2` - Template engine for code generation
 
 ## Exit Codes
 

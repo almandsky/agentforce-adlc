@@ -241,3 +241,42 @@ public class MyAction {
             "testorg",
         )
         assert mismatches == []
+
+
+class TestExtractActionsComplexType:
+    """Test that extract_actions captures complex_data_type_name."""
+
+    def test_complex_type_in_inputs_and_outputs(self, tmp_path):
+        agent_content = """\
+topic my_topic:
+\tlabel: "My Topic"
+\tdescription: "Test topic"
+
+\tactions:
+\t\tmy_action:
+\t\t\tdescription: "Test action"
+\t\t\ttarget: "flow://My_Flow"
+\t\t\tinputs:
+\t\t\t\tcategory: string
+\t\t\t\t\tdescription: "Category"
+\t\t\t\tmax_distance: object
+\t\t\t\t\tcomplex_data_type_name: "lightning__integerType"
+\t\t\t\t\tdescription: "Max distance"
+\t\t\toutputs:
+\t\t\t\tresult_count: object
+\t\t\t\t\tcomplex_data_type_name: "lightning__integerType"
+\t\t\t\t\tdescription: "Number of results"
+"""
+        agent_file = tmp_path / "Test.agent"
+        agent_file.write_text(agent_content)
+        actions = extract_actions(agent_file)
+        assert len(actions) == 1
+        action = actions[0]
+        # Check inputs
+        assert len(action["inputs"]) == 2
+        assert action["inputs"][0] == {"name": "category", "type": "string"}
+        assert action["inputs"][1]["name"] == "max_distance"
+        assert action["inputs"][1]["complex_data_type_name"] == "lightning__integerType"
+        # Check outputs
+        assert len(action["outputs"]) == 1
+        assert action["outputs"][0]["complex_data_type_name"] == "lightning__integerType"

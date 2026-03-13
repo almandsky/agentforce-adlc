@@ -14,7 +14,7 @@ class TestFlowXml:
     def test_basic_flow(self):
         xml = generate_flow_xml("Get_Order_Status")
         assert '<?xml version="1.0" encoding="UTF-8"?>' in xml
-        assert "<label>Get_Order_Status</label>" in xml
+        assert "<label>Get Order Status</label>" in xml
         assert "<status>Active</status>" in xml
         assert "<processType>AutoLaunchedFlow</processType>" in xml
 
@@ -61,6 +61,13 @@ class TestFlowXml:
         xml = generate_flow_xml("TestFlow", outputs=outputs)
         assert "<dataType>Currency</dataType>" in xml
 
+    def test_complex_type_number_assignment(self):
+        """Number outputs should use numberValue in assignment, not stringValue."""
+        outputs = [{"name": "count", "type": "object", "complex_data_type_name": "lightning__integerType"}]
+        xml = generate_flow_xml("TestFlow", outputs=outputs)
+        assert "<numberValue>0</numberValue>" in xml
+        assert "TODO" not in xml.split("<assignmentItems>")[1]
+
 
 class TestApexStub:
     def test_basic_class(self):
@@ -93,7 +100,7 @@ class TestApexStub:
 
     def test_meta_xml(self):
         xml = generate_apex_meta_xml()
-        assert "<apiVersion>66.0</apiVersion>" in xml
+        assert "<apiVersion>63.0</apiVersion>" in xml
         assert "<status>Active</status>" in xml
 
     def test_escape_apex_backslash(self):

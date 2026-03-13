@@ -150,6 +150,14 @@ def extract_actions(agent_file: Path) -> list[dict]:
             in_outputs = False
             continue
 
+        # Collect complex_data_type_name for the last collected param
+        cdt_match = re.match(r'complex_data_type_name:\s*"([^"]+)"', stripped)
+        if cdt_match:
+            last_list = current_inputs if in_inputs else (current_outputs if in_outputs else None)
+            if last_list:
+                last_list[-1]["complex_data_type_name"] = cdt_match.group(1)
+            continue
+
         # Collect input/output parameters (match "name: type" on stripped text)
         param_match = re.match(r'^(\w+):\s*(string|number|boolean|date|datetime|id|object)\b', stripped)
         if param_match:
@@ -477,11 +485,11 @@ def discover(agent_file: Path, target_org: str, validate_io: bool = False) -> Di
     return report
 
 
-def discover_dir(agent_dir: Path, target_org: str) -> DiscoveryReport:
+def discover_dir(agent_dir: Path, target_org: str, validate_io: bool = False) -> DiscoveryReport:
     """Run discovery for all .agent files in a directory."""
     combined = DiscoveryReport()
     for agent_file in sorted(agent_dir.rglob("*.agent")):
-        sub_report = discover(agent_file, target_org)
+        sub_report = discover(agent_file, target_org, validate_io=validate_io)
         combined.targets.extend(sub_report.targets)
     return combined
 
@@ -533,18 +541,19 @@ def main():
     group.add_argument("--agent-file", type=Path, help="Path to a single .agent file")
     group.add_argument("--agent-dir", type=Path, help="Directory containing .agent files")
     parser.add_argument("-o", "--target-org", required=True, help="Salesforce org alias")
+    parser.add_argument("--validate-io", action="store_true", help="Validate I/O parameters for found targets")
     args = parser.parse_args()
 
     if args.agent_file:
         if not args.agent_file.exists():
             print(f"Error: {args.agent_file} not found", file=sys.stderr)
             sys.exit(1)
-        report = discover(args.agent_file, args.target_org)
+        report = discover(args.agent_file, args.target_org, validate_io=args.validate_io)
     else:
         if not args.agent_dir.exists():
             print(f"Error: {args.agent_dir} not found", file=sys.stderr)
             sys.exit(1)
-        report = discover_dir(args.agent_dir, args.target_org)
+        report = discover_dir(args.agent_dir, args.target_org, validate_io=args.validate_io)
 
     print_report(report)
 

@@ -331,7 +331,7 @@ Each issue follows this format:
 
   # Patch the instruction text
   sf api request rest \
-    "/services/data/v66.0/tooling/sobjects/GenAiPluginInstructionDef/<id>" \
+    "/services/data/v63.0/tooling/sobjects/GenAiPluginInstructionDef/<id>" \
     --method PATCH \
     --body '{"Description": "New instruction text here"}' \
     -o Org

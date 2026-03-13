@@ -82,7 +82,7 @@ ensures correct parameter names.
 sf data query -q "SELECT ApiName, IsActive, Description FROM FlowDefinitionView WHERE IsActive = true AND ProcessType = 'AutoLaunchedFlow'" -o <org> --json
 
 # For each candidate flow, check its actual input/output parameters
-sf api request rest "/services/data/v66.0/actions/custom/flow/<FlowApiName>" -o <org>
+sf api request rest "/services/data/v63.0/actions/custom/flow/<FlowApiName>" -o <org>
 ```
 
 NOTE: `FlowDefinitionView` does NOT have a `Status` column. Use `IsActive` (boolean):
@@ -499,11 +499,13 @@ start_agent router:
 
 This names the entry point that handles the first user message and routes to topics.
 
-**CRITICAL: `start_agent` MUST include `reasoning: instructions:` and `reasoning: actions:`.**
-Without these blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
+**CRITICAL: `start_agent` MUST include `description:`, `reasoning: instructions:`, and `reasoning: actions:`.**
+Without `description:`, the compiler errors: "Description is required for all topic blocks."
+Without `reasoning:` blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
 
 ```
 start_agent router:
+	description: "Route user requests to the appropriate topic"
 	reasoning:
 		instructions: |
 			You are a router only. Do NOT answer questions or provide help directly.
@@ -780,7 +782,7 @@ topic collect_case_info:
 				set @variables.case_subject = @outputs.subject
 				set @variables.case_description = @outputs.desc_text
 
-	after_reasoning:
+	after_reasoning: ->
 		if @variables.case_subject != "" and @variables.case_description != "":
 			run @actions.create_case
 				with subject=@variables.case_subject
@@ -976,10 +978,14 @@ Bare `number` works for **variables** but **fails at publish** for action inputs
 
 | WRONG (publish failure) | CORRECT |
 |------------------------|---------|
-| `minPrice: number` | `minPrice: object` with `complex_data_type_name: "lightning__integerType"` |
+| `minPrice: number` | `minPrice: object` with `complex_data_type_name` (see below) |
 | `score: number` | `score: object` with `complex_data_type_name: "lightning__doubleType"` |
 
-Example:
+**CRITICAL: The correct `complex_data_type_name` for integers depends on the target type:**
+- **Flow targets** (`flow://`): Use `lightning__numberType`
+- **Apex targets** (`apex://`): Use `lightning__integerType`
+
+Example (Flow target):
 ```
 actions:
 	search_homes:
@@ -987,13 +993,23 @@ actions:
 		inputs:
 			city: string
 			minPrice: object
-				complex_data_type_name: "lightning__integerType"
+				complex_data_type_name: "lightning__numberType"
 		outputs:
 			resultCount: object
+				complex_data_type_name: "lightning__numberType"
+```
+
+Example (Apex target):
+```
+actions:
+	book_reservation:
+		target: "apex://ReservationHandler"
+		inputs:
+			party_size: object
 				complex_data_type_name: "lightning__integerType"
 ```
 
-> **Rule of thumb:** `number` → variables only. Action I/O → always `object` + `complex_data_type_name`.
+> **Rule of thumb:** `number` → variables only. Action I/O → always `object` + `complex_data_type_name`. Flow targets → `lightning__numberType`. Apex targets → `lightning__integerType`.
 
 See `references/complex-data-types.md` for the full mapping table.
 
@@ -1019,6 +1035,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent topic_name:` (block syntax, NOT `start_agent: name`) |
+| `start_agent` MUST have `description:` | `start_agent router:` with no `description:` | Add `description: "Route user requests"` — compiler requires it |
 | `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
 | `start_agent` instructions MUST say "router only" | `instructions: \| Determine intent and route.` | `instructions: \| You are a router only. Do NOT answer directly. Always use a transition action.` |
 | `knowledge` is a reserved topic name | `topic knowledge:` | `topic knowledge_base:` or `topic faq:` |
@@ -1184,6 +1201,7 @@ A central `topic_selector` routes to specialized spoke topics. Each spoke has a
 
 ```
 start_agent hub_router:
+	description: "Route user requests to the appropriate topic"
 
 topic topic_selector:
 	description: "Route based on user intent"
@@ -1220,6 +1238,7 @@ Use when handling sensitive data, payments, or PII.
 
 ```
 start_agent gate_router:
+	description: "Route through identity verification"
 
 topic welcome:
 	description: "Entry - routes through verification"
@@ -1323,6 +1342,7 @@ language:
 	all_additional_locales: False
 
 start_agent linear_router:
+	description: "Begin the onboarding flow"
 
 topic greeting:
 	label: "Greeting"

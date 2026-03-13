@@ -76,3 +76,14 @@ pytest tests/ -v
 # Install skills, agents, and hooks to ~/.claude/
 python3 tools/install.py
 ```
+
+## Windows Compatibility
+
+ADLC works on Windows with these considerations:
+
+- **Python command**: Use `python` instead of `python3` on Windows
+- **Temp files**: Skill examples use `/tmp/` — substitute `%TEMP%\` (cmd) or `$env:TEMP\` (PowerShell)
+- **Shell examples**: SKILL.md bash examples work in Git Bash or WSL; PowerShell equivalents are noted where applicable
+- **Path resolution**: All Python scripts use `pathlib.Path` and are cross-platform
+- **Installer**: `python tools/install.py` works on all platforms (the bash `install.sh` wrapper is macOS/Linux only)
+- **Hook scripts**: Already handle `sys.platform == "win32"` for stdin reading

@@ -18,13 +18,18 @@ This skill automatically generates Salesforce metadata stubs for missing action 
 The scripts live inside the installed repo copy. Resolve the path based on which IDE config directory exists:
 
 ```bash
-# Auto-detect: prefer ~/.claude, fall back to ~/.cursor
+# macOS / Linux
 ADLC_SCRIPTS="$([ -d ~/.claude/adlc ] && echo ~/.claude/adlc/scripts || echo ~/.cursor/adlc/scripts)"
+```
+
+```powershell
+# Windows (PowerShell)
+$ADLC_SCRIPTS = if (Test-Path "$env:USERPROFILE\.claude\adlc") { "$env:USERPROFILE\.claude\adlc\scripts" } else { "$env:USERPROFILE\.cursor\adlc\scripts" }
 ```
 
 ## Usage
 
-The script auto-configures `sys.path`, so it can be run from any directory:
+The script auto-configures `sys.path`, so it can be run from any directory. Use `python3` on macOS/Linux, `python` on Windows:
 
 ```bash
 # Scaffold missing targets (runs discover first)

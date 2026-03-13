@@ -16,6 +16,15 @@ Improve Agentforce agents using session trace data and live preview testing.
 
 ---
 
+## Platform Notes
+
+- Shell examples below use bash syntax. On Windows, use PowerShell equivalents or Git Bash.
+- Replace `python3` with `python` on Windows.
+- Replace `/tmp/` with `$env:TEMP\` (PowerShell) or `%TEMP%\` (cmd).
+- Replace `jq` with `python -c "import json,sys; ..."` if jq is not installed.
+
+---
+
 ## Routing
 
 Gather these inputs before starting:

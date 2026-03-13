@@ -201,18 +201,24 @@ def _find_python3() -> str:
     """Find the python3 executable path reliably.
 
     sys.executable can be empty or wrong when piped via curl | python3.
-    Falls back to searching PATH.
+    Falls back to searching PATH. On Windows, searches for 'python' as well
+    since 'python3' is not always available.
     """
     exe = sys.executable
     if exe and os.path.isfile(exe):
         return exe
 
-    for directory in os.environ.get("PATH", "").split(os.pathsep):
-        candidate = os.path.join(directory, "python3")
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+    # On Windows, python3 may not exist — try python first
+    names = ["python3", "python"] if os.name != "nt" else ["python", "python3"]
+    for name in names:
+        for directory in os.environ.get("PATH", "").split(os.pathsep):
+            candidate = os.path.join(directory, name)
+            if os.name == "nt":
+                candidate += ".exe"
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
 
-    return "python3"
+    return "python3" if os.name != "nt" else "python"
 
 
 # ============================================================================
@@ -528,8 +534,9 @@ def configure_hooks(tgt: Dict, dry_run: bool = False) -> bool:
     hooks_scripts_dir = tgt["hooks_scripts_dir"]
     settings_file = tgt["settings_file"]
 
-    guardrail_cmd = f"python3 {hooks_scripts_dir / 'adlc-guardrails.py'}"
-    validator_cmd = f"python3 {hooks_scripts_dir / 'adlc-agent-validator.py'}"
+    py_cmd = "python" if os.name == "nt" else "python3"
+    guardrail_cmd = f"{py_cmd} {hooks_scripts_dir / 'adlc-guardrails.py'}"
+    validator_cmd = f"{py_cmd} {hooks_scripts_dir / 'adlc-agent-validator.py'}"
 
     adlc_pre_hook = {
         "matcher": "Bash",
@@ -988,9 +995,10 @@ def cmd_install(dry_run: bool = False, force: bool = False,
         print(f"  Hooks:    {len(all_hooks)} script(s) + settings.json configured")
     print()
     first_dest = valid_targets[0]["installer_dest"]
-    print(f"  Update:   python3 {first_dest} --update")
-    print(f"  Status:   python3 {first_dest} --status")
-    print(f"  Remove:   python3 {first_dest} --uninstall")
+    py = "python" if os.name == "nt" else "python3"
+    print(f"  Update:   {py} {first_dest} --update")
+    print(f"  Status:   {py} {first_dest} --status")
+    print(f"  Remove:   {py} {first_dest} --uninstall")
     print()
     print_info("Restart your IDE for skills to take effect.")
     print()

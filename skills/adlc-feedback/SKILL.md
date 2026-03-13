@@ -92,6 +92,7 @@ FORM_URL="https://docs.google.com/forms/d/e/1FAIpQLSdBbFIW0Q71NoVts6oboqDcjkGcrr
 # macOS
 open "$FORM_URL"
 # Linux: xdg-open "$FORM_URL"
+# Windows: start "$FORM_URL"
 ```
 
 Tell the user:

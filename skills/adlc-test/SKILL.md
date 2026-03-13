@@ -13,6 +13,14 @@ Automated testing for Agentforce agents with smoke tests, batch execution, and i
 
 This skill provides comprehensive testing capabilities for Agentforce agents, including automated utterance derivation from agent topics, preview-based smoke testing, trace analysis, and an iterative fix loop for identified issues. It bridges the gap between initial development and production deployment.
 
+## Platform Notes
+
+- Shell examples below use bash syntax. On Windows, use PowerShell equivalents or Git Bash.
+- Replace `python3` with `python` on Windows.
+- Replace `/tmp/` with `$env:TEMP\` (PowerShell) or `%TEMP%\` (cmd).
+- Replace `jq` with `python -c "import json,sys; ..."` if jq is not installed.
+- `find ... | head -1` → `Get-ChildItem -Recurse ... | Select-Object -First 1` in PowerShell.
+
 ## Usage
 
 This skill uses `sf agent preview` and `sf agent test` CLI commands directly.

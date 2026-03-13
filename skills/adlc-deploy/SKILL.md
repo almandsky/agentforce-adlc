@@ -18,9 +18,16 @@ This skill orchestrates the complete deployment pipeline for Agentforce agents, 
 The scripts live inside the installed repo copy. Resolve the path based on which IDE config directory exists:
 
 ```bash
-# Auto-detect: prefer ~/.claude, fall back to ~/.cursor
+# macOS / Linux
 ADLC_SCRIPTS="$([ -d ~/.claude/adlc ] && echo ~/.claude/adlc/scripts || echo ~/.cursor/adlc/scripts)"
 ```
+
+```powershell
+# Windows (PowerShell)
+$ADLC_SCRIPTS = if (Test-Path "$env:USERPROFILE\.claude\adlc") { "$env:USERPROFILE\.claude\adlc\scripts" } else { "$env:USERPROFILE\.cursor\adlc\scripts" }
+```
+
+**Note:** Use `python` instead of `python3` on Windows.
 
 ## Usage
 

@@ -14,7 +14,7 @@ class TestFlowXml:
     def test_basic_flow(self):
         xml = generate_flow_xml("Get_Order_Status")
         assert '<?xml version="1.0" encoding="UTF-8"?>' in xml
-        assert "<label>Get_Order_Status</label>" in xml
+        assert "<label>Get Order Status</label>" in xml
         assert "<status>Active</status>" in xml
         assert "<processType>AutoLaunchedFlow</processType>" in xml
 

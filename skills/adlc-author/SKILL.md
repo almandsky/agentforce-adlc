@@ -499,11 +499,13 @@ start_agent router:
 
 This names the entry point that handles the first user message and routes to topics.
 
-**CRITICAL: `start_agent` MUST include `reasoning: instructions:` and `reasoning: actions:`.**
-Without these blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
+**CRITICAL: `start_agent` MUST include `description:`, `reasoning: instructions:`, and `reasoning: actions:`.**
+Without `description:`, the compiler errors: "Description is required for all topic blocks."
+Without `reasoning:` blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
 
 ```
 start_agent router:
+	description: "Route user requests to the appropriate topic"
 	reasoning:
 		instructions: |
 			You are a router only. Do NOT answer questions or provide help directly.
@@ -1019,6 +1021,7 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent topic_name:` (block syntax, NOT `start_agent: name`) |
+| `start_agent` MUST have `description:` | `start_agent router:` with no `description:` | Add `description: "Route user requests"` — compiler requires it |
 | `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
 | `start_agent` instructions MUST say "router only" | `instructions: \| Determine intent and route.` | `instructions: \| You are a router only. Do NOT answer directly. Always use a transition action.` |
 | `knowledge` is a reserved topic name | `topic knowledge:` | `topic knowledge_base:` or `topic faq:` |
@@ -1184,6 +1187,7 @@ A central `topic_selector` routes to specialized spoke topics. Each spoke has a
 
 ```
 start_agent hub_router:
+	description: "Route user requests to the appropriate topic"
 
 topic topic_selector:
 	description: "Route based on user intent"
@@ -1220,6 +1224,7 @@ Use when handling sensitive data, payments, or PII.
 
 ```
 start_agent gate_router:
+	description: "Route through identity verification"
 
 topic welcome:
 	description: "Entry - routes through verification"
@@ -1323,6 +1328,7 @@ language:
 	all_additional_locales: False
 
 start_agent linear_router:
+	description: "Begin the onboarding flow"
 
 topic greeting:
 	label: "Greeting"

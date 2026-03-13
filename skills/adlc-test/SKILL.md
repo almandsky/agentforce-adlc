@@ -396,7 +396,7 @@ testCases:
 **Single-turn vs multi-turn considerations:**
 - Single-turn tests only capture the first response. If an action requires info collection first (e.g. identity verification asks for email before calling `verify_customer`), the action won't fire in one turn.
 - For multi-turn workflows, either: (1) omit `expectedActions` and rely on `expectedOutcome`, or (2) use `conversationHistory` to simulate prior turns.
-- For guardrail tests (off-topic), omit `expectedTopic` and use `expectedOutcome` only -- the agent correctly stays in `entry` which has no matching topic assertion.
+- For guardrail tests (off-topic), omit `expectedTopic` and use `expectedOutcome` only -- the agent correctly stays in `entry` which has no matching topic assertion. NOTE: The generated XML still includes an empty `topic_assertion` expectation, which will return `FAILURE` with score=0. This is expected and harmless — only check the `output_validation` result for guardrail tests.
 
 ### Phase 2: Deploy and Run Tests
 

@@ -62,7 +62,7 @@ def generate_flow_xml(
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<Flow xmlns="http://soap.sforce.com/2006/04/metadata">',
         f'    <apiVersion>{API_VERSION}</apiVersion>',
-        f'    <label>{api_name}</label>',
+        f'    <label>{api_name.replace("_", " ")}</label>',
         f'    <processType>{process_type}</processType>',
         '    <status>Active</status>',
         '    <interviewLabel>{!$Flow.CurrentDateTime}</interviewLabel>',

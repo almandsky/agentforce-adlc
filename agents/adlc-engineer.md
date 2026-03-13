@@ -42,7 +42,7 @@ Create Autolaunched Flows with:
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <Flow xmlns="http://soap.sforce.com/2006/04/metadata">
-    <apiVersion>66.0</apiVersion>
+    <apiVersion>63.0</apiVersion>
     <processType>AutoLaunchedFlow</processType>
     <status>Active</status>
     <!-- Variables matching agent inputs/outputs -->
@@ -138,7 +138,7 @@ sf data query -q "SELECT Name FROM ApexClass" -o TARGET_ORG --json
 ✅ Flows are Active status
 ✅ Apex has sufficient test coverage
 ✅ Einstein Agent User configured
-✅ API version 66.0+ in all metadata
+✅ API version 63.0+ in all metadata
 ✅ Bundle structure correct
 ✅ No deployment warnings
 ✅ Agent activates successfully

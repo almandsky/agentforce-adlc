@@ -477,11 +477,11 @@ def discover(agent_file: Path, target_org: str, validate_io: bool = False) -> Di
     return report
 
 
-def discover_dir(agent_dir: Path, target_org: str) -> DiscoveryReport:
+def discover_dir(agent_dir: Path, target_org: str, validate_io: bool = False) -> DiscoveryReport:
     """Run discovery for all .agent files in a directory."""
     combined = DiscoveryReport()
     for agent_file in sorted(agent_dir.rglob("*.agent")):
-        sub_report = discover(agent_file, target_org)
+        sub_report = discover(agent_file, target_org, validate_io=validate_io)
         combined.targets.extend(sub_report.targets)
     return combined
 
@@ -533,18 +533,19 @@ def main():
     group.add_argument("--agent-file", type=Path, help="Path to a single .agent file")
     group.add_argument("--agent-dir", type=Path, help="Directory containing .agent files")
     parser.add_argument("-o", "--target-org", required=True, help="Salesforce org alias")
+    parser.add_argument("--validate-io", action="store_true", help="Validate I/O parameters for found targets")
     args = parser.parse_args()
 
     if args.agent_file:
         if not args.agent_file.exists():
             print(f"Error: {args.agent_file} not found", file=sys.stderr)
             sys.exit(1)
-        report = discover(args.agent_file, args.target_org)
+        report = discover(args.agent_file, args.target_org, validate_io=args.validate_io)
     else:
         if not args.agent_dir.exists():
             print(f"Error: {args.agent_dir} not found", file=sys.stderr)
             sys.exit(1)
-        report = discover_dir(args.agent_dir, args.target_org)
+        report = discover_dir(args.agent_dir, args.target_org, validate_io=args.validate_io)
 
     print_report(report)
 

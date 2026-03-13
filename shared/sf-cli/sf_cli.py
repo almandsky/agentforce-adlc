@@ -128,7 +128,7 @@ class SfAgentCli:
 
     def run_flow(self, api_name: str, inputs: dict[str, Any] | None = None) -> CliResult:
         """Invoke a flow via REST API."""
-        endpoint = f"/services/data/v66.0/actions/custom/flow/{api_name}"
+        endpoint = f"/services/data/v63.0/actions/custom/flow/{api_name}"
         body = json.dumps({"inputs": [inputs or {}]})
         cmd = ["sf", "api", "request", "rest", endpoint, "--method", "POST", "--body", body, "--json"]
         if self.target_org:
@@ -137,7 +137,7 @@ class SfAgentCli:
 
     def run_apex_action(self, class_name: str, inputs: dict[str, Any] | None = None) -> CliResult:
         """Invoke an @InvocableMethod via REST API."""
-        endpoint = f"/services/data/v66.0/actions/custom/apex/{class_name}"
+        endpoint = f"/services/data/v63.0/actions/custom/apex/{class_name}"
         body = json.dumps({"inputs": [inputs or {}]})
         cmd = ["sf", "api", "request", "rest", endpoint, "--method", "POST", "--body", body, "--json"]
         if self.target_org:

@@ -82,7 +82,7 @@ ensures correct parameter names.
 sf data query -q "SELECT ApiName, IsActive, Description FROM FlowDefinitionView WHERE IsActive = true AND ProcessType = 'AutoLaunchedFlow'" -o <org> --json
 
 # For each candidate flow, check its actual input/output parameters
-sf api request rest "/services/data/v66.0/actions/custom/flow/<FlowApiName>" -o <org>
+sf api request rest "/services/data/v63.0/actions/custom/flow/<FlowApiName>" -o <org>
 ```
 
 NOTE: `FlowDefinitionView` does NOT have a `Status` column. Use `IsActive` (boolean):
@@ -780,7 +780,7 @@ topic collect_case_info:
 				set @variables.case_subject = @outputs.subject
 				set @variables.case_description = @outputs.desc_text
 
-	after_reasoning:
+	after_reasoning: ->
 		if @variables.case_subject != "" and @variables.case_description != "":
 			run @actions.create_case
 				with subject=@variables.case_subject

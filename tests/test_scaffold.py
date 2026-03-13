@@ -93,7 +93,7 @@ class TestApexStub:
 
     def test_meta_xml(self):
         xml = generate_apex_meta_xml()
-        assert "<apiVersion>66.0</apiVersion>" in xml
+        assert "<apiVersion>63.0</apiVersion>" in xml
         assert "<status>Active</status>" in xml
 
     def test_escape_apex_backslash(self):

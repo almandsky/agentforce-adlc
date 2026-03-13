@@ -45,7 +45,7 @@ sf agent test run --api-name MySuite --wait 10 --result-format json -o <org-alia
 
 This skill supports two testing modes:
 
-- **Mode A: Ad-Hoc Preview Testing** -- Quick smoke tests during development using `sf agent preview`. No org setup needed. Best for iterative development and fix validation.
+- **Mode A: Ad-Hoc Preview Testing** -- Quick smoke tests during development using `sf agent preview`. No test suite deployment needed (org authentication still required). Best for iterative development and fix validation.
 - **Mode B: Testing Center Batch Testing** -- Persistent test suites deployed to the org via `sf agent test`. Best for regression suites, CI/CD, and cross-skill integration with adlc-optimize.
 
 **When to use which:**
@@ -335,6 +335,8 @@ testCases:
     expectedTopic: order_status
 
   # Action invocation test (FLAT string list -- NOT objects)
+  # CRITICAL: Use Level 2 INVOCATION names from reasoning: actions: (e.g. "lookup_order")
+  #           NOT Level 1 DEFINITION names from topic: actions: (e.g. "get_order_status")
   - utterance: "I want to return my order from last week"
     expectedTopic: returns
     expectedActions:

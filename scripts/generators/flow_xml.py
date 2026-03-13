@@ -25,7 +25,7 @@ _COMPLEX_TYPE_MAP = {
     "lightning__textType": "String",
 }
 
-API_VERSION = "66.0"
+API_VERSION = "63.0"
 
 
 def generate_flow_xml(

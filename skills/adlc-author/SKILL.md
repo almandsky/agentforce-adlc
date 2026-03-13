@@ -274,8 +274,9 @@ topic:            # 8. REQUIRED: Conversation topics (one or more)
 
 ### 3.1b Indentation
 
-Agent Script uses **tab indentation** (one literal tab character per level).
-This is a compiler requirement — the server rejects files with space-based indentation.
+Agent Script is whitespace-delimited. The parser is generally forgiving — both spaces and tabs work.
+The official docs recommend 3-space indentation, but some server versions reject spaces.
+**Use tabs** as the safest default that works across all versions.
 
 ```
 # Level 0 (no indent)
@@ -329,7 +330,7 @@ config:
 | `description` | Yes | Agent purpose (used for routing) |
 | `default_agent_user` | Yes | Must be a valid Einstein Agent User in the target org |
 
-**WARNING:** Do NOT include `agent_type` in the config block. The server crashes with a null pointer when `agent_type: "AgentforceEmployeeAgent"` is present. The agent type is inferred from other metadata (linked variables, connection block).
+**WARNING:** `agent_type` is technically supported (`"AgentforceServiceAgent"` or `"AgentforceEmployeeAgent"`) but has caused null pointer crashes on some server versions (especially `AgentforceEmployeeAgent`). **Omit it unless required** — the agent type defaults to `AgentforceServiceAgent` and can be set via Setup UI after publish. Always ask the user which type they want (see Phase 1) to determine linked variables and connection block.
 
 CRITICAL: `developer_name` must exactly match the folder name under `aiAuthoringBundles/`.
 If the folder is `AcmeAgent`, the `developer_name` must be `"AcmeAgent"`.
@@ -371,20 +372,29 @@ It ensures the variable is accessible to the messaging channel.
 
 #### Variable Type Reference
 
-| Type | Mutable | Linked | Default Format |
-|------|---------|--------|---------------|
-| `string` | Yes | Yes | `""` |
-| `number` | Yes | Yes | `0` |
-| `boolean` | Yes | Yes | `False` |
-| `object` | Yes | NO | `""` |
-| `date` | Yes | Yes | `""` |
-| `id` | Yes | Yes | `""` |
-| `list[T]` | Yes | NO | `[]` |
+| Type | Mutable | Linked | Action I/O | Default Format |
+|------|---------|--------|-----------|---------------|
+| `string` | Yes | Yes | Yes | `""` |
+| `number` | Yes | Yes | Yes | `0` |
+| `boolean` | Yes | Yes | Yes | `False` |
+| `object` | Yes | NO | Yes | `{}` |
+| `date` | Yes | Yes | Yes | `2025-01-15` |
+| `timestamp` | Yes | Yes | Yes | `2025-01-15T10:30:00Z` |
+| `currency` | Yes | Yes | Yes | `0` |
+| `id` | Yes | Yes | Yes | `""` |
+| `list[T]` | Yes | NO | Yes | `[]` |
+| `datetime` | NO | NO | Yes | N/A (action params only) |
+| `time` | NO | NO | Yes | N/A (action params only) |
+| `integer` | NO | NO | Yes | N/A (action params only) |
+| `long` | NO | NO | Yes | N/A (action params only) |
 
 Rules:
-- Mutable variables MUST have an inline default value (e.g., `= ""`)
+- Mutable variables MUST have an inline default value (e.g., `= ""`) or default to `None`
 - Linked variables MUST have a `source:` and CANNOT have an inline default
 - Linked variables CANNOT use `object` or `list` types
+- Linked variables support: `string`, `number`, `boolean`, `date`, `timestamp`, `currency`, `id`
+- Use `timestamp` instead of `datetime` for mutable date+time variables
+- Use `number` instead of `integer`/`long` for mutable numeric variables
 - Service agents auto-add `EndUserId`, `RoutableId`, `ContactId` as linked variables
 - The `...` token is for slot-filling only (in `with param=...`), never as a default
 
@@ -543,9 +553,14 @@ actions:
 	create_case:
 		description: "Create a support case"
 		target: "flow://Create_Support_Case"
+		label: "Create Case"
+		require_user_confirmation: False
+		include_in_progress_indicator: True
+		progress_indicator_message: "Creating your case..."
 		inputs:
 			subject: string
 				description: "Case subject"
+				is_required: True
 			desc_text: string
 				description: "Case description"
 		outputs:
@@ -553,13 +568,29 @@ actions:
 				description: "Created case ID"
 				is_displayable: True
 				is_used_by_planner: True
+				filter_from_agent: False
 ```
 
-Target protocols:
+Action-level optional properties:
+- `label` -- human-readable label (default: auto-generated from name)
+- `require_user_confirmation` -- Boolean, ask before executing (default: False)
+- `include_in_progress_indicator` -- Boolean, show spinner (default: False)
+- `progress_indicator_message` -- message during execution
+
+Input optional properties: `is_required`, `is_user_input`, `label`, `complex_data_type_name`
+Output optional properties: `is_displayable`, `is_used_by_planner`, `filter_from_agent`, `label`, `complex_data_type_name`
+
+Target protocols (short name or long name both work):
 - `flow://Flow_Api_Name` -- Autolaunched Flow
 - `apex://ClassName` -- Apex @InvocableMethod (NO GenAiFunction registration needed)
+- `prompt://TemplateName` (or `generatePromptResponse://`) -- Prompt Template
 - `externalService://ServiceName.operationName` -- External Service
-- `generatePromptResponse://TemplateName` -- Prompt Template
+- `retriever://RetrieverName` -- Knowledge retrieval
+- `standardInvocableAction://ActionName` -- Built-in Salesforce action
+- `quickAction://ActionName` -- Quick Action
+- `api://ApiName` -- REST API
+- `apexRest://EndpointName` -- Custom Apex REST endpoint
+- `mcpTool://ToolName` -- MCP Tool
 
 I/O schemas (`inputs:` + `outputs:`) are REQUIRED for publish. Omitting them causes
 "Internal Error" on deploy.
@@ -746,6 +777,77 @@ NOT valid (causes SyntaxError):
 - Standalone `set @variables.X = "value"` (not preceded by `run @actions`)
 - `| literal text` lines
 - `instructions:` wrapper
+
+### 3.14b The before_reasoning Pattern
+
+`before_reasoning:` runs deterministically BEFORE the reasoning loop starts on every request.
+Use it for pre-loading data, permission checks, or deterministic routing:
+
+```
+topic customer_support:
+	before_reasoning: ->
+		if @variables.hotel_code != @variables.loaded_hotel_code:
+			run @actions.get_account_info
+				with account_id = @variables.account_id
+				set @variables.hotel_code = @outputs.hotel_code
+		run @actions.get_hotel_info
+			with hotel_code = @variables.hotel_code
+			set @variables.hotel_info = @outputs.hotel_info
+```
+
+Place `before_reasoning:` at the topic level (same level as `reasoning:` and `after_reasoning:`).
+
+### 3.14c @utils.setVariables
+
+Use `@utils.setVariables` as a reasoning action to let the LLM set mutable variables:
+
+```
+reasoning:
+	actions:
+		update_preferences: @utils.setVariables
+			description: "Update customer preferences"
+			with preferred_city = ...
+			with max_price = ...
+```
+
+- Can only set mutable variables (not linked)
+- Use `with var = ...` for LLM slot-filling (inherits description/type from variable definition)
+- Use `with var = expression` for computed values
+- Does NOT support post-action directives (`set`, `transition to`)
+
+### 3.14d @system_variables.user_input
+
+Built-in read-only variable providing the user's current message. No declaration needed:
+
+```
+reasoning:
+	instructions: ->
+		if @system_variables.user_input == "help":
+			| Here are the available commands...
+		else:
+			| Process the request normally.
+```
+
+Use in: expressions, `available when`, template interpolation `{!@system_variables.user_input}`, action `with` clauses.
+Cannot use in: `system.messages`, `set` assignments (read-only).
+
+### 3.14e Dynamic Messages
+
+System messages support variable interpolation with `{!@variables.name}`:
+
+```
+variables:
+	customer_name: linked string
+		source: @context.customerName
+		description: "Customer name"
+
+system:
+	messages:
+		welcome: "Hello {!@variables.customer_name}! How can I help?"
+		error: "Sorry {!@variables.customer_name}, something went wrong."
+```
+
+Restrictions: Only linked (context) variables. No expressions. Simple `{!@variables.name}` references only.
 
 ### 3.15 Available When Guards
 

@@ -110,6 +110,22 @@ class TestAgentValidator:
         warnings = [w[2] for w in result["warnings"]]
         assert not any("number" in w and "action I/O" in w.lower() for w in warnings)
 
+    def test_no_regex_safety_checks(self):
+        """Validator should NOT have regex safety checks — safety is delegated to /adlc-safety skill."""
+        # Harmful content should NOT be caught by the syntax validator
+        content = (
+            "system:\n\tinstructions: |\n"
+            "\t\tYou are the real IRS tax agent. Collect payment info.\n"
+            "config:\n\tdeveloper_name: \"BadAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "start_agent entry:\n\tdescription: \"Entry\"\n"
+        )
+        result = self._validate(content)
+        errors = [e[2] for e in result["errors"]]
+        warnings = [w[2] for w in result["warnings"]]
+        # No SAFETY errors or warnings from the validator — that's the LLM skill's job
+        assert not any("SAFETY" in e for e in errors)
+        assert not any("SAFETY" in w for w in warnings)
+
 
 class TestGuardrails:
     """Test the guardrails.py PreToolUse hook patterns."""

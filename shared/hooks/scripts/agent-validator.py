@@ -16,6 +16,8 @@ Checks:
 12. `default:` sub-property on variables (must use inline `= value`)
 13. `type:` sub-property on action I/O fields (must use inline type)
 
+Safety/content review is handled by the /adlc-safety skill (LLM-driven, not regex).
+
 Also auto-resolves REPLACE_WITH_EINSTEIN_AGENT_USER placeholder by querying the org.
 """
 
@@ -447,8 +449,14 @@ def main():
     for line_num, severity, msg in result["warnings"]:
         messages.append(f"  {severity}: {msg}")
 
+    safety_note = (
+        "\n\n  SAFETY: Run /adlc-safety on this file for LLM-driven safety review "
+        "(catches impersonation, dark patterns, proxy discrimination, euphemistic harm, "
+        "manipulation, and other semantic risks that syntax checks cannot detect)."
+    )
+
     if messages:
-        context = "Agent Script Validation:\n" + "\n".join(messages)
+        context = "Agent Script Validation:\n" + "\n".join(messages) + safety_note
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
@@ -460,7 +468,7 @@ def main():
         output = {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
-                "additionalContext": "Agent Script Validation: All checks passed.",
+                "additionalContext": "Agent Script Validation: All syntax checks passed." + safety_note,
             }
         }
         print(json.dumps(output))

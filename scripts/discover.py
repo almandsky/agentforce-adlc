@@ -150,6 +150,14 @@ def extract_actions(agent_file: Path) -> list[dict]:
             in_outputs = False
             continue
 
+        # Collect complex_data_type_name for the last collected param
+        cdt_match = re.match(r'complex_data_type_name:\s*"([^"]+)"', stripped)
+        if cdt_match:
+            last_list = current_inputs if in_inputs else (current_outputs if in_outputs else None)
+            if last_list:
+                last_list[-1]["complex_data_type_name"] = cdt_match.group(1)
+            continue
+
         # Collect input/output parameters (match "name: type" on stripped text)
         param_match = re.match(r'^(\w+):\s*(string|number|boolean|date|datetime|id|object)\b', stripped)
         if param_match:

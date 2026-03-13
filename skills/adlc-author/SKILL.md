@@ -978,10 +978,14 @@ Bare `number` works for **variables** but **fails at publish** for action inputs
 
 | WRONG (publish failure) | CORRECT |
 |------------------------|---------|
-| `minPrice: number` | `minPrice: object` with `complex_data_type_name: "lightning__integerType"` |
+| `minPrice: number` | `minPrice: object` with `complex_data_type_name` (see below) |
 | `score: number` | `score: object` with `complex_data_type_name: "lightning__doubleType"` |
 
-Example:
+**CRITICAL: The correct `complex_data_type_name` for integers depends on the target type:**
+- **Flow targets** (`flow://`): Use `lightning__numberType`
+- **Apex targets** (`apex://`): Use `lightning__integerType`
+
+Example (Flow target):
 ```
 actions:
 	search_homes:
@@ -989,13 +993,23 @@ actions:
 		inputs:
 			city: string
 			minPrice: object
-				complex_data_type_name: "lightning__integerType"
+				complex_data_type_name: "lightning__numberType"
 		outputs:
 			resultCount: object
+				complex_data_type_name: "lightning__numberType"
+```
+
+Example (Apex target):
+```
+actions:
+	book_reservation:
+		target: "apex://ReservationHandler"
+		inputs:
+			party_size: object
 				complex_data_type_name: "lightning__integerType"
 ```
 
-> **Rule of thumb:** `number` → variables only. Action I/O → always `object` + `complex_data_type_name`.
+> **Rule of thumb:** `number` → variables only. Action I/O → always `object` + `complex_data_type_name`. Flow targets → `lightning__numberType`. Apex targets → `lightning__integerType`.
 
 See `references/complex-data-types.md` for the full mapping table.
 

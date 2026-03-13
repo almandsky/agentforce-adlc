@@ -16,6 +16,7 @@ _TYPE_MAP = {
 # Mapping from complex_data_type_name to Apex types (for action I/O)
 _COMPLEX_TYPE_MAP = {
     "lightning__integerType": "Integer",
+    "lightning__numberType": "Integer",
     "lightning__doubleType": "Double",
     "lightning__currencyType": "Decimal",
     "lightning__dateTimeStringType": "Datetime",

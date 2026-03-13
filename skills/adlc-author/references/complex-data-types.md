@@ -7,12 +7,18 @@
 ## Decision Tree: When Do I Need `complex_data_type_name`?
 
 1. **Variable** with `number`? → Use `number` directly, no complex type needed
-2. **Action input/output** with integer value? → Use `object` + `complex_data_type_name: "lightning__integerType"`
-3. **Action input/output** with decimal value? → Use `object` + `complex_data_type_name: "lightning__doubleType"`
-4. **Variable** with any other primitive? → Use the type directly (`string`, `boolean`, `date`)
-5. **Action I/O** with non-primitive? → Use `object` + appropriate `complex_data_type_name` from table below
+2. **Action I/O** with integer value, **Flow target** (`flow://`)? → Use `object` + `complex_data_type_name: "lightning__numberType"`
+3. **Action I/O** with integer value, **Apex target** (`apex://`)? → Use `object` + `complex_data_type_name: "lightning__integerType"`
+4. **Action input/output** with decimal value? → Use `object` + `complex_data_type_name: "lightning__doubleType"`
+5. **Variable** with any other primitive? → Use the type directly (`string`, `boolean`, `date`)
+6. **Action I/O** with non-primitive? → Use `object` + appropriate `complex_data_type_name` from table below
 
 > **Key insight:** Bare `number` works in **variable declarations** but **fails at publish** in action inputs/outputs. This is the #1 cause of publish-fix-republish cycles.
+
+> **CRITICAL: Target type matters!** The valid `complex_data_type_name` for integer values differs by target type:
+> - **Flow targets** (`flow://`): Use `lightning__numberType` (NOT `lightning__integerType`)
+> - **Apex targets** (`apex://`): Use `lightning__integerType` (NOT `lightning__numberType`)
+> Using the wrong one causes a publish validation error.
 
 ## Full Mapping Table
 

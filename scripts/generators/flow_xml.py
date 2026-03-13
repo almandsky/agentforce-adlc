@@ -16,6 +16,7 @@ _TYPE_MAP = {
 # Mapping from complex_data_type_name to Flow variable dataTypes (for action I/O)
 _COMPLEX_TYPE_MAP = {
     "lightning__integerType": "Number",
+    "lightning__numberType": "Number",
     "lightning__doubleType": "Number",
     "lightning__currencyType": "Currency",
     "lightning__dateTimeStringType": "DateTime",
@@ -131,11 +132,12 @@ def generate_flow_xml(
     ])
 
     for out in outputs:
+        flow_type = _COMPLEX_TYPE_MAP.get(out.get("complex_data_type_name", ""), _TYPE_MAP.get(out.get("type", "string"), "String"))
         lines.extend([
             '        <assignmentItems>',
             f'            <assignToReference>{out["name"]}</assignToReference>',
             '            <operator>Assign</operator>',
-            f'            <value>{_default_value_element(out.get("type", "string"))}</value>',
+            f'            <value>{_default_value_element_by_flow_type(flow_type)}</value>',
             '        </assignmentItems>',
         ])
 
@@ -194,5 +196,18 @@ def _default_value_element(type_name: str) -> str:
     if type_name == "date":
         return "<stringValue>2000-01-01</stringValue>"
     if type_name == "datetime":
+        return "<stringValue>2000-01-01T00:00:00Z</stringValue>"
+    return "<stringValue>TODO</stringValue>"
+
+
+def _default_value_element_by_flow_type(flow_type: str) -> str:
+    """Return a type-appropriate XML value element based on resolved Flow dataType."""
+    if flow_type == "Boolean":
+        return "<booleanValue>false</booleanValue>"
+    if flow_type in ("Number", "Currency"):
+        return "<numberValue>0</numberValue>"
+    if flow_type == "Date":
+        return "<stringValue>2000-01-01</stringValue>"
+    if flow_type == "DateTime":
         return "<stringValue>2000-01-01T00:00:00Z</stringValue>"
     return "<stringValue>TODO</stringValue>"

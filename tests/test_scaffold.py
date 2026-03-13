@@ -61,6 +61,13 @@ class TestFlowXml:
         xml = generate_flow_xml("TestFlow", outputs=outputs)
         assert "<dataType>Currency</dataType>" in xml
 
+    def test_complex_type_number_assignment(self):
+        """Number outputs should use numberValue in assignment, not stringValue."""
+        outputs = [{"name": "count", "type": "object", "complex_data_type_name": "lightning__integerType"}]
+        xml = generate_flow_xml("TestFlow", outputs=outputs)
+        assert "<numberValue>0</numberValue>" in xml
+        assert "TODO" not in xml.split("<assignmentItems>")[1]
+
 
 class TestApexStub:
     def test_basic_class(self):

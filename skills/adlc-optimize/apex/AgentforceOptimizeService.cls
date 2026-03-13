@@ -196,6 +196,12 @@ public with sharing class AgentforceOptimizeService {
             }
         }
 
+        // Exclude internal/preview sessions that never have conversation turns.
+        // These show as "Unknown (Internal)", "Builder: Voice Preview", "Builder: Text Preview".
+        String channelFilter =
+              '  AND ssot__AiAgentChannelType__c NOT IN '
+            + '(\'Unknown (Internal)\', \'Builder: Voice Preview\', \'Builder: Text Preview\') ';
+
         String sql =
               'SELECT ssot__Id__c, ssot__StartTimestamp__c, ssot__EndTimestamp__c, '
             + '       ssot__AiAgentChannelType__c, ssot__AiAgentSessionEndType__c '
@@ -203,11 +209,28 @@ public with sharing class AgentforceOptimizeService {
             + 'WHERE ssot__StartTimestamp__c >= \'' + startIso + '\' '
             + '  AND ssot__StartTimestamp__c <= \'' + endIso   + '\' '
             + sessionFilter
+            + channelFilter
             + 'ORDER BY ssot__StartTimestamp__c DESC '
             + 'LIMIT ' + maxRows;
 
         ConnectApi.CdpQueryOutputV2 result = runQuery(sql, dataSpaceName);
         List<SessionSummary> sessions = new List<SessionSummary>();
+
+        // If channel filter excluded everything, retry without it (fallback to all sessions)
+        if ((result == null || result.data == null || result.data.isEmpty())) {
+            System.debug(LoggingLevel.DEBUG,
+                'No production sessions found; retrying without channel filter (includes preview/builder)');
+            String fallbackSql =
+                  'SELECT ssot__Id__c, ssot__StartTimestamp__c, ssot__EndTimestamp__c, '
+                + '       ssot__AiAgentChannelType__c, ssot__AiAgentSessionEndType__c '
+                + 'FROM "ssot__AiAgentSession__dlm" '
+                + 'WHERE ssot__StartTimestamp__c >= \'' + startIso + '\' '
+                + '  AND ssot__StartTimestamp__c <= \'' + endIso   + '\' '
+                + sessionFilter
+                + 'ORDER BY ssot__StartTimestamp__c DESC '
+                + 'LIMIT ' + maxRows;
+            result = runQuery(fallbackSql, dataSpaceName);
+        }
 
         if (result != null && result.data != null) {
             for (ConnectApi.CdpQueryV2Row row : result.data) {

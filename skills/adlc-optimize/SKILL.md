@@ -428,7 +428,12 @@ The result is a JSON array of `SessionSummary` objects:
 - `end_time` and `duration_ms` may be `null` when the session has no recorded end event -- this is a normal STDM data quality gap, not an error.
 - `end_type` values: `USER_ENDED`, `AGENT_ENDED`, or `null` (in-progress or not recorded). A `null` `end_type` may indicate an abandoned session.
 
-**Session quality filter:** Before selecting sessions for `getMultipleConversationDetails`, prefer sessions from real channels over builder previews. `"Builder: Voice Preview"` and `"Builder: Text Preview"` sessions are often empty (zero turns) because they are quick test pings from Agent Builder. Prioritize `SCRT2 - EmbeddedMessaging`, `Runtime API`, or other production channels. If only builder sessions exist, use them but note the limitation.
+**Session quality filter:** Before selecting sessions for `getMultipleConversationDetails`, prefer sessions from real channels over builder previews. These channel types are typically empty (zero turns) and should be deprioritized:
+- `"Unknown (Internal)"` — `sf agent preview` and `sf agent test` sessions (most common empty type)
+- `"Builder: Voice Preview"` — Agent Builder voice test pings
+- `"Builder: Text Preview"` — Agent Builder text test pings
+
+Prioritize `SCRT2 - EmbeddedMessaging`, `Runtime API`, or other production channels. If only internal/builder sessions exist, skip STDM analysis and go directly to Phase 1-ALT (local traces) — these sessions will never have conversation data.
 
 **How agent filtering works** -- `findSessions` tries two strategies in order:
 
@@ -619,7 +624,7 @@ Priority: P1 = action errors, topic misroutes, LOW adherence; P2 = missing actio
 | Agent Configuration Gap | N | N | +N sessions fully resolved |
 | Knowledge Gap | N | N | +N sessions partially resolved |
 
-**If all queried sessions have `turn_count == 0`** (common when only builder preview sessions exist), STDM data is insufficient for analysis. Inform the user:
+**If all queried sessions have `turn_count == 0`** (the helper class auto-filters internal/preview sessions, but if only those exist the fallback returns them), STDM data is insufficient for analysis. Inform the user:
 
 > STDM sessions found but contain no conversation data (likely builder previews or abandoned sessions). Supplementing with local trace testing to generate actionable diagnostic data.
 

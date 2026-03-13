@@ -240,6 +240,39 @@ If trace analysis reveals issues (wrong topic, missing action, ungrounded respon
 
 Once preview confirms the agent works correctly:
 
+#### Step 1: Check action targets exist
+
+Before publishing, verify all flow/apex targets referenced in the `.agent` file exist in the org. Publishing will fail if any target is missing.
+
+```bash
+# Parse flow targets from the .agent file
+grep -o 'flow://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# Parse apex targets
+grep -o 'apex://[A-Za-z0-9_]*' force-app/main/default/aiAuthoringBundles/<AgentName>/<AgentName>.agent | sort -u
+
+# For each flow target, check if it exists and is active
+sf data query -q "SELECT ApiName FROM FlowDefinitionView WHERE ApiName = '<FlowApiName>' AND IsActive = true" -o <org> --json
+
+# For each apex target, check if it exists
+sf data query -q "SELECT Name FROM ApexClass WHERE Name = '<ClassName>' AND Status = 'Active'" -o <org> --json
+```
+
+If targets are missing, scaffold and deploy them **before** publishing:
+
+```bash
+# Option A: Use adlc-scaffold to generate stubs
+# python3 scripts/scaffold.py --agent-file <path> -o <org> --output-dir force-app/main/default
+
+# Option B: Manually create stubs (flows/apex) then deploy
+sf project deploy start --source-dir force-app/main/default/flows -o <org> --json
+sf project deploy start --source-dir force-app/main/default/classes -o <org> --json
+```
+
+Do NOT attempt `sf agent publish` until all targets exist — it will fail with "Invocable action does not exist".
+
+#### Step 2: Publish and activate
+
 ```bash
 # Publish (compiles .agent into org metadata)
 sf agent publish authoring-bundle --api-name <AgentName> -o <org> --json

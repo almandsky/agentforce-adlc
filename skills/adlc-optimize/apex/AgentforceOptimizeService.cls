@@ -12,6 +12,8 @@
  *   getConversationDetails(dataSpaceName, sessionId)                  → JSON ConversationData
  *   getMultipleConversationDetails(dataSpaceName, sessionIds)         → JSON List<ConversationData>
  *   getLlmStepDetails(dataSpaceName, stepIds)                         → JSON List<LlmStepDetail>
+ *   getMomentInsights(dataSpaceName, sessionIds)                      → JSON List<SessionInsights>
+ *   getAggregatedMetrics(dataSpaceName, startIso, endIso, maxRows, agentName) → JSON AggregatedMetrics
  */
 public with sharing class AgentforceOptimizeService {
 
@@ -130,6 +132,75 @@ public with sharing class AgentforceOptimizeService {
         public String llm_response;
         public String generation_id;
         public String gateway_request_id;
+    }
+
+    /** A single intent moment within a session (from AiAgentMoment DMO). */
+    public class MomentData {
+        public String  moment_id;
+        public String  session_id;
+        public String  start_time;
+        public String  end_time;
+        public Long    duration_ms;
+        public String  request_summary;
+        public String  response_summary;
+        public String  agent_api_name;
+        public String  agent_version;
+        /** Quality score 1-5 from AiAgentTagAssociation → AiAgentTag.Value */
+        public Integer quality_score;
+        /** LLM-generated reasoning for the quality score */
+        public String  quality_reasoning;
+        public MomentData() {}
+    }
+
+    /** RAG quality metrics from the AiRetrieverQualityMetric DMO. */
+    public class RetrieverMetricData {
+        public String  metric_id;
+        public String  gateway_request_id;
+        public String  retriever_request_id;
+        public String  retriever_api_name;
+        public String  user_utterance;
+        public Decimal faithfulness;
+        public Decimal answer_relevance;
+        public Decimal context_precision;
+    }
+
+    /** Per-session insights rollup (moments + retriever metrics). */
+    public class SessionInsights {
+        public String  session_id;
+        public String  start_time;
+        public String  end_time;
+        public String  end_type;
+        public Long    duration_ms;
+        public Integer turn_count;
+        public Integer moment_count;
+        public Decimal avg_quality_score;
+        public Integer action_error_count;
+        public List<MomentData> moments;
+        public List<RetrieverMetricData> retriever_metrics;
+        public String  debug_message;
+        public SessionInsights() {
+            moments = new List<MomentData>();
+            retriever_metrics = new List<RetrieverMetricData>();
+        }
+    }
+
+    /** Aggregated metrics across multiple sessions. */
+    public class AggregatedMetrics {
+        public Integer total_sessions;
+        public Integer total_moments;
+        public Integer total_turns;
+        public Decimal avg_quality_score;
+        public Decimal avg_session_duration_sec;
+        public Map<String, Integer> end_type_counts;
+        public Map<String, Integer> top_intents;
+        public Map<String, Integer> quality_distribution;
+        public Decimal abandonment_rate;
+        public Decimal escalation_rate;
+        public Decimal deflection_rate;
+        public Decimal avg_faithfulness;
+        public Decimal avg_answer_relevance;
+        public Decimal avg_context_precision;
+        public List<String> unavailable_dmos;
     }
 
     // =========================================================================
@@ -507,9 +578,435 @@ public with sharing class AgentforceOptimizeService {
         return JSON.serialize(details);
     }
 
+    /**
+     * Retrieve moment insights (intent summaries, durations) and retriever quality metrics
+     * for a set of sessions. Gracefully degrades if DMOs are unavailable.
+     *
+     * @param dataSpaceName  Data Cloud Data Space API name
+     * @param sessionIds     List of ssot__Id__c values from AiAgentSession
+     * @return JSON-serialized List<SessionInsights>
+     */
+    public static String getMomentInsights(String dataSpaceName, List<String> sessionIds) {
+        List<SessionInsights> results = new List<SessionInsights>();
+        if (sessionIds == null || sessionIds.isEmpty()) return JSON.serialize(results);
+
+        String inClause = '(\'' + String.join(sessionIds, '\',\'') + '\')';
+
+        // --- Session headers ---
+        String sessionSql =
+              'SELECT ssot__Id__c, ssot__StartTimestamp__c, ssot__EndTimestamp__c, '
+            + '       ssot__AiAgentSessionEndType__c '
+            + 'FROM "ssot__AiAgentSession__dlm" '
+            + 'WHERE ssot__Id__c IN ' + inClause;
+
+        ConnectApi.CdpQueryOutputV2 sessionResult = runQuery(sessionSql, dataSpaceName);
+        Map<String, SessionInsights> insightsById = new Map<String, SessionInsights>();
+
+        if (sessionResult != null && sessionResult.data != null) {
+            for (ConnectApi.CdpQueryV2Row row : sessionResult.data) {
+                SessionInsights si = new SessionInsights();
+                si.session_id   = col(row.rowData, 0);
+                si.start_time   = col(row.rowData, 1);
+                si.end_time     = col(row.rowData, 2);
+                si.end_type     = notSet(col(row.rowData, 3));
+                si.duration_ms  = durationMs(si.start_time, si.end_time);
+                insightsById.put(si.session_id, si);
+                results.add(si);
+            }
+        }
+
+        // --- Turn counts ---
+        String turnSql =
+              'SELECT ssot__AiAgentSessionId__c, COUNT(*) '
+            + 'FROM "ssot__AiAgentInteraction__dlm" '
+            + 'WHERE ssot__AiAgentSessionId__c IN ' + inClause + ' '
+            + '  AND ssot__AiAgentInteractionType__c = \'TURN\' '
+            + 'GROUP BY ssot__AiAgentSessionId__c';
+
+        ConnectApi.CdpQueryOutputV2 turnResult = runQuery(turnSql, dataSpaceName);
+        if (turnResult != null && turnResult.data != null) {
+            for (ConnectApi.CdpQueryV2Row row : turnResult.data) {
+                SessionInsights si = insightsById.get(col(row.rowData, 0));
+                if (si != null) {
+                    si.turn_count = Integer.valueOf(col(row.rowData, 1));
+                }
+            }
+        }
+
+        // --- Action error counts ---
+        String errSql =
+              'SELECT ssot__AiAgentInteraction__dlm.ssot__AiAgentSessionId__c, COUNT(*) '
+            + 'FROM "ssot__AiAgentInteractionStep__dlm" '
+            + 'JOIN "ssot__AiAgentInteraction__dlm" '
+            + '  ON ssot__AiAgentInteractionStep__dlm.ssot__AiAgentInteractionId__c = ssot__AiAgentInteraction__dlm.ssot__Id__c '
+            + 'WHERE ssot__AiAgentInteraction__dlm.ssot__AiAgentSessionId__c IN ' + inClause + ' '
+            + '  AND ssot__AiAgentInteractionStep__dlm.ssot__AiAgentInteractionStepType__c = \'ACTION_STEP\' '
+            + '  AND ssot__AiAgentInteractionStep__dlm.ssot__ErrorMessageText__c IS NOT NULL '
+            + '  AND ssot__AiAgentInteractionStep__dlm.ssot__ErrorMessageText__c != \'NOT_SET\' '
+            + 'GROUP BY ssot__AiAgentInteraction__dlm.ssot__AiAgentSessionId__c';
+
+        ConnectApi.CdpQueryOutputV2 errResult = runQuery(errSql, dataSpaceName);
+        if (errResult != null && errResult.data != null) {
+            for (ConnectApi.CdpQueryV2Row row : errResult.data) {
+                SessionInsights si = insightsById.get(col(row.rowData, 0));
+                if (si != null) {
+                    si.action_error_count = Integer.valueOf(col(row.rowData, 1));
+                }
+            }
+        }
+
+        // --- Moments (graceful degradation) ---
+        Boolean momentAvailable = isDmoAvailable('ssot__AiAgentMoment__dlm', dataSpaceName);
+        if (momentAvailable) {
+            String momentSql =
+                  'SELECT ssot__Id__c, ssot__AiAgentSessionId__c, '
+                + '       ssot__StartTimestamp__c, ssot__EndTimestamp__c, '
+                + '       ssot__RequestSummaryText__c, ssot__ResponseSummaryText__c, '
+                + '       ssot__AiAgentApiName__c, ssot__AiAgentVersionApiName__c '
+                + 'FROM "ssot__AiAgentMoment__dlm" '
+                + 'WHERE ssot__AiAgentSessionId__c IN ' + inClause + ' '
+                + 'ORDER BY ssot__StartTimestamp__c';
+
+            ConnectApi.CdpQueryOutputV2 momentResult = runQuery(momentSql, dataSpaceName);
+            if (momentResult != null && momentResult.data != null) {
+                for (ConnectApi.CdpQueryV2Row row : momentResult.data) {
+                    MomentData m       = new MomentData();
+                    m.moment_id        = col(row.rowData, 0);
+                    m.session_id       = col(row.rowData, 1);
+                    m.start_time       = col(row.rowData, 2);
+                    m.end_time         = col(row.rowData, 3);
+                    m.duration_ms      = durationMs(m.start_time, m.end_time);
+                    m.request_summary  = notSet(col(row.rowData, 4));
+                    m.response_summary = notSet(col(row.rowData, 5));
+                    m.agent_api_name   = notSet(col(row.rowData, 6));
+                    m.agent_version    = notSet(col(row.rowData, 7));
+
+                    SessionInsights si = insightsById.get(m.session_id);
+                    if (si != null) si.moments.add(m);
+                }
+            }
+            // --- Quality scores via AiAgentTagAssociation → AiAgentTag ---
+            if (isDmoAvailable('ssot__AiAgentTagAssociation__dlm', dataSpaceName)) {
+                // Collect all moment IDs for the quality score query
+                List<String> momentIds = new List<String>();
+                Map<String, MomentData> momentById = new Map<String, MomentData>();
+                for (SessionInsights si : results) {
+                    for (MomentData m : si.moments) {
+                        momentIds.add(m.moment_id);
+                        momentById.put(m.moment_id, m);
+                    }
+                }
+
+                if (!momentIds.isEmpty()) {
+                    String momentInClause = '(\'' + String.join(momentIds, '\',\'') + '\')';
+                    String qualitySql =
+                          'SELECT ta.ssot__AiAgentMomentId__c, t.ssot__Value__c, '
+                        + '       ta.ssot__AssociationReasonText__c '
+                        + 'FROM "ssot__AiAgentTagAssociation__dlm" ta '
+                        + 'JOIN "ssot__AiAgentTag__dlm" t '
+                        + '  ON ta.ssot__AiAgentTagId__c = t.ssot__Id__c '
+                        + 'WHERE ta.ssot__AiAgentMomentId__c IN ' + momentInClause;
+
+                    ConnectApi.CdpQueryOutputV2 qualityResult = runQuery(qualitySql, dataSpaceName);
+                    if (qualityResult != null && qualityResult.data != null) {
+                        for (ConnectApi.CdpQueryV2Row row : qualityResult.data) {
+                            String momentId = col(row.rowData, 0);
+                            MomentData m = momentById.get(momentId);
+                            if (m != null) {
+                                m.quality_score     = toInteger(col(row.rowData, 1));
+                                m.quality_reasoning = notSet(col(row.rowData, 2));
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            for (SessionInsights si : results) {
+                si.debug_message = 'AiAgentMoment DMO not available in this org';
+            }
+        }
+
+        // Set moment_count and avg_quality_score per session
+        for (SessionInsights si : results) {
+            si.moment_count = si.moments.size();
+            Integer scoreSum = 0;
+            Integer scoreCount = 0;
+            for (MomentData m : si.moments) {
+                if (m.quality_score != null) {
+                    scoreSum += m.quality_score;
+                    scoreCount++;
+                }
+            }
+            if (scoreCount > 0) {
+                si.avg_quality_score = Decimal.valueOf(scoreSum) / scoreCount;
+            }
+        }
+
+        // --- Retriever quality metrics (graceful degradation) ---
+        Boolean retrieverAvailable = isDmoAvailable('ssot__AiRetrieverQualityMetric__dlm', dataSpaceName);
+        if (retrieverAvailable) {
+            // Retriever metrics link to sessions via gateway request IDs on LLM steps.
+            // Query all retriever metrics for gateway requests that belong to these sessions.
+            String retrieverSql =
+                  'SELECT r.ssot__Id__c, r.ssot__AiGatewayRequestId__c, '
+                + '       r.ssot__AiRetrieverRequestId__c, r.ssot__RetrieverApiName__c, '
+                + '       r.ssot__UserUtteranceText__c, '
+                + '       r.ssot__FaithfulnessRelevancyScoreNumber__c, '
+                + '       r.ssot__AnswerRelevancyScoreNumber__c, '
+                + '       r.ssot__ContextPrecisionScoreNumber__c, '
+                + '       i.ssot__AiAgentSessionId__c '
+                + 'FROM "ssot__AiRetrieverQualityMetric__dlm" r '
+                + 'JOIN "ssot__AiAgentInteractionStep__dlm" s '
+                + '  ON r.ssot__AiGatewayRequestId__c = s.ssot__GenAiGatewayRequestId__c '
+                + 'JOIN "ssot__AiAgentInteraction__dlm" i '
+                + '  ON s.ssot__AiAgentInteractionId__c = i.ssot__Id__c '
+                + 'WHERE i.ssot__AiAgentSessionId__c IN ' + inClause;
+
+            ConnectApi.CdpQueryOutputV2 retResult = runQuery(retrieverSql, dataSpaceName);
+            if (retResult != null && retResult.data != null) {
+                for (ConnectApi.CdpQueryV2Row row : retResult.data) {
+                    RetrieverMetricData rm  = new RetrieverMetricData();
+                    rm.metric_id            = col(row.rowData, 0);
+                    rm.gateway_request_id   = col(row.rowData, 1);
+                    rm.retriever_request_id = col(row.rowData, 2);
+                    rm.retriever_api_name   = notSet(col(row.rowData, 3));
+                    rm.user_utterance       = notSet(col(row.rowData, 4));
+                    rm.faithfulness         = toDecimal(col(row.rowData, 5));
+                    rm.answer_relevance     = toDecimal(col(row.rowData, 6));
+                    rm.context_precision    = toDecimal(col(row.rowData, 7));
+
+                    String sessionId = col(row.rowData, 8);
+                    SessionInsights si = insightsById.get(sessionId);
+                    if (si != null) si.retriever_metrics.add(rm);
+                }
+            }
+        }
+
+        return JSON.serialize(results);
+    }
+
+    /**
+     * Compute aggregated metrics across sessions in a date range.
+     * Includes session rates (abandonment, escalation, deflection), top intents from moments,
+     * and average RAG quality scores. Gracefully degrades when DMOs are unavailable.
+     *
+     * @param dataSpaceName  Data Cloud Data Space API name
+     * @param startIso       ISO 8601 UTC start timestamp
+     * @param endIso         ISO 8601 UTC end timestamp
+     * @param maxRows        Maximum sessions to aggregate over
+     * @param agentApiName   Agent MasterLabel to filter by (null = all agents)
+     * @return JSON-serialized AggregatedMetrics
+     */
+    public static String getAggregatedMetrics(String dataSpaceName, String startIso, String endIso, Integer maxRows, String agentApiName) {
+        AggregatedMetrics metrics = new AggregatedMetrics();
+        metrics.end_type_counts  = new Map<String, Integer>();
+        metrics.top_intents      = new Map<String, Integer>();
+        metrics.unavailable_dmos = new List<String>();
+
+        // Step 1: Find sessions (reuse existing method)
+        String sessionsJson = findSessions(dataSpaceName, startIso, endIso, maxRows, agentApiName);
+        List<SessionSummary> sessions = (List<SessionSummary>) JSON.deserialize(sessionsJson, List<SessionSummary>.class);
+        metrics.total_sessions = sessions.size();
+
+        if (sessions.isEmpty()) return JSON.serialize(metrics);
+
+        // Compute session-level aggregates
+        Decimal totalDurationSec = 0;
+        Integer durationCount = 0;
+        for (SessionSummary s : sessions) {
+            // End type distribution
+            String endType = s.end_type != null ? s.end_type : 'UNKNOWN';
+            Integer cnt = metrics.end_type_counts.get(endType);
+            metrics.end_type_counts.put(endType, cnt != null ? cnt + 1 : 1);
+
+            // Duration
+            if (s.duration_ms != null) {
+                totalDurationSec += Decimal.valueOf(s.duration_ms) / 1000;
+                durationCount++;
+            }
+        }
+
+        if (durationCount > 0) {
+            metrics.avg_session_duration_sec = totalDurationSec / durationCount;
+        }
+
+        // Session rates
+        Integer userEnded = metrics.end_type_counts.get('USER_ENDED');
+        Integer agentEnded = metrics.end_type_counts.get('AGENT_ENDED');
+        Integer escalated = metrics.end_type_counts.get('ESCALATED');
+        Integer total = metrics.total_sessions;
+
+        metrics.abandonment_rate = Decimal.valueOf(userEnded != null ? userEnded : 0) / total;
+        metrics.deflection_rate  = Decimal.valueOf(agentEnded != null ? agentEnded : 0) / total;
+        metrics.escalation_rate  = Decimal.valueOf(escalated != null ? escalated : 0) / total;
+
+        // Collect session IDs for sub-queries
+        List<String> sessionIds = new List<String>();
+        for (SessionSummary s : sessions) {
+            sessionIds.add(s.session_id);
+        }
+        String inClause = '(\'' + String.join(sessionIds, '\',\'') + '\')';
+
+        // Step 2: Total turns
+        String turnSql =
+              'SELECT COUNT(*) '
+            + 'FROM "ssot__AiAgentInteraction__dlm" '
+            + 'WHERE ssot__AiAgentSessionId__c IN ' + inClause + ' '
+            + '  AND ssot__AiAgentInteractionType__c = \'TURN\'';
+
+        ConnectApi.CdpQueryOutputV2 turnResult = runQuery(turnSql, dataSpaceName);
+        if (turnResult != null && turnResult.data != null && !turnResult.data.isEmpty()) {
+            metrics.total_turns = Integer.valueOf(col(turnResult.data[0].rowData, 0));
+        }
+
+        // Step 3: Moments — count + top intents
+        if (isDmoAvailable('ssot__AiAgentMoment__dlm', dataSpaceName)) {
+            // Total moment count
+            String momentCountSql =
+                  'SELECT COUNT(*) '
+                + 'FROM "ssot__AiAgentMoment__dlm" '
+                + 'WHERE ssot__AiAgentSessionId__c IN ' + inClause;
+
+            ConnectApi.CdpQueryOutputV2 mcResult = runQuery(momentCountSql, dataSpaceName);
+            if (mcResult != null && mcResult.data != null && !mcResult.data.isEmpty()) {
+                metrics.total_moments = Integer.valueOf(col(mcResult.data[0].rowData, 0));
+            }
+
+            // Top intents by request summary (GROUP BY truncated summary)
+            String intentSql =
+                  'SELECT ssot__RequestSummaryText__c, COUNT(*) AS cnt '
+                + 'FROM "ssot__AiAgentMoment__dlm" '
+                + 'WHERE ssot__AiAgentSessionId__c IN ' + inClause + ' '
+                + '  AND ssot__RequestSummaryText__c IS NOT NULL '
+                + '  AND ssot__RequestSummaryText__c != \'NOT_SET\' '
+                + 'GROUP BY ssot__RequestSummaryText__c '
+                + 'ORDER BY cnt DESC '
+                + 'LIMIT 20';
+
+            ConnectApi.CdpQueryOutputV2 intentResult = runQuery(intentSql, dataSpaceName);
+            if (intentResult != null && intentResult.data != null) {
+                for (ConnectApi.CdpQueryV2Row row : intentResult.data) {
+                    String intent = col(row.rowData, 0);
+                    Integer intentCnt = Integer.valueOf(col(row.rowData, 1));
+                    if (intent != null) {
+                        // Truncate long summaries for the top_intents map key
+                        if (intent.length() > 100) intent = intent.substring(0, 100) + '...';
+                        metrics.top_intents.put(intent, intentCnt);
+                    }
+                }
+            }
+        } else {
+            metrics.unavailable_dmos.add('ssot__AiAgentMoment__dlm');
+        }
+
+        // Step 3b: Quality scores via AiAgentTagAssociation → AiAgentTag
+        metrics.quality_distribution = new Map<String, Integer>();
+        if (isDmoAvailable('ssot__AiAgentTagAssociation__dlm', dataSpaceName)) {
+            // AVG quality score and distribution across all moments in these sessions
+            String qualityAvgSql =
+                  'SELECT t.ssot__Value__c, COUNT(*) AS cnt '
+                + 'FROM "ssot__AiAgentTagAssociation__dlm" ta '
+                + 'JOIN "ssot__AiAgentTag__dlm" t '
+                + '  ON ta.ssot__AiAgentTagId__c = t.ssot__Id__c '
+                + 'WHERE ta.ssot__AiAgentSessionId__c IN ' + inClause + ' '
+                + 'GROUP BY t.ssot__Value__c '
+                + 'ORDER BY t.ssot__Value__c';
+
+            ConnectApi.CdpQueryOutputV2 qualityResult = runQuery(qualityAvgSql, dataSpaceName);
+            if (qualityResult != null && qualityResult.data != null) {
+                Integer totalScore = 0;
+                Integer totalCount = 0;
+                for (ConnectApi.CdpQueryV2Row row : qualityResult.data) {
+                    String scoreStr = col(row.rowData, 0);
+                    Integer cnt = Integer.valueOf(col(row.rowData, 1));
+                    if (scoreStr != null && cnt != null) {
+                        Integer score = toInteger(scoreStr);
+                        metrics.quality_distribution.put(String.valueOf(score), cnt);
+                        if (score != null) {
+                            totalScore += score * cnt;
+                            totalCount += cnt;
+                        }
+                    }
+                }
+                if (totalCount > 0) {
+                    metrics.avg_quality_score = Decimal.valueOf(totalScore) / totalCount;
+                }
+            }
+        } else {
+            metrics.unavailable_dmos.add('ssot__AiAgentTagAssociation__dlm');
+        }
+
+        // Step 4: Retriever quality averages
+        if (isDmoAvailable('ssot__AiRetrieverQualityMetric__dlm', dataSpaceName)) {
+            String retSql =
+                  'SELECT AVG(r.ssot__FaithfulnessRelevancyScoreNumber__c), '
+                + '       AVG(r.ssot__AnswerRelevancyScoreNumber__c), '
+                + '       AVG(r.ssot__ContextPrecisionScoreNumber__c) '
+                + 'FROM "ssot__AiRetrieverQualityMetric__dlm" r '
+                + 'JOIN "ssot__AiAgentInteractionStep__dlm" s '
+                + '  ON r.ssot__AiGatewayRequestId__c = s.ssot__GenAiGatewayRequestId__c '
+                + 'JOIN "ssot__AiAgentInteraction__dlm" i '
+                + '  ON s.ssot__AiAgentInteractionId__c = i.ssot__Id__c '
+                + 'WHERE i.ssot__AiAgentSessionId__c IN ' + inClause;
+
+            ConnectApi.CdpQueryOutputV2 retResult = runQuery(retSql, dataSpaceName);
+            if (retResult != null && retResult.data != null && !retResult.data.isEmpty()) {
+                metrics.avg_faithfulness      = toDecimal(col(retResult.data[0].rowData, 0));
+                metrics.avg_answer_relevance  = toDecimal(col(retResult.data[0].rowData, 1));
+                metrics.avg_context_precision = toDecimal(col(retResult.data[0].rowData, 2));
+            }
+        } else {
+            metrics.unavailable_dmos.add('ssot__AiRetrieverQualityMetric__dlm');
+        }
+
+        return JSON.serialize(metrics);
+    }
+
     // =========================================================================
     // Private helpers
     // =========================================================================
+
+    /** Cache for DMO availability probes to avoid repeated queries. */
+    private static Map<String, Boolean> dmoAvailabilityCache = new Map<String, Boolean>();
+
+    /**
+     * Probe whether a DMO exists and is queryable in this org's Data Cloud.
+     * Results are cached for the transaction to avoid repeated probes.
+     */
+    private static Boolean isDmoAvailable(String dmoName, String dataSpaceName) {
+        if (dmoAvailabilityCache.containsKey(dmoName)) return dmoAvailabilityCache.get(dmoName);
+        ConnectApi.CdpQueryInput inp = new ConnectApi.CdpQueryInput();
+        inp.sql = 'SELECT COUNT(*) FROM "' + dmoName + '"';
+        try {
+            ConnectApi.CdpQueryOutputV2 result = ConnectApi.CdpQuery.queryAnsiSqlV2(inp, dataSpaceName);
+            dmoAvailabilityCache.put(dmoName, true);
+            return true;
+        } catch (Exception e) {
+            System.debug(LoggingLevel.WARN, 'DMO not available: ' + dmoName + ' — ' + e.getMessage());
+            dmoAvailabilityCache.put(dmoName, false);
+            return false;
+        }
+    }
+
+    /** Safely parse a string to Decimal; returns null on failure. */
+    private static Decimal toDecimal(String val) {
+        if (String.isBlank(val) || val == 'NOT_SET') return null;
+        try {
+            return Decimal.valueOf(val);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Safely parse a string to Integer (truncating decimals); returns null on failure. */
+    private static Integer toInteger(String val) {
+        if (String.isBlank(val) || val == 'NOT_SET') return null;
+        try {
+            return Decimal.valueOf(val).intValue();
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * Resolve an Agentforce agent name to its GenAiPlannerDefinition IDs.

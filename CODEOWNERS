@@ -1,0 +1,8 @@
+# CODEOWNERS — agentforce-adlc
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+#
+# These users are automatically requested for review on PRs that modify
+# matching files. All listed owners must have write access to the repo.
+
+# Default owners for everything
+* @Authoring-Agent/agentforcedevgetstarted @Authoring-Agent/agentforcedevgetstartedadmins @sky-chen_sfemu

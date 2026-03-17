@@ -16,18 +16,18 @@ Usage:
     python3 install.py --target cursor  # Install for Cursor instead of Claude Code
 
 Requirements:
-    - Python 3.10+ (standard library only)
+    - Python 3.9+ (standard library only)
     - Claude Code (~/.claude/) or Cursor (~/.cursor/) installed
 """
 
 import platform
 import sys
 
-if sys.version_info < (3, 10):
+if sys.version_info < (3, 9):
     v = f"{sys.version_info.major}.{sys.version_info.minor}"
-    print(f"\n  \033[0;31m✗\033[0m Python {v} found, but 3.10+ required\n")
+    print(f"\n  \033[0;31m✗\033[0m Python {v} found, but 3.9+ required\n")
     os_name = platform.system()
-    print("  \033[1mHow to install Python 3.10+:\033[0m\n")
+    print("  \033[1mHow to install Python 3.9+:\033[0m\n")
     if os_name == "Darwin":
         print("    # macOS — using Homebrew (recommended):")
         print("    brew install python@3.13\n")

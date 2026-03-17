@@ -11,7 +11,7 @@ set -euo pipefail
 GITHUB_RAW="https://raw.githubusercontent.com/almandsky/agentforce-adlc/main"
 INSTALL_PY_URL="${GITHUB_RAW}/tools/install.py"
 MIN_PYTHON_MAJOR=3
-MIN_PYTHON_MINOR=10
+MIN_PYTHON_MINOR=9
 
 # Parse --target flag
 TARGET=""
@@ -47,7 +47,7 @@ print_error()   { echo -e "  ${RED}✗${NC} $1"; }
 echo -e "${BOLD}agentforce-adlc installer${NC}"
 echo ""
 
-# Check Python 3.10+
+# Check Python 3.9+
 print_step "Checking for Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+..."
 
 python_install_help() {

@@ -115,7 +115,7 @@ Skills are 100% portable — the same SKILL.md files work in both IDEs. Agents a
 
 ## Prerequisites
 
-- **Python 3.10+** — check with `python3 --version`. If older, upgrade: `brew install python@3.13` (macOS) / `sudo apt install python3.13` (Ubuntu) / [python.org](https://www.python.org/downloads/) (Windows)
+- **Python 3.9+** — check with `python3 --version`. If older, upgrade: `brew install python@3.13` (macOS) / `sudo apt install python3.13` (Ubuntu) / [python.org](https://www.python.org/downloads/) (Windows)
 - **Salesforce CLI** (`sf`) v2.x — [install guide](https://developer.salesforce.com/tools/salesforcecli)
 - **Claude Code** (`~/.claude/`) or **Cursor** (`~/.cursor/`) — at least one must be installed
 - **Salesforce org** with Agentforce enabled

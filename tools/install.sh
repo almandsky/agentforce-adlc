@@ -11,7 +11,7 @@ set -euo pipefail
 GITHUB_RAW="https://raw.githubusercontent.com/almandsky/agentforce-adlc/main"
 INSTALL_PY_URL="${GITHUB_RAW}/tools/install.py"
 MIN_PYTHON_MAJOR=3
-MIN_PYTHON_MINOR=10
+MIN_PYTHON_MINOR=9
 
 # Parse --target flag
 TARGET=""
@@ -47,11 +47,67 @@ print_error()   { echo -e "  ${RED}✗${NC} $1"; }
 echo -e "${BOLD}agentforce-adlc installer${NC}"
 echo ""
 
-# Check Python 3.10+
+# Check Python 3.9+
 print_step "Checking for Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+..."
 
+python_install_help() {
+    echo ""
+    echo -e "  ${BOLD}How to install Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+:${NC}"
+    echo ""
+    case "$(uname -s)" in
+        Darwin)
+            echo "    # macOS — using Homebrew (recommended):"
+            echo "    brew install python@3.13"
+            echo ""
+            echo "    # If you don't have Homebrew:"
+            echo "    /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            echo "    brew install python@3.13"
+            echo ""
+            echo "    # Or download directly from python.org:"
+            echo "    open https://www.python.org/downloads/macos/"
+            ;;
+        Linux)
+            if command -v apt-get &>/dev/null; then
+                echo "    # Ubuntu / Debian:"
+                echo "    sudo apt-get update && sudo apt-get install -y python3.13 python3.13-venv"
+                echo ""
+                echo "    # If python3.13 is not in your repos, add deadsnakes PPA first:"
+                echo "    sudo add-apt-repository ppa:deadsnakes/ppa"
+                echo "    sudo apt-get update && sudo apt-get install -y python3.13 python3.13-venv"
+            elif command -v dnf &>/dev/null; then
+                echo "    # Fedora / RHEL:"
+                echo "    sudo dnf install -y python3.13"
+            elif command -v yum &>/dev/null; then
+                echo "    # CentOS / older RHEL:"
+                echo "    sudo yum install -y python3.13"
+            else
+                echo "    # Download from python.org:"
+                echo "    https://www.python.org/downloads/source/"
+            fi
+            ;;
+        MINGW*|MSYS*|CYGWIN*)
+            echo "    # Windows — download the installer:"
+            echo "    https://www.python.org/downloads/windows/"
+            echo ""
+            echo "    # Or using winget:"
+            echo "    winget install Python.Python.3.13"
+            echo ""
+            echo "    # Or using choco:"
+            echo "    choco install python --version=3.13"
+            ;;
+        *)
+            echo "    # Download from python.org:"
+            echo "    https://www.python.org/downloads/"
+            ;;
+    esac
+    echo ""
+    echo "  After installing, restart your terminal and run this installer again."
+    echo ""
+}
+
 if ! command -v python3 &>/dev/null; then
-    print_error "Python 3 not found. Install Python 3.10+ and try again."
+    print_error "Python 3 not found"
+    python_install_help
     exit 1
 fi
 
@@ -62,6 +118,7 @@ minor=${version#*.}; minor=${minor%%.*}
 if [[ "$major" -lt "$MIN_PYTHON_MAJOR" ]] || \
    [[ "$major" -eq "$MIN_PYTHON_MAJOR" && "$minor" -lt "$MIN_PYTHON_MINOR" ]]; then
     print_error "Python $version found, but ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+ required"
+    python_install_help
     exit 1
 fi
 print_success "Python $version"

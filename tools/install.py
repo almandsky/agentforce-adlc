@@ -16,9 +16,37 @@ Usage:
     python3 install.py --target cursor  # Install for Cursor instead of Claude Code
 
 Requirements:
-    - Python 3.10+ (standard library only)
+    - Python 3.9+ (standard library only)
     - Claude Code (~/.claude/) or Cursor (~/.cursor/) installed
 """
+
+import platform
+import sys
+
+if sys.version_info < (3, 9):
+    v = f"{sys.version_info.major}.{sys.version_info.minor}"
+    print(f"\n  \033[0;31m✗\033[0m Python {v} found, but 3.9+ required\n")
+    os_name = platform.system()
+    print("  \033[1mHow to install Python 3.9+:\033[0m\n")
+    if os_name == "Darwin":
+        print("    # macOS — using Homebrew (recommended):")
+        print("    brew install python@3.13\n")
+        print("    # Or download from python.org:")
+        print("    open https://www.python.org/downloads/macos/")
+    elif os_name == "Linux":
+        print("    # Ubuntu / Debian:")
+        print("    sudo apt-get update && sudo apt-get install -y python3.13 python3.13-venv\n")
+        print("    # Fedora / RHEL:")
+        print("    sudo dnf install -y python3.13")
+    elif os_name == "Windows":
+        print("    # Windows — download the installer:")
+        print("    https://www.python.org/downloads/windows/\n")
+        print("    # Or using winget:")
+        print("    winget install Python.Python.3.13")
+    else:
+        print("    https://www.python.org/downloads/")
+    print("\n  After installing, restart your terminal and run this installer again.\n")
+    sys.exit(1)
 
 import argparse
 import json

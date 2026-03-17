@@ -345,9 +345,7 @@ topic:            # 8. REQUIRED: Conversation topics (one or more)
 
 ### 3.1b Indentation
 
-Agent Script is whitespace-delimited. The parser is generally forgiving — both spaces and tabs work.
-The official docs recommend 3-space indentation, but some server versions reject spaces.
-**Use tabs** as the safest default that works across all versions.
+Agent Script is whitespace-delimited. **Use tabs for all indentation.** The server rejects space-based indentation (including 3-space). Do not use spaces for indentation — tabs are the only reliable format.
 
 ```
 # Level 0 (no indent)
@@ -401,7 +399,7 @@ config:
 | `description` | Yes | Agent purpose (used for routing) |
 | `default_agent_user` | Yes | Must be a valid Einstein Agent User in the target org |
 
-**NOTE on `agent_type`:** Technically supported (`"AgentforceServiceAgent"` or `"AgentforceEmployeeAgent"`). Include it when the user specifies an agent type — it works on current server versions. If publish fails with a null pointer crash (seen on older versions), remove it and set the type via Setup UI after publish. Always ask the user which type they want (see Phase 1) to determine linked variables and connection block.
+**WARNING: Do NOT include `agent_type` in the `.agent` file.** The server crashes with a null pointer when `agent_type` is present (e.g. `agent_type: "AgentforceEmployeeAgent"`). Instead, set the agent type via Setup UI after publish. Always ask the user which type they want (see Phase 1) — the answer determines linked variables and connection block, but the `agent_type` field itself must be omitted from the file.
 
 CRITICAL: `developer_name` must exactly match the folder name under `aiAuthoringBundles/`.
 If the folder is `AcmeAgent`, the `developer_name` must be `"AcmeAgent"`.
@@ -1084,6 +1082,8 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | No comment-only if bodies | `if @variables.x:` with only `# comment` | Add executable statement: `\| text`, `run`, `set`, or `transition` |
 | `connection` not `connections` | `connections messaging:` | `connection messaging:` |
 | No `@inputs` in `set` clauses | `set @variables.x = @inputs.y` | Use `@outputs.y` or `@utils.setVariables` |
+| No `agent_type` in config | `agent_type: "AgentforceEmployeeAgent"` | Omit `agent_type` entirely — server crashes with null pointer. Set type via Setup UI after publish. |
+| Tabs only for indentation | 3-space or 4-space indentation | Use tabs at every indent level — server rejects space indentation |
 | No `default:` sub-property on variables | `order_id: mutable string` + `default: ""` | `order_id: mutable string = ""` (inline default) |
 | No nested `type:` in action I/O | `order_id:` + `type: string` | `order_id: string` (inline type) |
 | Numeric action I/O needs complex type | `minPrice: number` in inputs/outputs | `minPrice: object` + `complex_data_type_name: "lightning__integerType"` |

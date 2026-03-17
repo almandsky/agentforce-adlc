@@ -5,7 +5,7 @@ Checks:
 1. Mixed tabs and spaces (compilation error)
 2. Lowercase booleans (must be True/False)
 3. Required blocks (system, config, start_agent)
-4. Config fields: developer_name (preferred over agent_name), default_agent_user, agent_type
+4. Config fields: developer_name (preferred over agent_name), default_agent_user. agent_type must NOT be present.
 5. Variables declared as both mutable AND linked
 6. Undefined topic references in transitions
 7. start_agent target references a defined topic
@@ -100,6 +100,8 @@ class AgentScriptValidator:
 
         if has_tabs and has_spaces:
             self.errors.append((0, "ERROR", "Mixed tabs and spaces — Agent Script requires tabs only for indentation"))
+        elif has_spaces and not has_tabs:
+            self.errors.append((0, "ERROR", "Space indentation detected — Agent Script requires tabs only (server rejects spaces)"))
 
     def _check_boolean_case(self):
         """Check for lowercase booleans (must be True/False)."""
@@ -163,9 +165,9 @@ class AgentScriptValidator:
 
         if "default_agent_user" not in config_fields:
             self.warnings.append((0, "WARN", "Missing config field: default_agent_user"))
-        if "agent_type" not in config_fields:
-            self.warnings.append((0, "WARN",
-                "Missing config field: agent_type (use 'AgentforceServiceAgent' or 'AgentforceEmployeeAgent')"))
+        if "agent_type" in config_fields:
+            self.errors.append((0, "ERROR",
+                "Remove agent_type from config — server crashes with null pointer. Set agent type via Setup UI after publish."))
 
     def _check_variable_modifiers(self):
         """Check that variables aren't declared as both mutable AND linked."""

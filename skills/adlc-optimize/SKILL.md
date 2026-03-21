@@ -344,6 +344,7 @@ Methods:
 - `getLlmStepDetails(dataSpaceName, stepIds)` -> `List<LlmStepDetail>`
 - `getMomentInsights(dataSpaceName, sessionIds)` -> `List<SessionInsights>` (moments, turn counts, retriever metrics)
 - `getAggregatedMetrics(dataSpaceName, startIso, endIso, maxRows, agentName)` -> `AggregatedMetrics` (session rates, top intents, RAG quality)
+- `runObservabilityQuery(List<ObservabilityInput>)` -> `List<ObservabilityOutput>` (@InvocableMethod -- RAG observability queries for Flow/Agentforce actions)
 
 **Step 1 -- copy the class into the project:**
 
@@ -637,6 +638,46 @@ Key fields:
 - `moment_count` vs `turn_count` -- if `turn_count` >> `moment_count`, the agent needed many turns per intent (inefficient)
 - `retriever_metrics` -- RAG quality scores per retrieval (empty if agent doesn't use knowledge retrieval)
 - `debug_message` -- non-null if a DMO was unavailable (e.g. "AiAgentMoment DMO not available in this org")
+
+### 1.2e Run observability queries (RAG deep-dive)
+
+For targeted RAG/retriever quality analysis, use the `@InvocableMethod` entry point `runObservabilityQuery()`. This can be called from anonymous Apex, Flows, or Agentforce actions. It queries Data Lake objects (`*__dll`) directly without a Data Space parameter.
+
+**Query types:**
+
+| `queryType` | What it returns |
+|---|---|
+| `KnowledgeGap` | Avg context precision + answer relevancy by topic/agent (lowest first) |
+| `Hallucination` | Topics with avg faithfulness < 0.8 |
+| `RetrievalQuality` | Avg context precision by retriever/topic/agent |
+| `AnswerRelevancy` | Topics with avg answer relevancy < 0.7 |
+| `Leaderboard` | Combined precision, relevancy, and faithfulness by topic/agent |
+
+**From anonymous Apex:**
+
+```apex
+AgentforceOptimizeService.ObservabilityInput inp = new AgentforceOptimizeService.ObservabilityInput();
+inp.queryType = 'KnowledgeGap';
+inp.agentApiName = 'AGENT_API_NAME';  // optional
+inp.topicApiName = 'TOPIC_API_NAME';  // optional
+inp.lookbackDays = 90;                // optional, default 90
+
+List<AgentforceOptimizeService.ObservabilityOutput> results =
+    AgentforceOptimizeService.runObservabilityQuery(
+        new List<AgentforceOptimizeService.ObservabilityInput>{ inp }
+    );
+System.debug('STDM_RESULT:' + results[0].summaryText);
+System.debug('STDM_RESULT:' + results[0].resultJson);
+```
+
+```bash
+sf apex run --file /tmp/observability_query.apex -o <org> --json
+```
+
+**When to use observability queries vs `getAggregatedMetrics()`:**
+
+- Use `getAggregatedMetrics()` for a broad health dashboard (session rates, top intents, overall RAG averages)
+- Use `runObservabilityQuery()` for targeted RAG deep-dives when knowledge gaps or hallucination issues are detected -- it provides per-topic and per-retriever breakdowns
 
 ### 1.3 Reconstruct conversations
 

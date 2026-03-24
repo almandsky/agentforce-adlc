@@ -14,6 +14,7 @@
  *   getLlmStepDetails(dataSpaceName, stepIds)                         → JSON List<LlmStepDetail>
  *   getMomentInsights(dataSpaceName, sessionIds)                      → JSON List<SessionInsights>
  *   getAggregatedMetrics(dataSpaceName, startIso, endIso, maxRows, agentName) → JSON AggregatedMetrics
+ *   runObservabilityQuery(List<ObservabilityInput>)                         → List<ObservabilityOutput> (@InvocableMethod)
  */
 public with sharing class AgentforceOptimizeService {
 
@@ -1128,5 +1129,134 @@ public with sharing class AgentforceOptimizeService {
             System.debug(LoggingLevel.FINE, 'parseTs strategy 3 failed for "' + ts + '": ' + e3.getMessage());
         }
         return null;
+    }
+
+    // =========================================================================
+    // Observability Query (@InvocableMethod for Flow / Agentforce actions)
+    // =========================================================================
+
+    public class ObservabilityInput {
+        @InvocableVariable(label='Query Type' required=true)
+        public String queryType;
+
+        @InvocableVariable(label='Agent API Name' required=false)
+        public String agentApiName;
+
+        @InvocableVariable(label='Topic API Name' required=false)
+        public String topicApiName;
+
+        @InvocableVariable(label='Lookback Days' required=false)
+        public Integer lookbackDays;
+    }
+
+    public class ObservabilityOutput {
+        @InvocableVariable(label='Query Result JSON')
+        public String resultJson;
+
+        @InvocableVariable(label='Summary Text')
+        public String summaryText;
+    }
+
+    @InvocableMethod(label='Run Observability Query' description='Executes a Data Cloud observability query based on query type and optional filters.')
+    public static List<ObservabilityOutput> runObservabilityQuery(List<ObservabilityInput> inputs) {
+        List<ObservabilityOutput> results = new List<ObservabilityOutput>();
+        for (ObservabilityInput input : inputs) {
+            ObservabilityOutput out = new ObservabilityOutput();
+            try {
+                String query = buildObservabilityQuery(input);
+                ConnectApi.CdpQueryInput cdpInput = new ConnectApi.CdpQueryInput();
+                cdpInput.sql = query;
+                ConnectApi.CdpQueryOutputV2 cdpOutput = ConnectApi.CdpQuery.queryAnsiSqlV2(cdpInput);
+
+                out.resultJson = JSON.serialize(cdpOutput);
+                Integer rowCount = cdpOutput.rowCount != null ? cdpOutput.rowCount : 0;
+
+                if (rowCount == 0) {
+                    out.summaryText = 'Query executed for ' + input.queryType + '. No results found for the given filters and time range. SQL: ' + query;
+                } else {
+                    out.summaryText = 'Query executed for ' + input.queryType + '. Found ' + rowCount + ' result(s). Use the metadata to map column positions to names in the data arrays.';
+                }
+            } catch (Exception e) {
+                out.summaryText = 'Error executing ' + input.queryType + ' query: ' + e.getMessage();
+                out.resultJson = '{"error":"' + e.getMessage().replace('"', '\\"') + '"}';
+            }
+            results.add(out);
+        }
+        return results;
+    }
+
+    private static String buildObservabilityQuery(ObservabilityInput p) {
+        Integer days = p.lookbackDays != null ? p.lookbackDays : 90;
+        String cutoff = Datetime.now().addDays(-days).formatGmt('yyyy-MM-dd HH:mm:ss.SSS');
+
+        String agentFilter = String.isNotBlank(p.agentApiName)
+            ? ' AND sp.aiAgentApiName__c = \'' + String.escapeSingleQuotes(p.agentApiName) + '\'' : '';
+        String topicFilter = String.isNotBlank(p.topicApiName)
+            ? ' AND i.topicApiName__c = \'' + String.escapeSingleQuotes(p.topicApiName) + '\'' : '';
+
+        if (p.queryType == 'KnowledgeGap') {
+            return 'SELECT i.topicApiName__c, sp.aiAgentApiName__c, ' +
+                   'AVG(q.ContextPrecisionScoreNumber__c) AS avg_precision, ' +
+                   'AVG(q.AnswerRelevancyScoreNumber__c) AS avg_relevancy, ' +
+                   'COUNT(*) AS total_interactions ' +
+                   'FROM AIRetrieverQualityMetric__dll q ' +
+                   'JOIN AIAgentInteraction__dll i ON q.RetrieverTraceId__c = i.telemetryTraceId__c ' +
+                   'JOIN AIAgentSessionParticipant__dll sp ON sp.aiAgentSessionId__c = i.aiAgentSessionId__c ' +
+                   'WHERE i.startTimestamp__c > \'' + cutoff + '\'' +
+                   agentFilter + topicFilter +
+                   ' GROUP BY i.topicApiName__c, sp.aiAgentApiName__c ' +
+                   'ORDER BY avg_precision ASC LIMIT 25';
+
+        } else if (p.queryType == 'Hallucination') {
+            return 'SELECT sp.aiAgentApiName__c, i.topicApiName__c, ' +
+                   'AVG(q.FaithfulnessRelevancyScoreNumber__c) AS avg_faithfulness, ' +
+                   'COUNT(*) AS total_interactions ' +
+                   'FROM AIRetrieverQualityMetric__dll q ' +
+                   'JOIN AIAgentInteraction__dll i ON q.RetrieverTraceId__c = i.telemetryTraceId__c ' +
+                   'JOIN AIAgentSessionParticipant__dll sp ON sp.aiAgentSessionId__c = i.aiAgentSessionId__c ' +
+                   'WHERE i.startTimestamp__c > \'' + cutoff + '\'' +
+                   ' AND q.FaithfulnessRelevancyScoreNumber__c < 0.8' +
+                   agentFilter + topicFilter +
+                   ' GROUP BY sp.aiAgentApiName__c, i.topicApiName__c ' +
+                   'ORDER BY avg_faithfulness ASC LIMIT 25';
+
+        } else if (p.queryType == 'RetrievalQuality') {
+            return 'SELECT q.RetrieverApiName__c, i.topicApiName__c, sp.aiAgentApiName__c, ' +
+                   'AVG(q.ContextPrecisionScoreNumber__c) AS avg_precision, COUNT(*) AS total ' +
+                   'FROM AIRetrieverQualityMetric__dll q ' +
+                   'JOIN AIAgentInteraction__dll i ON q.RetrieverTraceId__c = i.telemetryTraceId__c ' +
+                   'JOIN AIAgentSessionParticipant__dll sp ON sp.aiAgentSessionId__c = i.aiAgentSessionId__c ' +
+                   'WHERE i.startTimestamp__c > \'' + cutoff + '\'' +
+                   agentFilter + topicFilter +
+                   ' GROUP BY q.RetrieverApiName__c, i.topicApiName__c, sp.aiAgentApiName__c ' +
+                   'ORDER BY avg_precision ASC LIMIT 25';
+
+        } else if (p.queryType == 'AnswerRelevancy') {
+            return 'SELECT sp.aiAgentApiName__c, i.topicApiName__c, ' +
+                   'AVG(q.AnswerRelevancyScoreNumber__c) AS avg_relevancy, COUNT(*) AS total ' +
+                   'FROM AIRetrieverQualityMetric__dll q ' +
+                   'JOIN AIAgentInteraction__dll i ON q.RetrieverTraceId__c = i.telemetryTraceId__c ' +
+                   'JOIN AIAgentSessionParticipant__dll sp ON sp.aiAgentSessionId__c = i.aiAgentSessionId__c ' +
+                   'WHERE i.startTimestamp__c > \'' + cutoff + '\'' +
+                   ' AND q.AnswerRelevancyScoreNumber__c < 0.7' +
+                   agentFilter + topicFilter +
+                   ' GROUP BY sp.aiAgentApiName__c, i.topicApiName__c ' +
+                   'ORDER BY avg_relevancy ASC LIMIT 25';
+
+        } else if (p.queryType == 'Leaderboard') {
+            return 'SELECT sp.aiAgentApiName__c, i.topicApiName__c, ' +
+                   'AVG(q.ContextPrecisionScoreNumber__c) AS avg_precision, ' +
+                   'AVG(q.AnswerRelevancyScoreNumber__c) AS avg_relevancy, ' +
+                   'AVG(q.FaithfulnessRelevancyScoreNumber__c) AS avg_faithfulness, ' +
+                   'COUNT(*) AS total_interactions ' +
+                   'FROM AIRetrieverQualityMetric__dll q ' +
+                   'JOIN AIAgentInteraction__dll i ON q.RetrieverTraceId__c = i.telemetryTraceId__c ' +
+                   'JOIN AIAgentSessionParticipant__dll sp ON sp.aiAgentSessionId__c = i.aiAgentSessionId__c ' +
+                   'WHERE i.startTimestamp__c > \'' + cutoff + '\'' +
+                   agentFilter + topicFilter +
+                   ' GROUP BY sp.aiAgentApiName__c, i.topicApiName__c ' +
+                   'ORDER BY avg_precision ASC LIMIT 25';
+        }
+        return 'SELECT COUNT(*) AS cnt FROM AIAgentSession__dll';
     }
 }

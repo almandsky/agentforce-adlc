@@ -65,7 +65,7 @@ and have access to:
 def create_agent() -> ClaudeAgentOptions:
     """Build the ADLC Authoring Agent options for the harness."""
     return ClaudeAgentOptions(
-        model="claude-sonnet-4-5",
+        model="claude-opus-4-6",
         system_prompt=SYSTEM_PROMPT,
         cwd=str(REPO_ROOT),
         setting_sources=["project"],

@@ -7,16 +7,14 @@ Executes eval suites and generates results.
 
 import argparse
 import json
-import os
-import subprocess
 import sys
-import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
 
 from assertion_labels import extract_label, validate_assertion
+from generate import generate_agent
 from judge import JudgeResult, create_client, evaluate_test
 from test_tags import validate_tags
 
@@ -35,6 +33,10 @@ class TestResult:
     score: float
     error: Optional[str] = None
     duration_ms: int = 0
+    transcript_path: Optional[str] = None
+    generation_cost_usd: float = 0.0
+    generation_turns: int = 0
+    conversation_path: Optional[str] = None
 
 
 @dataclass
@@ -99,26 +101,15 @@ def validate_suite(suite: dict) -> list[str]:
     return errors
 
 
-def generate_agent(prompt: str, org_alias: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
-    """
-    Generate an agent using adlc-author skill.
-
-    For now, this is a placeholder that returns sample content.
-    In production, this would invoke Claude Code with the /adlc-author skill.
-
-    Returns:
-        Tuple of (agent_content, error_message)
-    """
-    # TODO: Integrate with Claude Code / adlc-author skill
-    # For now, return a placeholder indicating manual generation needed
-    return None, "Agent generation requires manual invocation of /adlc-author skill"
-
-
 def run_test(
     test: dict,
     client: Any,
     model: str = "claude-sonnet-4-20250514",
     agent_content: Optional[str] = None,
+    generate_dir: Optional[Path] = None,
+    max_turns: int = 6,
+    sim_model: str = "claude-haiku-4-5",
+    verbose: bool = False,
 ) -> TestResult:
     """Run a single test case."""
     start_time = datetime.now()
@@ -128,23 +119,42 @@ def run_test(
     tags = test.get("tags", [])
     assertions = test.get("assertions", [])
     negative_assertions = test.get("negative_assertions", [])
+    total = len(assertions) + len(negative_assertions)
 
-    # If agent content not provided, try to generate
+    transcript_path = None
+    conversation_path = None
+    gen_cost = 0.0
+    gen_turns = 0
+
     if agent_content is None:
-        agent_content, error = generate_agent(prompt)
-        if error:
+        if generate_dir is None:
+            err = "No agent content provided and --generate not set"
             return TestResult(
-                test_id=test_id,
-                prompt=prompt,
-                tags=tags,
-                agent_content=None,
-                assertions_results=[],
-                passed=0,
-                failed=len(assertions) + len(negative_assertions),
-                total=len(assertions) + len(negative_assertions),
-                score=0.0,
-                error=error,
+                test_id=test_id, prompt=prompt, tags=tags, agent_content=None,
+                assertions_results=[], passed=0, failed=total, total=total,
+                score=0.0, error=err,
                 duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+            )
+
+        gen = generate_agent(
+            prompt, test_id, generate_dir,
+            max_turns=max_turns, sim_model=sim_model, verbose=verbose,
+        )
+        agent_content = gen.agent_content
+        transcript_path = str(gen.transcript_path) if gen.transcript_path else None
+        conversation_path = str(generate_dir / test_id / "conversation.log")
+        gen_cost = gen.total_cost_usd
+        gen_turns = gen.num_turns
+
+        if gen.error or agent_content is None:
+            return TestResult(
+                test_id=test_id, prompt=prompt, tags=tags,
+                agent_content=agent_content, assertions_results=[],
+                passed=0, failed=total, total=total, score=0.0,
+                error=gen.error or "generation produced no content",
+                duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+                transcript_path=transcript_path, conversation_path=conversation_path,
+                generation_cost_usd=gen_cost, generation_turns=gen_turns,
             )
 
     # Evaluate assertions
@@ -174,6 +184,10 @@ def run_test(
         total=len(results),
         score=score,
         duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
+        transcript_path=transcript_path,
+        conversation_path=conversation_path,
+        generation_cost_usd=gen_cost,
+        generation_turns=gen_turns,
     )
 
 
@@ -182,6 +196,10 @@ def run_suite(
     test_ids: Optional[list[str]] = None,
     agent_dir: Optional[str] = None,
     model: str = "claude-sonnet-4-20250514",
+    generate_dir: Optional[Path] = None,
+    max_turns: int = 6,
+    sim_model: str = "claude-haiku-4-5",
+    verbose: bool = False,
 ) -> SuiteResult:
     """
     Run a test suite.
@@ -230,12 +248,20 @@ def run_suite(
             if agent_file.exists():
                 agent_content = agent_file.read_text()
 
-        result = run_test(test, client, model, agent_content)
+        result = run_test(
+            test, client, model, agent_content,
+            generate_dir=generate_dir, max_turns=max_turns,
+            sim_model=sim_model, verbose=verbose,
+        )
         test_results.append(result)
 
         # Print progress
         status = "PASS" if result.score == 1.0 else ("PARTIAL" if result.score > 0 else "FAIL")
         print(f"  {status}: {result.passed}/{result.total} assertions passed")
+        if result.transcript_path:
+            print(f"  transcript:   {result.transcript_path}")
+        if result.conversation_path:
+            print(f"  conversation: {result.conversation_path}")
 
     # Aggregate results
     total_tests = len(test_results)
@@ -299,6 +325,12 @@ def main():
     parser.add_argument("--output", "-o", help="Output file for results JSON")
     parser.add_argument("--model", "-m", default="claude-sonnet-4-20250514", help="Model for judge")
     parser.add_argument("--validate-only", action="store_true", help="Only validate suite, don't run")
+    parser.add_argument("--generate", nargs="?", const="evals/results/generated",
+                        help="Run conversational generation. Optional: output dir")
+    parser.add_argument("--max-turns", type=int, default=6, help="Max conversation turns per test")
+    parser.add_argument("--sim-model", default="claude-haiku-4-5",
+                        help="Model for the simulated user")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Stream agent activity")
 
     args = parser.parse_args()
 
@@ -323,6 +355,10 @@ def main():
         test_ids=args.test_ids,
         agent_dir=args.agent_dir,
         model=args.model,
+        generate_dir=Path(args.generate) if args.generate else None,
+        max_turns=args.max_turns,
+        sim_model=args.sim_model,
+        verbose=args.verbose,
     )
 
     # Output results

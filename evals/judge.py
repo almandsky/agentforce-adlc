@@ -122,12 +122,9 @@ def evaluate_assertion(
         reason = result_data.get("reason", "No reason provided")
         evidence = result_data.get("evidence")
 
-        # For negative assertions, invert the result
-        # A negative assertion asks "does this BAD thing exist?"
-        # If judge says PASS (bad thing exists) -> assertion FAILS
-        # If judge says FAIL (bad thing doesn't exist) -> assertion PASSES
-        if is_negative:
-            result = "PASS" if result == "FAIL" else "FAIL"
+        # Negative assertions are phrased with "Does NOT..." in the suite,
+        # so the LLM already returns PASS/FAIL with the correct polarity.
+        # No inversion needed.
 
         return JudgeResult(
             assertion=assertion,

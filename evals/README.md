@@ -1,3 +1,10 @@
+---
+name: run-evals
+description: Run the ADLC evaluation framework — validate suites, evaluate generated agents with LLM-as-judge, generate reports
+allowed-tools: Bash Read Write
+argument-hint: "[--suite <suite.json>] [--agent-dir <dir>] [--validate-only]"
+---
+
 # ADLC Evals
 
 Evaluation framework for Agentforce ADLC skills using LLM-as-judge pattern.

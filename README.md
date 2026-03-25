@@ -256,12 +256,11 @@ Claude's reasoning catches all of these because it understands *intent*, not jus
 
 ## Companion tools
 
-`agentforce-adlc` works well alongside these related projects:
+`agentforce-adlc` works well alongside this related project:
 
-- **[agentforce-md](https://github.com/almandsky/agentforce-md)** — Convert Claude Code markdown conventions into Agent Script. Use when you prefer the markdown-first authoring approach.
 - **[sf-skills](https://github.com/Jaganpro/sf-skills)** — General Salesforce Claude Code skills (Apex, LWC, Flow, deploy, etc.). Complements the ADLC agent-specific skills.
 
-All three can be installed side-by-side without conflicts.
+Both can be installed side-by-side without conflicts.
 
 ## Project structure
 
@@ -384,6 +383,10 @@ python3 scripts/scaffold.py --agent-file path/to/Agent.agent -o OrgAlias --outpu
 # Describe SObject fields (for smart scaffold)
 python3 scripts/org_describe.py --sobject Account -o OrgAlias
 ```
+
+## Acknowledgments
+
+- **[sf-skills](https://github.com/Jaganpro/sf-skills)** by [Jagan Kaliachetti](https://github.com/Jaganpro) — The Salesforce Claude Code skills that inspired and complement this project. Several ADLC skills (deploy, scaffold, test) build on patterns pioneered in sf-skills.
 
 ## License
 

@@ -1,0 +1,72 @@
+{
+  "name": "Complex Multi-Topic Agent Tests",
+  "version": "1.0",
+  "surface": "agent",
+  "description": "Tests for complex agents with multiple topics, FSM patterns, action chaining, and advanced features",
+  "tests": [
+    {
+      "id": "real-estate-agent",
+      "prompt": "Build a real estate agent that helps home buyers search for properties, schedule tours, and get mortgage pre-qualification info. The agent should support searching by city, price range, and number of bedrooms. Use a verification gate for mortgage-related info since it requires identity verification. Include a Data Cloud retriever action to assess buyer readiness based on their profile. Actions: Search_Properties (flow://RealEstate_Search), Schedule_Tour (flow://RealEstate_ScheduleTour), Get_Prequalification (apex://MortgageService.getPrequalification), Assess_Buyer (retriever://BuyerReadinessRetriever).",
+      "tags": ["real-estate", "verification-gate", "multi-topic", "hard", "retriever-actions", "action-chaining"],
+      "assertions": [
+        "[fsm:hub-and-spoke] Uses hub-and-spoke pattern with central router directing to specialized topics",
+        "[fsm:verification-gate] Verification required before mortgage/prequalification topics",
+        "[fsm:no-orphan-topics] All topics reachable from start_agent routing",
+        "[fsm:no-dead-ends] All topics have exit paths (transition back to router or escalation)",
+        "[fsm:name-collision] start_agent name differs from all topic names",
+        "[fsm:router-instructions] start_agent routes based on intent, does not answer directly",
+        "[actions:level1-definition] Home search action has inputs for city, price_min, price_max, bedrooms",
+        "[actions:numeric-types] Price and bedroom inputs use object type with complex_data_type_name: Number",
+        "[actions:output-capture] Search results captured to variables for display",
+        "[actions:target-valid] Uses flow://, apex://, and retriever:// protocol targets correctly",
+        "[logic:after-reasoning] Uses after_reasoning for deterministic post-search routing",
+        "[logic:conditional-flow] Conditional logic based on search results count",
+        "[structure:linked-vars] Has all required linked variables for Service Agent",
+        "[safety:ai-disclosure] Identifies as AI real estate assistant, not licensed realtor",
+        "[safety:professional-referral] Defers to licensed agents for legal/contract questions"
+      ],
+      "expected_topics": ["home_search", "tour_scheduling", "mortgage_info", "verification", "escalation"]
+    },
+    {
+      "id": "multi-channel-support",
+      "prompt": "Create a customer support agent that handles orders, technical support, and billing inquiries. Each domain should have its own topic with specialized actions. The agent should maintain conversation context across turns and route based on user intent. Actions: Get_Order (flow://Support_GetOrder), Create_Ticket (flow://Support_CreateTicket), Get_Invoice (flow://Billing_GetInvoice), Process_Payment (apex://BillingService.processPayment).",
+      "tags": ["customer-service", "multi-topic", "hard", "cross-topic-vars", "flow-actions", "apex-actions"],
+      "assertions": [
+        "[fsm:hub-and-spoke] Central router with three specialized domain topics",
+        "[fsm:router-instructions] Start agent routes based on keywords, does not answer directly",
+        "[fsm:no-orphan-topics] Orders, tech support, and billing topics all reachable",
+        "[fsm:no-dead-ends] Each domain topic can transition back to router or escalate",
+        "[actions:level1-definition] Each topic has domain-specific actions with proper targets",
+        "[actions:level2-invocation] Actions properly invoked with with/set parameter bindings",
+        "[logic:post-action-top] Post-action state checks at top of procedural instructions (->)",
+        "[logic:state-transitions] Clear state transitions between topics based on user intent",
+        "[instructions:procedural-mode] Uses -> mode for conditional action-result handling",
+        "[instructions:context-aware] Instructions reference collected variables across the conversation",
+        "[chat:topic-routing] Clear routing logic with intent keywords for each domain",
+        "[chat:context-awareness] Variables persist across topic transitions",
+        "[structure:variables-block] Mutable variables for order_id, ticket_id, invoice_id"
+      ],
+      "expected_topics": ["router", "orders", "tech_support", "billing", "escalation"]
+    },
+    {
+      "id": "action-chaining-case-management",
+      "prompt": "Build a case management agent that: 1) verifies customer identity (email + phone), 2) looks up existing open cases for the customer, 3) creates new cases if needed with subject and description, 4) routes complex cases to specialists. Use after_reasoning to chain case creation after collecting all required fields. Actions: Verify_Customer (apex://CaseService.verifyCustomer), Get_Open_Cases (flow://Case_GetOpenCases), Create_Case (apex://CaseService.createCase), Route_To_Specialist (flow://Case_RouteToSpecialist).",
+      "tags": ["customer-service", "verification-gate", "action-chaining", "hard", "after-reasoning"],
+      "assertions": [
+        "[fsm:verification-gate] Identity verification required before case access",
+        "[fsm:linear-flow] Follows logical flow: verify -> lookup -> create/route",
+        "[fsm:no-dead-ends] All paths lead to resolution, new case, or escalation",
+        "[logic:after-reasoning] Uses after_reasoning to create case after all fields collected",
+        "[logic:post-action-top] Post-creation check transitions to confirmation or specialist topic",
+        "[logic:conditional-flow] Branches based on: verified?, has_open_cases?, case_created?",
+        "[actions:slot-filling] Case subject and description collected via conversational slot-filling (...)",
+        "[actions:available-when] Case creation/lookup actions gated by verification_status variable",
+        "[actions:output-capture] Captures case_id and case_list from action outputs",
+        "[actions:level2-invocation] Proper @actions.X invocation with with/set clauses",
+        "[instructions:context-aware] Instructions adapt based on open case count and verification state",
+        "[structure:variables-block] Mutable variables for verification_status, case_subject, case_description, case_id"
+      ],
+      "expected_actions": ["verify_customer", "get_open_cases", "create_case", "route_to_specialist"]
+    }
+  ]
+}

@@ -259,7 +259,7 @@ Claude's reasoning catches all of these because it understands *intent*, not jus
 `agentforce-adlc` works well alongside these related projects:
 
 - **[agentforce-md](https://github.com/almandsky/agentforce-md)** — Convert Claude Code markdown conventions into Agent Script. Use when you prefer the markdown-first authoring approach.
-- **[sf-skills](https://github.com/almandsky/sf-skills)** — General Salesforce Claude Code skills (Apex, LWC, Flow, deploy, etc.). Complements the ADLC agent-specific skills.
+- **[sf-skills](https://github.com/Jaganpro/sf-skills)** — General Salesforce Claude Code skills (Apex, LWC, Flow, deploy, etc.). Complements the ADLC agent-specific skills.
 
 All three can be installed side-by-side without conflicts.
 

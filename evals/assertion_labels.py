@@ -11,36 +11,26 @@ For example:
   - The fact that it's for an HR agent is captured in tags: ["hr-agent"]
 
 Labels are used in assertions like: "[label] Description of what to verify"
+
+SCOPE: These labels are for SEMANTIC quality checks only. Syntax, required
+blocks, and deploy-readiness are validated by `sf agent validate` / `sf agent
+publish` as a hard gate in runner.py — they do not belong here. If the
+compiler or deploy pipeline catches it, don't LLM-judge it.
 """
 
 import re
 from typing import Optional
 
 # =============================================================================
-# SYNTAX LABELS - Agent Script Syntax Requirements
+# STRUCTURE LABELS - Semantic structure choices (not compiler-enforced)
 # =============================================================================
-
-SYNTAX_LABELS = {
-    "syntax:tab-indentation": "Agent uses tabs for all indentation (no spaces)",
-    "syntax:boolean-case": "Booleans use Python-style capitalization (True/False)",
-    "syntax:quoted-strings": "All string values are properly double-quoted",
-    "syntax:valid-identifiers": "No reserved field names used as variable or action names",
-    "syntax:no-trailing-whitespace": "No trailing whitespace on lines",
-    "syntax:proper-nesting": "Blocks are properly nested with consistent indentation",
-}
-
-# =============================================================================
-# STRUCTURE LABELS - Required Blocks and Configuration
-# =============================================================================
+# NOTE: required-blocks, config-fields, language-block, bundle-meta are
+# enforced by `sf agent validate` — removed from LLM-judge scope.
 
 STRUCTURE_LABELS = {
-    "structure:required-blocks": "Has system, config, start_agent, and at least one topic block",
-    "structure:config-fields": "Config has developer_name, default_agent_user, agent_label, description",
     "structure:linked-vars": "Service agents have EndUserId, RoutableId, ContactId with visibility: External",
-    "structure:language-block": "Has language block with valid locale codes (e.g., default_locale: en_US)",
-    "structure:bundle-meta": "Companion bundle-meta.xml has only bundleType AGENT",
     "structure:system-messages": "System block has appropriate messages (welcome, error, etc.)",
-    "structure:variables-block": "Variables block properly defines mutable and linked variables",
+    "structure:variables-block": "Variables block defines the right mutable/linked variables for the use case",
 }
 
 # =============================================================================
@@ -64,13 +54,12 @@ FSM_LABELS = {
 # =============================================================================
 
 ACTIONS_LABELS = {
-    "actions:level1-definition": "Topic-level action definitions have target and I/O schema",
+    "actions:level1-definition": "Action definitions have the right targets and I/O schema for the use case",
     "actions:level2-invocation": "Reasoning actions use @actions.X with with/set bindings",
     "actions:slot-filling": "Uses `...` for conversational input extraction from user",
     "actions:output-capture": "Action outputs captured to variables with set clause",
     "actions:available-when": "Conditional actions use available when guards",
     "actions:numeric-types": "Numeric I/O uses object type with complex_data_type_name",
-    "actions:target-valid": "Action targets use valid protocols (flow://, apex://, retriever://)",
     "actions:input-mapping": "Action inputs correctly mapped from variables or literals",
     "actions:output-mapping": "Action outputs correctly mapped to variables",
 }
@@ -129,18 +118,6 @@ SAFETY_LABELS = {
 }
 
 # =============================================================================
-# DEPLOY LABELS - Deployment Readiness
-# =============================================================================
-
-DEPLOY_LABELS = {
-    "deploy:einstein-user": "Valid Einstein Agent User in default_agent_user field",
-    "deploy:folder-match": "developer_name matches the folder name under aiAuthoringBundles/",
-    "deploy:no-agent-type": "No agent_type field in config (causes server crash)",
-    "deploy:valid-targets": "All action targets exist or are marked for scaffolding",
-    "deploy:bundle-complete": "Bundle includes all required metadata files",
-}
-
-# =============================================================================
 # CHAT LABELS - Conversational Quality
 # =============================================================================
 
@@ -172,13 +149,11 @@ INSTRUCTIONS_LABELS = {
 # =============================================================================
 
 ALL_LABELS = {
-    **SYNTAX_LABELS,
     **STRUCTURE_LABELS,
     **FSM_LABELS,
     **ACTIONS_LABELS,
     **LOGIC_LABELS,
     **SAFETY_LABELS,
-    **DEPLOY_LABELS,
     **CHAT_LABELS,
     **INSTRUCTIONS_LABELS,
 }
@@ -253,13 +228,11 @@ def get_labels_by_category(category: str) -> dict[str, str]:
 
 # Category summaries for documentation
 LABEL_CATEGORIES = {
-    "syntax": "Agent Script syntax requirements (tabs, booleans, strings)",
-    "structure": "Required blocks and configuration",
+    "structure": "Semantic structure choices (agent-type-appropriate vars, messages)",
     "fsm": "Finite state machine architecture and patterns",
     "actions": "Action definitions and invocations",
     "logic": "Deterministic control flow",
     "safety": "Responsible AI and safety (7 categories)",
-    "deploy": "Deployment readiness checks",
     "chat": "Conversational quality and behavior",
     "instructions": "Instruction block quality",
 }

@@ -9,11 +9,6 @@
       "prompt": "Create a simple FAQ bot that greets users and answers general questions about a company. The agent should identify itself as an AI assistant and politely decline questions outside its scope.",
       "tags": ["faq-bot", "minimal", "single-topic"],
       "assertions": [
-        "[syntax:tab-indentation] Uses tabs for all indentation, not spaces",
-        "[syntax:boolean-case] Booleans use Python-style True/False capitalization",
-        "[structure:required-blocks] Has system, config, start_agent, and at least one topic block",
-        "[structure:config-fields] Config includes developer_name, agent_label, description, default_agent_user",
-        "[structure:language-block] Has language block with default_locale: en_US",
         "[structure:system-messages] System block has welcome message",
         "[safety:ai-disclosure] System instructions clearly state this is an AI assistant",
         "[safety:scope-boundaries] Instructions indicate what the agent will and won't answer",
@@ -28,7 +23,6 @@
       "prompt": "Build a customer service agent for an e-commerce company. It should help customers check order status, track shipments, and initiate returns. The agent needs to verify customer identity (email + last 4 of phone) before showing order details. Use Salesforce Flows for backend operations: Get_Order_Status, Track_Shipment, and Initiate_Return.",
       "tags": ["customer-service", "retail", "verification-gate", "medium", "flow-actions"],
       "assertions": [
-        "[structure:required-blocks] Has all required blocks including multiple topics",
         "[structure:linked-vars] Has EndUserId, RoutableId, ContactId linked variables with visibility: External",
         "[fsm:verification-gate] Uses verification gate pattern — actions gated by verification status",
         "[fsm:no-dead-ends] Every topic has an exit path (transition or escalation)",
@@ -49,7 +43,6 @@
       "prompt": "Create an HR agent that helps employees check PTO balances, submit time-off requests, and answer policy questions. The agent should look up employee info using Apex and submit requests to an Apex backend. Actions: Get_PTO_Balance (apex://HRService.getPTOBalance), Submit_PTO_Request (apex://HRService.submitPTORequest).",
       "tags": ["hr-agent", "medium", "apex-actions", "slot-filling"],
       "assertions": [
-        "[structure:required-blocks] Has all required blocks",
         "[actions:level1-definition] Defines actions with apex:// protocol targets",
         "[actions:level2-invocation] Properly invokes Apex actions with parameters",
         "[actions:slot-filling] Uses ... for collecting dates and reasons conversationally",

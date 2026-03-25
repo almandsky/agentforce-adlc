@@ -18,7 +18,6 @@
         "[actions:level1-definition] Home search action has inputs for city, price_min, price_max, bedrooms",
         "[actions:numeric-types] Price and bedroom inputs use object type with complex_data_type_name: Number",
         "[actions:output-capture] Search results captured to variables for display",
-        "[actions:target-valid] Uses flow://, apex://, and retriever:// protocol targets correctly",
         "[logic:after-reasoning] Uses after_reasoning for deterministic post-search routing",
         "[logic:conditional-flow] Conditional logic based on search results count",
         "[structure:linked-vars] Has all required linked variables for Service Agent",

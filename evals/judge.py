@@ -163,9 +163,8 @@ def _heuristic_evaluate(
     Only handles basic pattern matching - not recommended for real evaluations.
     """
     content_lower = agent_content.lower()
-    assertion_lower = assertion.lower()
 
-    # Extract label and description from assertion
+    # Extract label from assertion
     match = re.match(r"\[([^\]]+)\]\s*(.+)", assertion)
     if not match:
         return JudgeResult(
@@ -177,49 +176,17 @@ def _heuristic_evaluate(
         )
 
     label = match.group(1)
-    description = match.group(2)
 
     # Simple heuristics for common patterns
     result = "FAIL"
     reason = "No LLM available; heuristic evaluation only"
     evidence = None
 
-    if "tab-indentation" in label:
-        # Check for tabs at start of lines
-        has_tabs = bool(re.search(r"^\t", agent_content, re.MULTILINE))
-        has_spaces_indent = bool(re.search(r"^  +\S", agent_content, re.MULTILINE))
-        result = "PASS" if has_tabs and not has_spaces_indent else "FAIL"
-        reason = "Found tabs for indentation" if result == "PASS" else "Found space indentation or no tabs"
-
-    elif "ai-disclosure" in label:
+    if "ai-disclosure" in label:
         ai_patterns = ["ai assistant", "artificial intelligence", "automated", "virtual assistant", "ai-powered"]
         found = any(p in content_lower for p in ai_patterns)
         result = "PASS" if found else "FAIL"
         reason = "Found AI disclosure language" if found else "No AI disclosure language found"
-
-    elif "required-blocks" in label:
-        has_system = "system:" in content_lower
-        has_config = "config:" in content_lower
-        has_start = "start_agent:" in content_lower or "start_agent " in content_lower
-        has_topic = "topic " in content_lower or "topic:" in content_lower
-        all_present = has_system and has_config and has_start and has_topic
-        result = "PASS" if all_present else "FAIL"
-        missing = []
-        if not has_system:
-            missing.append("system")
-        if not has_config:
-            missing.append("config")
-        if not has_start:
-            missing.append("start_agent")
-        if not has_topic:
-            missing.append("topic")
-        reason = "All required blocks present" if all_present else f"Missing blocks: {', '.join(missing)}"
-
-    elif "boolean-case" in label:
-        has_correct = bool(re.search(r"\b(True|False)\b", agent_content))
-        has_wrong = bool(re.search(r"\b(true|false|TRUE|FALSE)\b", agent_content))
-        result = "PASS" if has_correct and not has_wrong else "FAIL"
-        reason = "Booleans use correct True/False case" if result == "PASS" else "Found incorrect boolean casing"
 
     # For negative assertions, invert
     if is_negative:

@@ -31,8 +31,6 @@ package-lock.json
 *~
 .DS_Store
 
-# Claude
-.claude/
 
 # Salesforce DX
 force-app/

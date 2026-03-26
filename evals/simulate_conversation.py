@@ -30,7 +30,7 @@ from claude_agent_sdk import (
     TextBlock,
     ClaudeAgentOptions,
 )
-from harness import link_transcript, print_activity
+from activity_log import link_transcript, print_activity
 from simulated_user import SimulatedUser
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

@@ -339,7 +339,7 @@ system:           # 3. REQUIRED: Global instructions and messages
 connection messaging:  # 4. Optional: Escalation routing (service agents)
 knowledge:        # 5. Optional: Knowledge base config
 language:         # 6. Optional: Locale settings
-start_agent <name>:  # 7. REQUIRED: Entry point block (exactly one)
+start_agent topic_selector:  # 7. REQUIRED: Entry point (always name it topic_selector)
 topic:            # 8. REQUIRED: Conversation topics (one or more)
 ```
 
@@ -528,19 +528,21 @@ knowledge:
 
 ### 3.8 Start Agent
 
-Exactly one `start_agent` entry point per agent:
+Exactly one `start_agent` entry point per agent. **Always name it `topic_selector`:**
 ```
-start_agent router:
+start_agent topic_selector:
 ```
 
 This names the entry point that handles the first user message and routes to topics.
+Use `topic_selector` as the standard name for all agents — it's clear, consistent, and
+won't collide with any topic name.
 
 **CRITICAL: `start_agent` MUST include `description:`, `reasoning: instructions:`, and `reasoning: actions:`.**
 Without `description:`, the compiler errors: "Description is required for all topic blocks."
 Without `reasoning:` blocks, the entry point has zero enabled tools after initial routing — the LLM sees only guardrail tools and falls back to `DefaultTopic`. Every `start_agent` needs at minimum:
 
 ```
-start_agent router:
+start_agent topic_selector:
 	description: "Route user requests to the appropriate topic"
 	reasoning:
 		instructions: |
@@ -564,13 +566,13 @@ reaching the topic with the actual actions.
 
 A `start_agent` with only a name and no `reasoning:` block will compile but produce an agent that cannot route — all utterances land in `DefaultTopic` with zero actions.
 
-**CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both `start_agent` and `topic` blocks create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. This error leaves orphaned metadata that blocks all future publishes until the name collision is fixed.
+**CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both `start_agent` and `topic` blocks create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. This error leaves orphaned metadata that blocks all future publishes until the name collision is fixed. Always use `topic_selector` to avoid this.
 
 | Pattern | WRONG | CORRECT |
 |---------|-------|---------|
-| Hub-and-spoke | `start_agent router:` + `topic router:` (name collision!) | `start_agent hub_router:` + `topic main_menu:` |
-| Verification gate | `start_agent entry:` + `topic entry:` (name collision!) | `start_agent gate_router:` + `topic welcome:` |
-| Linear | `start_agent greeting:` + `topic greeting:` (name collision!) | `start_agent linear_router:` + `topic greeting:` |
+| Hub-and-spoke | `start_agent router:` + `topic router:` (collision!) | `start_agent topic_selector:` + `topic main_menu:` |
+| Verification gate | `start_agent entry:` + `topic entry:` (collision!) | `start_agent topic_selector:` + `topic welcome:` |
+| Linear | `start_agent greeting:` + `topic greeting:` (collision!) | `start_agent topic_selector:` + `topic greeting:` |
 
 ### 3.9 Topic Block
 
@@ -1071,8 +1073,8 @@ These are validated errors. Violating these WILL cause compilation or deployment
 | Post-action `set`/`run` only on `@actions` | `@utils.X` with `set` | Only `@actions.X` supports post-action `set` |
 | Every Level 2 `@actions.X` MUST have a matching Level 1 `X:` definition | `@actions.mark_resolved` with no Level 1 definition | Define `mark_resolved:` under `topic > actions:` first |
 | Exactly one `start_agent` block | Multiple `start_agent:` entries | Single `start_agent topic_name:` (block syntax, NOT `start_agent: name`) |
-| `start_agent` MUST have `description:` | `start_agent router:` with no `description:` | Add `description: "Route user requests"` — compiler requires it |
-| `start_agent` MUST have `reasoning:` block | `start_agent router:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
+| `start_agent` MUST have `description:` | `start_agent topic_selector:` with no `description:` | Add `description: "Route user requests"` — compiler requires it |
+| `start_agent` MUST have `reasoning:` block | `start_agent topic_selector:` with no `reasoning:` | Add `reasoning: instructions:` and `reasoning: actions:` with transitions |
 | `start_agent` instructions MUST say "router only" | `instructions: \| Determine intent and route.` | `instructions: \| You are a router only. Do NOT answer directly. Always use a transition action.` |
 | `knowledge` is a reserved topic name | `topic knowledge:` | `topic knowledge_base:` or `topic faq:` |
 | `fallback:` is NOT a valid message key | `messages: fallback: "..."` | Only `welcome:` and `error:` are valid under `messages:` |
@@ -1242,11 +1244,8 @@ A central `topic_selector` routes to specialized spoke topics. Each spoke has a
 "back to hub" transition. Use when users may have multiple distinct intents.
 
 ```
-start_agent hub_router:
+start_agent topic_selector:
 	description: "Route user requests to the appropriate topic"
-
-topic topic_selector:
-	description: "Route based on user intent"
 	reasoning:
 		instructions: |
 			You are a router only. Do NOT answer questions directly.
@@ -1265,13 +1264,11 @@ topic order_support:
 		instructions: ->
 			| Help the customer with their order.
 		actions:
-			back: @utils.transition to @topic.topic_selector
-				description: "Return to main menu"
+			back: @utils.transition to @topic.general_support
+				description: "Route to general support"
 ```
 
-> Note: `start_agent hub_router:` uses a different name from `topic topic_selector:` to avoid `GenAiPluginDefinition` name collision on publish.
-
-> **Dead hub warning:** If `topic_selector` only contains transition actions and no real business logic, consider consolidating its routing into `start_agent > reasoning > actions:` directly. An intermediate routing-only topic adds an extra LLM hop (~3-5s latency) with no benefit. Use a separate `topic_selector` only when it performs real work (e.g., collecting disambiguation info, displaying a menu, or running a pre-routing action).
+> **Routing lives in `start_agent`** — put all transition actions directly in `start_agent topic_selector:`. Do NOT create a separate routing-only topic — that adds an extra LLM hop (~3-5s latency) with no benefit.
 
 ### Verification Gate
 
@@ -1279,14 +1276,12 @@ Users must pass through identity verification before accessing protected topics.
 Use when handling sensitive data, payments, or PII.
 
 ```
-start_agent gate_router:
+start_agent topic_selector:
 	description: "Route through identity verification"
-
-topic welcome:
-	description: "Entry - routes through verification"
 	reasoning:
 		instructions: |
-			Welcome the customer and begin verification.
+			You are a router only. Do NOT answer questions directly.
+			Route all users to identity verification first.
 		actions:
 			verify: @utils.transition to @topic.identity_verification
 				description: "Begin verification"
@@ -1383,7 +1378,7 @@ language:
 	additional_locales: ""
 	all_additional_locales: False
 
-start_agent linear_router:
+start_agent topic_selector:
 	description: "Begin the onboarding flow"
 
 topic greeting:
@@ -1450,7 +1445,7 @@ language:
 	additional_locales: ""
 	all_additional_locales: False
 
-start_agent multi_router:
+start_agent topic_selector:
 	description: "Route customers to the right support topic"
 	reasoning:
 		instructions: |

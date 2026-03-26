@@ -36,3 +36,9 @@ package-lock.json
 
 # Salesforce DX
 force-app/
+
+# Sessions
+**/sessions/
+
+# Eval outputs
+evals/results/

@@ -72,9 +72,11 @@
     {
       "id": "underspecified-then-clarify",
       "prompt": "I need an agent for my business.",
-      "goal": "Be vague initially. When the developer asks clarifying questions, reveal it's a pet grooming salon that needs appointment booking and service FAQs. Answer follow-ups naturally. Reply DONE once the .agent file reflects pet grooming and appointment booking.",
+      "goal": "Be vague initially. When the developer asks clarifying questions, reveal it's a pet grooming salon that needs appointment booking and service FAQs. If asked for a name, suggest 'PawsBookingAgent'. Answer follow-ups naturally. Reply DONE once the .agent file reflects pet grooming and appointment booking.",
       "tags": ["faq-bot", "easy"],
       "assertions": [
+        "[process:asked-clarifying] Agent asked clarifying questions to elicit design decisions (agent name, business domain, required capabilities) before writing",
+        "[process:no-premature-write] Agent gathered requirements from the user before the first .agent file write",
         "[structure:system-messages] System block has welcome message",
         "[safety:ai-disclosure] Identifies as AI assistant for the salon",
         "[safety:scope-boundaries] Scope mentions pet grooming or salon services",

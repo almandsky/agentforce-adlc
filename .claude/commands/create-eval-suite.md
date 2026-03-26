@@ -60,7 +60,7 @@ Every assertion needs a `[category:label]` prefix. Every test needs tags. The PM
 Run this to see all options with descriptions:
 
 ```bash
-python3 -c "from evals.assertion_labels import ALL_LABELS; [print(f'{k:35s} {v}') for k,v in ALL_LABELS.items()]"
+python3 -c "from evals.taxonomy import ALL_LABELS; [print(f'{k:35s} {v}') for k,v in ALL_LABELS.items()]"
 ```
 
 Quick guide by category:
@@ -82,7 +82,7 @@ Pick the most specific label that matches. If the PM said "it should verify iden
 Run this to see all options:
 
 ```bash
-python3 -c "from evals.test_tags import ALL_TAGS; [print(f'{k:25s} {v}') for k,v in ALL_TAGS.items()]"
+python3 -c "from evals.taxonomy import ALL_TAGS; [print(f'{k:25s} {v}') for k,v in ALL_TAGS.items()]"
 ```
 
 Pick 2-4 tags per test covering:
@@ -192,7 +192,7 @@ If the new tests fit an existing suite's theme, append to its `tests` array. Oth
 **Always validate** before finishing:
 
 ```bash
-python3 evals/run_evals.py --suite evals/suites/<name>.json --validate-only
+python3 evals/runner.py --suite evals/suites/<name>.json --validate-only
 ```
 
 This checks that all labels and tags are in the taxonomy. Fix any errors it reports.
@@ -259,5 +259,5 @@ This checks that all labels and tags are in the taxonomy. Fix any errors it repo
 **Validate:**
 
 ```bash
-python3 evals/run_evals.py --suite evals/suites/healthcare-safety.json --validate-only
+python3 evals/runner.py --suite evals/suites/healthcare-safety.json --validate-only
 ```

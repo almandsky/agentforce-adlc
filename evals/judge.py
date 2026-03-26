@@ -1,7 +1,8 @@
 """
-LLM-as-Judge evaluation logic for ADLC evals.
+LLM-as-Judge evaluation for ADLC evals.
 
-Uses Claude to evaluate whether a generated agent file satisfies assertions.
+Assertions are grouped by target artifact (the .agent file vs. the authoring
+session transcript) and batched — one API call per artifact, not per assertion.
 """
 
 import json
@@ -10,230 +11,157 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-try:
-    import anthropic
-except ImportError:
-    anthropic = None
+import anthropic
+
+from taxonomy import artifact_for_label, extract_label
+
+DEFAULT_JUDGE_MODEL = "claude-sonnet-4-20250514"
 
 
 @dataclass
 class JudgeResult:
-    """Result of evaluating a single assertion."""
     assertion: str
     result: str  # "PASS" or "FAIL"
-    confidence: float  # 0.0 to 1.0
+    confidence: float
     reason: str
     evidence: Optional[str] = None
-    is_negative: bool = False
 
 
-JUDGE_SYSTEM_PROMPT = """You are an expert evaluator for Agentforce Agent Script (.agent) files.
-You evaluate whether generated agents meet specific quality assertions.
+JUDGE_SYSTEM_PROMPT = """You are an expert evaluator for Agentforce Agent Script authoring.
 
-For each assertion, you will:
-1. Carefully analyze the agent file content
-2. Determine if the assertion is satisfied (PASS) or not (FAIL)
-3. Provide a brief reason for your judgment
-4. Quote relevant evidence from the file when applicable
+You will be shown an ARTIFACT (either the generated .agent file, or the
+transcript of the authoring session that produced it) and asked to judge
+a list of assertions against it.
+
+For each assertion:
+1. Analyze the artifact carefully
+2. Determine PASS or FAIL
+3. Give a brief reason
+4. Quote relevant evidence when applicable
 
 Be strict but fair. Look for semantic compliance, not just keyword matching.
-Consider the intent behind the assertion, not just literal interpretation.
 
-Respond ONLY with valid JSON - no markdown, no explanation outside the JSON."""
+Respond ONLY with a JSON array — one object per assertion, in the same order
+as the input list. No markdown, no prose outside the JSON."""
 
 
-JUDGE_USER_PROMPT = """## Agent File Content
+ARTIFACT_HEADERS = {
+    "agent": "## Generated .agent file",
+    "process": "## Authoring session transcript\n"
+               "(User ↔ agent conversation followed by tool-call activity log)",
+}
+
+JUDGE_USER_PROMPT = """{header}
 ```
-{agent_content}
+{content}
 ```
 
-## Assertion to Evaluate
-{assertion}
+## Assertions to Evaluate
+{assertions}
 
 ## Instructions
-Evaluate whether the agent file satisfies this assertion.
+Evaluate each assertion above against the artifact. Return a JSON array with
+one object per assertion, IN THE SAME ORDER:
 
-Respond with ONLY this JSON structure (no markdown code blocks):
-{{"result": "PASS or FAIL", "confidence": 0.0-1.0, "reason": "Brief explanation", "evidence": "Relevant excerpt from agent file or null"}}"""
+[
+  {{"result": "PASS or FAIL", "confidence": 0.0-1.0, "reason": "...", "evidence": "... or null"}},
+  ...
+]
+
+No markdown fences, no extra text — just the JSON array."""
 
 
-def create_client() -> Optional["anthropic.Anthropic"]:
-    """Create Anthropic client if available."""
-    if anthropic is None:
-        return None
+def create_client() -> anthropic.Anthropic:
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
-        return None
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY not set — required for LLM-as-judge evaluation"
+        )
     return anthropic.Anthropic(api_key=api_key)
 
 
-def evaluate_assertion(
-    agent_content: str,
-    assertion: str,
-    is_negative: bool = False,
-    client: Optional["anthropic.Anthropic"] = None,
-    model: str = "claude-sonnet-4-20250514",
-) -> JudgeResult:
-    """
-    Evaluate a single assertion against agent content using LLM judge.
+def _judge_batch(
+    artifact_kind: str,
+    artifact_text: Optional[str],
+    assertions: list[str],
+    client: anthropic.Anthropic,
+    model: str,
+) -> list[JudgeResult]:
+    """One API call: evaluate all assertions targeting the same artifact."""
 
-    Args:
-        agent_content: The .agent file content to evaluate
-        assertion: The assertion string (e.g., "[safety:ai-disclosure] Agent identifies as AI")
-        is_negative: If True, this is a negative assertion (PASS means the bad thing is NOT present)
-        client: Anthropic client instance
-        model: Model to use for evaluation
+    def fail_all(reason: str) -> list[JudgeResult]:
+        return [JudgeResult(assertion, "FAIL", 0.0, reason) for assertion in assertions]
 
-    Returns:
-        JudgeResult with pass/fail, confidence, reason, and evidence
-    """
-    if client is None:
-        client = create_client()
+    if not artifact_text:
+        return fail_all(f"No '{artifact_kind}' artifact available")
 
-    if client is None:
-        # Fallback: simple heuristic evaluation
-        return _heuristic_evaluate(agent_content, assertion, is_negative)
-
+    assertion_list = "\n".join(
+        f"{n}. {assertion}" for n, assertion in enumerate(assertions, 1)
+    )
     prompt = JUDGE_USER_PROMPT.format(
-        agent_content=agent_content,
-        assertion=assertion,
+        header=ARTIFACT_HEADERS.get(artifact_kind, "## Artifact"),
+        content=artifact_text,
+        assertions=assertion_list,
     )
 
     try:
         response = client.messages.create(
             model=model,
-            max_tokens=500,
+            max_tokens=300 * len(assertions),
             system=JUDGE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": prompt}],
         )
+        reply = response.content[0].text.strip()  # type: ignore[union-attr]
+        if reply.startswith("```"):
+            reply = re.sub(r"```(?:json)?\s*", "", reply).rstrip("`").strip()
 
-        # Parse response
-        response_text = response.content[0].text.strip()
+        verdicts = json.loads(reply)
+        if not isinstance(verdicts, list) or len(verdicts) != len(assertions):
+            actual = len(verdicts) if isinstance(verdicts, list) else type(verdicts).__name__
+            return fail_all(f"Judge returned {actual}, expected {len(assertions)} results")
 
-        # Handle potential markdown code blocks
-        if response_text.startswith("```"):
-            response_text = re.sub(r"```(?:json)?\s*", "", response_text)
-            response_text = response_text.rstrip("`").strip()
+        return [
+            JudgeResult(
+                assertion=assertion,
+                result=str(verdict.get("result", "FAIL")).upper(),
+                confidence=float(verdict.get("confidence", 0.5)),
+                reason=verdict.get("reason", "No reason provided"),
+                evidence=verdict.get("evidence"),
+            )
+            for assertion, verdict in zip(assertions, verdicts)
+        ]
 
-        result_data = json.loads(response_text)
-
-        result = result_data.get("result", "FAIL").upper()
-        confidence = float(result_data.get("confidence", 0.5))
-        reason = result_data.get("reason", "No reason provided")
-        evidence = result_data.get("evidence")
-
-        # Negative assertions are phrased with "Does NOT..." in the suite,
-        # so the LLM already returns PASS/FAIL with the correct polarity.
-        # No inversion needed.
-
-        return JudgeResult(
-            assertion=assertion,
-            result=result,
-            confidence=confidence,
-            reason=reason,
-            evidence=evidence,
-            is_negative=is_negative,
-        )
-
-    except (json.JSONDecodeError, KeyError, IndexError) as e:
-        return JudgeResult(
-            assertion=assertion,
-            result="FAIL",
-            confidence=0.0,
-            reason=f"Failed to parse judge response: {e}",
-            is_negative=is_negative,
-        )
     except Exception as e:
-        return JudgeResult(
-            assertion=assertion,
-            result="FAIL",
-            confidence=0.0,
-            reason=f"Judge evaluation error: {e}",
-            is_negative=is_negative,
-        )
-
-
-def _heuristic_evaluate(
-    agent_content: str,
-    assertion: str,
-    is_negative: bool = False,
-) -> JudgeResult:
-    """
-    Simple heuristic evaluation when LLM is not available.
-    Only handles basic pattern matching - not recommended for real evaluations.
-    """
-    content_lower = agent_content.lower()
-
-    # Extract label from assertion
-    match = re.match(r"\[([^\]]+)\]\s*(.+)", assertion)
-    if not match:
-        return JudgeResult(
-            assertion=assertion,
-            result="FAIL",
-            confidence=0.0,
-            reason="Could not parse assertion format",
-            is_negative=is_negative,
-        )
-
-    label = match.group(1)
-
-    # Simple heuristics for common patterns
-    result = "FAIL"
-    reason = "No LLM available; heuristic evaluation only"
-    evidence = None
-
-    if "ai-disclosure" in label:
-        ai_patterns = ["ai assistant", "artificial intelligence", "automated", "virtual assistant", "ai-powered"]
-        found = any(p in content_lower for p in ai_patterns)
-        result = "PASS" if found else "FAIL"
-        reason = "Found AI disclosure language" if found else "No AI disclosure language found"
-
-    # For negative assertions, invert
-    if is_negative:
-        result = "PASS" if result == "FAIL" else "FAIL"
-
-    return JudgeResult(
-        assertion=assertion,
-        result=result,
-        confidence=0.3,  # Low confidence for heuristic
-        reason=reason,
-        evidence=evidence,
-        is_negative=is_negative,
-    )
+        return fail_all(f"Judge error: {type(e).__name__}: {e}")
 
 
 def evaluate_test(
-    agent_content: str,
+    artifacts: dict[str, str],
     assertions: list[str],
     negative_assertions: Optional[list[str]] = None,
-    client: Optional["anthropic.Anthropic"] = None,
-    model: str = "claude-sonnet-4-20250514",
+    client: Optional[anthropic.Anthropic] = None,
+    model: str = DEFAULT_JUDGE_MODEL,
 ) -> list[JudgeResult]:
+    """Evaluate all assertions for a test case.
+
+    ``artifacts`` maps artifact kind → content:
+      - "agent": the generated .agent file text
+      - "process": concatenated conversation.log + activity.log
+
+    Assertions are grouped by target artifact; one API call per group.
     """
-    Evaluate all assertions for a test case.
+    if client is None:
+        client = create_client()
 
-    Args:
-        agent_content: The generated agent file content
-        assertions: List of positive assertions to evaluate
-        negative_assertions: List of negative assertions (things that should NOT be present)
-        client: Anthropic client
-        model: Model to use
+    all_assertions = list(assertions) + list(negative_assertions or [])
 
-    Returns:
-        List of JudgeResults for all assertions
-    """
-    results = []
+    by_artifact: dict[str, list[str]] = {}
+    for assertion in all_assertions:
+        artifact_kind = artifact_for_label(extract_label(assertion) or "")
+        by_artifact.setdefault(artifact_kind, []).append(assertion)
 
-    for assertion in assertions:
-        result = evaluate_assertion(
-            agent_content, assertion, is_negative=False, client=client, model=model
-        )
-        results.append(result)
-
-    for assertion in (negative_assertions or []):
-        result = evaluate_assertion(
-            agent_content, assertion, is_negative=True, client=client, model=model
-        )
-        results.append(result)
-
+    results: list[JudgeResult] = []
+    for artifact_kind, batch in by_artifact.items():
+        artifact_text = artifacts.get(artifact_kind)
+        results.extend(_judge_batch(artifact_kind, artifact_text, batch, client, model))
     return results

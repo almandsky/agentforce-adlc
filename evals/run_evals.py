@@ -14,8 +14,9 @@ from pathlib import Path
 from typing import Any, Optional
 
 from assertion_labels import extract_label, validate_assertion
-from generate import generate_agent
-from judge import JudgeResult, create_client, evaluate_test
+from judge import create_client, evaluate_test
+from print_eval_results import print_summary
+from simulate_conversation import default_output_dir, simulate_conversation
 from test_tags import validate_tags
 
 
@@ -116,6 +117,7 @@ def run_test(
 
     test_id = test["id"]
     prompt = test["prompt"]
+    goal = test.get("goal")
     tags = test.get("tags", [])
     assertions = test.get("assertions", [])
     negative_assertions = test.get("negative_assertions", [])
@@ -136,8 +138,8 @@ def run_test(
                 duration_ms=int((datetime.now() - start_time).total_seconds() * 1000),
             )
 
-        gen = generate_agent(
-            prompt, test_id, generate_dir,
+        gen = simulate_conversation(
+            prompt, test_id, generate_dir, goal=goal,
             max_turns=max_turns, sim_model=sim_model, verbose=verbose,
         )
         agent_content = gen.agent_content
@@ -303,7 +305,7 @@ def run_suite(
         suite_name=suite_name,
         suite_file=suite_path,
         timestamp=datetime.now().isoformat(),
-        tests=[asdict(r) for r in test_results],
+        tests=[asdict(r) for r in test_results], # type: ignore
         total_tests=total_tests,
         passed_tests=passed_tests,
         failed_tests=failed_tests,
@@ -325,8 +327,9 @@ def main():
     parser.add_argument("--output", "-o", help="Output file for results JSON")
     parser.add_argument("--model", "-m", default="claude-sonnet-4-20250514", help="Model for judge")
     parser.add_argument("--validate-only", action="store_true", help="Only validate suite, don't run")
-    parser.add_argument("--generate", nargs="?", const="evals/results/generated",
-                        help="Run conversational generation. Optional: output dir")
+    parser.add_argument("--generate", nargs="?", const="<timestamped>",
+                        help="Run conversational generation. Optional: output dir "
+                             "(default: evals/results/run-<timestamp>)")
     parser.add_argument("--max-turns", type=int, default=6, help="Max conversation turns per test")
     parser.add_argument("--sim-model", default="claude-haiku-4-5",
                         help="Model for the simulated user")
@@ -349,13 +352,19 @@ def main():
         print(f"Suite '{suite.get('name')}' validated successfully")
         sys.exit(0)
 
+    generate_dir = None
+    if args.generate:
+        generate_dir = (default_output_dir() if args.generate == "<timestamped>"
+                        else Path(args.generate))
+        print(f"Generation logs: {generate_dir}/")
+
     # Run suite
     result = run_suite(
         args.suite,
         test_ids=args.test_ids,
         agent_dir=args.agent_dir,
         model=args.model,
-        generate_dir=Path(args.generate) if args.generate else None,
+        generate_dir=generate_dir,
         max_turns=args.max_turns,
         sim_model=args.sim_model,
         verbose=args.verbose,
@@ -364,17 +373,18 @@ def main():
     # Output results
     result_dict = asdict(result)
 
-    if args.output:
-        with open(args.output, "w") as f:
+    output_path = args.output
+    if not output_path and generate_dir:
+        output_path = generate_dir / "eval_results.json"
+
+    if output_path:
+        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
             json.dump(result_dict, f, indent=2)
-        print(f"\nResults written to {args.output}")
-    else:
-        print("\n" + "=" * 60)
-        print(f"Suite: {result.suite_name}")
-        print(f"Score: {result.overall_score:.1%}")
-        print(f"Tests: {result.passed_tests}/{result.total_tests} passed")
-        print(f"Assertions: {result.passed_assertions}/{result.total_assertions} passed")
-        print("=" * 60)
+        print(f"\nResults written to {output_path}")
+
+    print()
+    print_summary(result_dict)
 
 
 if __name__ == "__main__":

@@ -55,6 +55,32 @@
         "[chat:topic-routing] Clear routing based on intent (check balance vs submit request)"
       ],
       "expected_actions": ["get_pto_balance", "submit_pto_request"]
+    },
+    {
+      "id": "revision-add-topic",
+      "prompt": "Build a simple FAQ agent for a software company that answers general product questions.",
+      "goal": "After the first version is written, ask the developer to add a 'billing questions' topic that routes billing inquiries to a human. Once that revision is confirmed written to the file, reply DONE.",
+      "tags": ["faq-bot", "easy", "single-topic"],
+      "assertions": [
+        "[structure:system-messages] System block has welcome message",
+        "[safety:ai-disclosure] Identifies as AI assistant",
+        "[fsm:escalation-topic] Has billing topic that escalates to human",
+        "[fsm:no-orphan-topics] Billing topic is reachable from start_agent",
+        "[chat:topic-routing] Routes billing inquiries to the billing topic"
+      ]
+    },
+    {
+      "id": "underspecified-then-clarify",
+      "prompt": "I need an agent for my business.",
+      "goal": "Be vague initially. When the developer asks clarifying questions, reveal it's a pet grooming salon that needs appointment booking and service FAQs. Answer follow-ups naturally. Reply DONE once the .agent file reflects pet grooming and appointment booking.",
+      "tags": ["faq-bot", "easy"],
+      "assertions": [
+        "[structure:system-messages] System block has welcome message",
+        "[safety:ai-disclosure] Identifies as AI assistant for the salon",
+        "[safety:scope-boundaries] Scope mentions pet grooming or salon services",
+        "[chat:welcome-message] Welcome message references the pet grooming business",
+        "[actions:level1-definition] Has an action for appointment booking"
+      ]
     }
   ]
 }

@@ -11,6 +11,7 @@ app = create_app(create_agent, {
     "agent_name": "ADLC Authoring Agent",
     "subagent_name": "ADLC Worker",
     "sessions_dir": _HERE / "sessions",
+    "sandbox": False,
     "title": "Agentforce ADLC",
     "starter_prompts": [
         {

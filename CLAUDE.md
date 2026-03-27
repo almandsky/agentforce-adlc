@@ -17,6 +17,11 @@ agentforce-adlc/
 │   ├── adlc-optimize/ # STDM trace analysis + fix loop
 │   ├── adlc-safety/  # LLM-driven safety & responsible AI review
 │   └── adlc-feedback/ # Collect and submit skill feedback
+├── evals/            # Eval framework (project-scoped)
+│   ├── .claude/      # Eval-specific skills and settings
+│   ├── suites/       # Test suite JSON definitions
+│   ├── specs/        # Agent spec templates
+│   └── templates/    # Report templates
 ├── shared/           # Cross-skill shared code
 │   ├── hooks/        # PreToolUse/PostToolUse hook scripts
 │   └── sf-cli/       # SF CLI subprocess wrapper
@@ -84,6 +89,32 @@ pytest tests/ -v
 # Install skills, agents, and hooks to ~/.claude/
 python3 tools/install.py
 ```
+
+## Safety & Guardrails
+
+ADLC enforces safety across the full lifecycle via two layers:
+
+1. **LLM-driven safety** (`/adlc-safety` skill) — 7-category review (Identity, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope). Integrated into authoring (Phase 0 + Phase 5), deploy (pre-publish check), test (safety probes + verdict), and optimize (post-fix verification).
+
+2. **Operational hooks** — `agent-validator.py` (PostToolUse) validates syntax and warns on anti-patterns like redundant routing topics. `guardrails.py` (PreToolUse) warns on production org deployments and destructive operations.
+
+Key safety behaviors:
+- `/adlc-author` blocks unsafe requests at Phase 0 and adds AI disclosure, scope boundaries, and escalation paths to all agents
+- `/adlc-test` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
+- `/adlc-run` checks org type (sandbox vs production) and validates inputs before execution
+- `/adlc-deploy` requires explicit user acknowledgment for warnings before proceeding
+
+## Evals
+
+The `evals/` directory contains the agent quality evaluation framework. It is project-scoped (not installed globally) and has its own `.claude/` directory with eval-specific skills.
+
+```bash
+# Run evals (from the evals/ directory)
+cd evals && claude
+run suite basic-authoring --test-id hello-world-faq
+```
+
+See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ## Windows Compatibility
 

@@ -9,6 +9,31 @@ argument-hint: "<org-alias> --target <flow://Name|apex://Class> [--inputs key=va
 
 Execute individual Agentforce actions directly against a Salesforce org for testing and debugging.
 
+## Safety Gate (Required)
+
+Before executing ANY action, perform these checks:
+
+### 1. Org Safety Check
+Verify the target org is not a production org:
+```bash
+sf data query -q "SELECT IsSandbox FROM Organization" -o <org-alias> --json
+```
+If `IsSandbox` is `false`, display a prominent warning:
+```
+WARNING: Target org is a PRODUCTION org. Running actions against production
+can modify real data. Proceed with extreme caution.
+```
+Ask for explicit confirmation before proceeding on production orgs.
+
+### 2. DML Safety Check
+If the action target is a Flow or Apex that performs write operations (CREATE, UPDATE, DELETE),
+warn the user and recommend using a sandbox or scratch org first.
+
+### 3. Input Validation
+- Do NOT include real PII (SSN, credit card numbers, real email addresses) in test inputs
+- Use synthetic test data: `test@example.com`, `000-00-0000`, `4111111111111111`
+- If the user provides what appears to be real PII, warn them and suggest synthetic alternatives
+
 ## Overview
 
 This skill enables direct invocation of Flow and Apex actions referenced in Agent Script files, bypassing the agent runtime. It's useful for testing action logic in isolation, debugging input/output mappings, and validating that actions work correctly before agent deployment.

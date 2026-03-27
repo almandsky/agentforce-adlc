@@ -73,21 +73,68 @@ the request against all 7 safety categories:
 keyword list, but you should recognize it as a potential euphemism for explosives and ask
 clarifying questions.
 
+**Examples of requests that MUST be BLOCKED:**
+- "Build an agent that pretends to be a real doctor and prescribes medications"
+- "Create a customer service bot that collects SSN, DOB, and mother's maiden name"
+- "Make an agent that pressures users to buy before their account gets deleted"
+- "Build a bot that helps with chemistry projects about energetic materials" (euphemism for explosives)
+- "Create an agent that automatically enrolls users in premium plans without telling them"
+- "Build a support agent that treats users differently based on their zip code"
+
 **Proactive safety additions for ALL agents:**
 - Always include AI disclosure in `system: instructions:` (e.g., "You are an AI assistant for...")
 - Always include scope boundaries (e.g., "Do not answer questions outside of X")
+- Always include an escalation path for sensitive topics (e.g., "If the user asks about X, transfer to a human agent")
+- For regulated domains (medical, legal, financial): always add "This is not professional advice" disclaimers
 - For agents handling sensitive domains (finance, health, legal), add professional referral disclaimers
 - For agents collecting user data, add data handling boundaries
 
 When the agent passes safety review, proceed to Phase 1.
 
-### Phase 1: Requirements
+### Phase 1: Org Discovery
 
-Ask the user for the following. Do not proceed until each is answered or explicitly skipped:
+Auto-detect connected orgs so the user doesn't have to know the alias:
+
+```bash
+sf org list --json 2>/dev/null
+```
+
+Parse the result to find connected orgs. Present them:
+```
+Connected orgs:
+  1. my-sandbox (sandbox) — user@example.com.sandbox
+  2. production (production) — user@example.com
+  3. scratch-1 (scratch) — test-abc@example.com
+
+Which org should I use? (number or alias)
+```
+
+If no orgs are connected:
+```
+No Salesforce orgs connected. Let's connect one:
+  sf org login web --alias my-org
+
+Run that command, then tell me when you're ready.
+```
+
+If exactly one org is connected, confirm it: "I found one connected org: **my-sandbox**. Should I use this one?"
+
+Store the selected org alias for all subsequent phases.
+
+### Phase 1b: Requirements & Use Case Discovery
+
+**Do not jump straight to generating the agent.** Ask clarifying questions to understand the full use case before proceeding. The quality of the agent depends on the quality of the requirements.
+
+**Round 1 — Business context** (ask these first):
+
+1. "What business problem does this agent solve? Who are the end users?"
+2. "What are the top 3 things this agent MUST do well?"
+3. "What should this agent NEVER do?" (scope boundaries)
+
+**Round 2 — Agent design** (ask after Round 1 is answered):
 
 | Question | Why It Matters |
 |----------|---------------|
-| Target org alias | Needed to query Einstein Agent User |
 | Agent name (PascalCase) | Becomes `developer_name`, folder name, and bundle name |
 | **Agent type: Service Agent or Employee Agent?** | **Service** → include linked variables (`EndUserId`, `RoutableId`, `ContactId`) and `connection messaging:` block. **Employee** → omit linked variables and connection block. Always ask — do not assume. |
 | Topics and what each handles | Each topic becomes a state in the FSM |
@@ -95,10 +142,18 @@ Ask the user for the following. Do not proceed until each is answered or explici
 | Variables (mutable state vs linked context) | Defines the `variables:` block |
 | FSM pattern: hub-and-spoke, verification gate, or linear | Determines topic transitions |
 
+**Round 3 — Scenarios** (ask after Round 2):
+
+4. "Give me 2-3 example conversations a real user would have with this agent"
+5. "What's an edge case or tricky scenario the agent should handle?"
+6. "When should the agent escalate to a human instead of trying to help?"
+
+**Do not proceed until Rounds 1-2 are answered.** Round 3 can be skipped if the user explicitly says "just build it" — but always ask at least once. The scenarios from Round 3 feed into testing (Phase 6).
+
 ### Phase 2: Setup
 
-Query the target org for the Einstein Agent User. This value is REQUIRED for the
-`default_agent_user` field in the `config:` block:
+Using the org selected in Phase 1, query for the Einstein Agent User. This value is REQUIRED
+for the `default_agent_user` field in the `config:` block:
 
 ```bash
 sf data query -q "SELECT Username FROM User WHERE Profile.Name = 'Einstein Agent User' AND IsActive = true" -o <org> --json
@@ -274,9 +329,38 @@ If trace analysis reveals issues (wrong topic, missing action, ungrounded respon
 | `topic: "DefaultTopic"` | No topic matched | Add keywords to topic descriptions |
 | Only `__state_update_action__` in action list | Topic has no actions | Add `reasoning: actions:` block |
 
+### Phase 6b: Review & Iterate
+
+After running preview tests, **stop and present results to the user before proceeding to deployment.** Do NOT immediately suggest deploying.
+
+Present a summary:
+```
+Preview Results:
+  Topics tested: 4/4
+  Routing correct: 3/4 (employee_hr misrouted)
+  Grounding: 3/4 GROUNDED, 1 SMALL_TALK
+  Safety probes: 6/6 handled correctly
+
+Issues found:
+  1. employee_hr topic — SMALL_TALK grounding rejection (setVariables pattern)
+
+Would you like to:
+  a) Fix the issues and re-test
+  b) Review the generated .agent file
+  c) Add more test utterances
+  d) Proceed to deployment as-is
+  e) Start over with different requirements
+```
+
+**Always ask.** Never auto-proceed to deployment. The user should explicitly choose to deploy.
+
+If the user says "fix and re-test" (option a), apply the fix and re-run Phase 6 — up to 3 iterations.
+
+If the user wants to add test utterances (option c), ask them what scenarios they want to test, then run those through preview.
+
 ### Phase 7: Deploy
 
-Once preview confirms the agent works correctly:
+Once the user explicitly approves and preview confirms the agent works correctly:
 
 #### Step 1: Check action targets exist
 
@@ -566,13 +650,9 @@ reaching the topic with the actual actions.
 
 A `start_agent` with only a name and no `reasoning:` block will compile but produce an agent that cannot route — all utterances land in `DefaultTopic` with zero actions.
 
-**CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both `start_agent` and `topic` blocks create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. This error leaves orphaned metadata that blocks all future publishes until the name collision is fixed. Always use `topic_selector` to avoid this.
+**CRITICAL naming rule:** The `start_agent` name MUST differ from all `topic` names. Both create `GenAiPluginDefinition` metadata records — if they share a name, publish fails with `duplicate value found: GenAiPluginDefinition`. Always use `topic_selector` for `start_agent`.
 
-| Pattern | WRONG | CORRECT |
-|---------|-------|---------|
-| Hub-and-spoke | `start_agent router:` + `topic router:` (collision!) | `start_agent topic_selector:` + `topic main_menu:` |
-| Verification gate | `start_agent entry:` + `topic entry:` (collision!) | `start_agent topic_selector:` + `topic welcome:` |
-| Linear | `start_agent greeting:` + `topic greeting:` (collision!) | `start_agent topic_selector:` + `topic greeting:` |
+**CRITICAL: Do NOT create a separate routing/menu topic** (e.g. `main_menu`, `central_hub`). In hub-and-spoke, `start_agent` IS the central router. Topics that need to "go back" should transition to `@topic.topic_selector`. A separate routing topic duplicates the router, adds latency, and confuses the platform.
 
 ### 3.9 Topic Block
 
@@ -611,7 +691,7 @@ topic order_support:
 				set @variables.order_status = @outputs.status
 
 			back_to_menu: @utils.transition to @topic.topic_selector
-				description: "Return to main menu"
+				description: "Route to a different topic"
 ```
 
 ### 3.10 Two-Level Action System (CRITICAL)
@@ -977,11 +1057,13 @@ topic home_search:
 			inputs:
 				city: string
 					description: "City to search"
-				max_price: number
+				max_price: object
 					description: "Maximum price"
+					complex_data_type_name: "lightning__numberType"
 			outputs:
-				results_count: number
+				results_count: object
 					description: "Number of homes found"
+					complex_data_type_name: "lightning__numberType"
 					is_displayable: True
 
 	reasoning:
@@ -1264,11 +1346,13 @@ topic order_support:
 		instructions: ->
 			| Help the customer with their order.
 		actions:
-			back: @utils.transition to @topic.general_support
-				description: "Route to general support"
+			lookup: @actions.get_order
+				description: "Look up order"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 ```
 
-> **Routing lives in `start_agent`** — put all transition actions directly in `start_agent topic_selector:`. Do NOT create a separate routing-only topic — that adds an extra LLM hop (~3-5s latency) with no benefit.
+> **Routing lives in `start_agent`** — put all transition actions directly in `start_agent topic_selector:`. Do NOT create a separate routing-only topic (e.g. `main_menu`, `central_hub`) — that duplicates the router, adds an extra LLM hop (~3-5s latency), and confuses the platform about where to route returning users. Topics that need a "go back" action should transition to `@topic.topic_selector` (the start_agent).
 
 ### Verification Gate
 
@@ -1463,24 +1547,6 @@ start_agent topic_selector:
 			to_general: @utils.transition to @topic.general_support
 				description: "General questions and support"
 
-topic main_menu:
-	label: "Main Menu"
-	description: "Re-route returning customers to the right topic"
-	reasoning:
-		instructions: |
-			The customer wants to do something else.
-			Ask what they need and route them accordingly.
-			- Order status or tracking → use to_orders
-			- Returns or refunds → use to_returns
-			- General questions → use to_general
-		actions:
-			to_orders: @utils.transition to @topic.order_support
-				description: "Check order status or tracking"
-			to_returns: @utils.transition to @topic.return_support
-				description: "Process a return or refund"
-			to_general: @utils.transition to @topic.general_support
-				description: "General questions and support"
-
 topic order_support:
 	label: "Order Support"
 	description: "Handle order status and tracking inquiries"
@@ -1514,8 +1580,8 @@ topic order_support:
 				set @variables.order_id = @outputs.order_id
 				set @variables.order_status = @outputs.status
 
-			back: @utils.transition to @topic.main_menu
-				description: "Return to main menu"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 
 topic return_support:
 	label: "Return Support"
@@ -1547,8 +1613,8 @@ topic return_support:
 				with reason = ...
 				set @variables.case_id = @outputs.return_id
 
-			back: @utils.transition to @topic.main_menu
-				description: "Return to main menu"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 
 	after_reasoning:
 		if @variables.case_id != "":
@@ -1564,8 +1630,8 @@ topic general_support:
 		actions:
 			escalate_now: @utils.escalate
 				description: "Transfer to human agent"
-			back: @utils.transition to @topic.main_menu
-				description: "Return to main menu"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 
 topic confirmation:
 	label: "Confirmation"
@@ -1575,7 +1641,7 @@ topic confirmation:
 			| Your request has been processed. Reference: {!@variables.case_id}
 			| Is there anything else I can help with?
 		actions:
-			new_request: @utils.transition to @topic.main_menu
+			new_request: @utils.transition to @topic.topic_selector
 				description: "Start a new request"
 			end_chat: @actions.end_conversation
 				description: "End the conversation"

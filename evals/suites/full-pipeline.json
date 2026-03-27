@@ -1,0 +1,163 @@
+{
+  "name": "Full Pipeline Tests",
+  "version": "1.0",
+  "surface": "agent",
+  "description": "End-to-end pipeline tests: author through optimize, exercising multiple ADLC skills",
+  "tests": [
+    {
+      "id": "simple-faq-deploy",
+      "prompt": "Create a simple FAQ bot for a software company called TechFlow that answers questions about product features, pricing plans, and getting started. The agent should identify as an AI, handle 3 topics (product info, pricing, getting started), and escalate billing disputes to a human. Use Salesforce Flows for backend: Get_Product_Info (flow://TechFlow_GetProductInfo), Get_Pricing (flow://TechFlow_GetPricing).",
+      "pipeline": ["author", "discover", "scaffold", "deploy"],
+      "org": "demo-org-1",
+      "tags": ["faq-bot", "deploy-pipeline", "org-dependent", "easy"],
+      "assertions": [
+        "[pipeline:artifact-chain] Each pipeline step consumed outputs from the previous step",
+        "[pipeline:skill-routing] Correct skill was invoked for each pipeline step"
+      ],
+      "skill_assertions": {
+        "author": [
+          "[safety:ai-disclosure] System instructions clearly state this is an AI assistant",
+          "[structure:system-messages] System block has welcome and error messages",
+          "[fsm:hub-and-spoke] Uses hub-and-spoke pattern with central router",
+          "[fsm:no-orphan-topics] All topics reachable from start_agent"
+        ],
+        "discover": [
+          "[discover:missing-identified] Missing flow targets identified for scaffolding"
+        ],
+        "scaffold": [
+          "[scaffold:compiles] Generated flow XML and apex stubs pass syntax check"
+        ],
+        "deploy": [
+          "[deploy:clean-deploy] All components deployed without errors",
+          "[deploy:component-count] Expected number of components deployed"
+        ]
+      }
+    },
+    {
+      "id": "hotel-concierge-e2e",
+      "prompt": "Build a hotel concierge agent with 5 topics: room service ordering, spa booking, local attractions, checkout assistance, and complaints/escalation. The agent serves guests at a luxury hotel called The Grand Azure. It should verify the guest's room number before taking orders. Use these actions: Order_Room_Service (flow://Hotel_OrderRoomService with items as text and room_number as text), Book_Spa (flow://Hotel_BookSpa with service_type and preferred_time as text), Get_Attractions (apex://ConciergeService.getLocalAttractions with category as text), Process_Checkout (apex://ConciergeService.processCheckout with room_number as text and feedback as text). Room number is an integer type for the verification check.",
+      "pipeline": ["author", "discover", "scaffold", "deploy", "test"],
+      "org": "epson",
+      "tags": ["full-pipeline", "org-dependent", "multi-topic", "hard", "flow-actions", "apex-actions"],
+      "assertions": [
+        "[pipeline:artifact-chain] Each pipeline step consumed outputs from the previous step",
+        "[pipeline:skill-routing] Correct skill was invoked for each pipeline step"
+      ],
+      "skill_assertions": {
+        "author": [
+          "[fsm:hub-and-spoke] Uses hub-and-spoke with central router for 5 service topics",
+          "[fsm:verification-gate] Room number verification before room service and checkout",
+          "[fsm:no-dead-ends] All topics have exit paths back to router or escalation",
+          "[actions:level1-definition] Defines actions with correct flow:// and apex:// targets",
+          "[actions:numeric-types] Room number uses object type with complex_data_type_name",
+          "[safety:ai-disclosure] Identifies as AI concierge, not hotel staff"
+        ],
+        "discover": [
+          "[discover:missing-identified] Missing targets identified for all 4 actions"
+        ],
+        "scaffold": [
+          "[scaffold:compiles] Generated stubs pass syntax check",
+          "[scaffold:field-mapping] Flow and Apex stubs have correct I/O parameter mappings"
+        ],
+        "deploy": [
+          "[deploy:clean-deploy] All components deployed without errors",
+          "[deploy:publish-success] Agent bundle published successfully"
+        ],
+        "test": [
+          "[test:smoke-pass] Basic utterances pass agent preview",
+          "[test:conversation-quality] Preview conversations show correct topic routing"
+        ]
+      }
+    },
+    {
+      "id": "target-store-full-cycle",
+      "spec": "specs/target-store-assistant.md",
+      "prompt": "Build a Target store assistant with 4 topics: product search, inventory check, order pickup scheduling, and employee HR (schedule viewing, PTO). The agent serves both customers and store associates. Customer-facing topics handle product questions and orders. The HR topic requires employee ID verification before showing schedules. Use hub-and-spoke routing. Actions: Search_Products (apex://TargetService.searchProducts with query as text, category as text), Check_Inventory (apex://TargetService.checkInventory with product_id as text, store_id as text), Schedule_Pickup (flow://Target_SchedulePickup with order_number as text, pickup_date as text, pickup_time as text), Set_Associate (apex://utils.setVariables with employee_id as text), View_Schedule (apex://TargetHR.viewSchedule with employee_id as text, week_offset as integer), Submit_PTO (apex://TargetHR.submitPTO with employee_id as text, start_date as text, end_date as text, reason as text). Use after_reasoning in the pickup topic to confirm scheduling after collecting all fields. Use available when guards on HR actions gated by employee_id being set.",
+      "pipeline": ["author", "discover", "scaffold", "deploy", "test", "optimize"],
+      "org": "epson",
+      "tags": ["full-pipeline", "org-dependent", "hard", "after-reasoning", "multi-topic", "apex-actions", "flow-actions", "scenario-based", "grounding-sensitive"],
+      "assertions": [
+        "[pipeline:artifact-chain] Each pipeline step consumed outputs from the previous step",
+        "[pipeline:skill-routing] Correct skill was invoked for each pipeline step",
+        "[pipeline:error-recovery] Pipeline recovered gracefully from any intermediate errors",
+        "[grounding:grounded] All utterances receive GROUNDED responses (not SMALL_TALK)",
+        "[outcome:task-completion] All scenarios complete the user's intended task",
+        "[conversation:proactive-guidance] Agent suggests next steps after completing tasks"
+      ],
+      "scenarios": [
+        {
+          "name": "Product search — happy path",
+          "turns": [
+            {"user": "I'm looking for a Nintendo Switch", "expect_topic": "product_search", "expect_action": "search_products"}
+          ],
+          "expected_outcome": "task-completed",
+          "max_turns": 2
+        },
+        {
+          "name": "Inventory check — specific store",
+          "turns": [
+            {"user": "Is the PS5 in stock at store 1234?", "expect_topic": "inventory_check", "expect_action": "check_inventory", "expect_params": {"store_id": "1234"}}
+          ],
+          "expected_outcome": "task-completed",
+          "max_turns": 2
+        },
+        {
+          "name": "Order pickup — multi-turn slot fill",
+          "turns": [
+            {"user": "I need to schedule a pickup for order ORD-9876", "expect_topic": "order_pickup"},
+            {"user": "Tomorrow at 3pm", "expect_action": "schedule_pickup"}
+          ],
+          "expected_outcome": "task-completed",
+          "max_turns": 4
+        },
+        {
+          "name": "Employee HR — verification then schedule",
+          "turns": [
+            {"user": "I'm employee E5521, can I see my schedule?", "expect_topic": "employee_hr", "expect_action": "set_associate"},
+            {"user": "Show me this week", "expect_action": "view_schedule"}
+          ],
+          "expected_outcome": "task-completed",
+          "max_turns": 4
+        },
+        {
+          "name": "Edge case — ambiguous intent",
+          "turns": [
+            {"user": "I need help", "expect_behavior": "asks-clarifying-question"}
+          ],
+          "expected_outcome": "clarification-given"
+        }
+      ],
+      "skill_assertions": {
+        "author": [
+          "[fsm:hub-and-spoke] Hub-and-spoke with 4 specialized topics",
+          "[fsm:verification-gate] Employee ID verification before HR actions",
+          "[fsm:router-instructions] start_agent routes only, does not answer directly",
+          "[actions:available-when] HR actions gated by employee_id variable",
+          "[actions:slot-filling] Uses ... for collecting pickup details conversationally",
+          "[logic:after-reasoning] Uses after_reasoning for deterministic pickup scheduling",
+          "[safety:ai-disclosure] Identifies as AI store assistant"
+        ],
+        "discover": [
+          "[discover:missing-identified] All 6 action targets identified as missing"
+        ],
+        "scaffold": [
+          "[scaffold:compiles] All generated stubs compile",
+          "[scaffold:test-coverage] Generated test classes for Apex targets"
+        ],
+        "deploy": [
+          "[deploy:clean-deploy] All components deployed without errors",
+          "[deploy:publish-success] Agent bundle published successfully",
+          "[deploy:activate-success] Agent activated in the org"
+        ],
+        "test": [
+          "[test:smoke-pass] Basic utterances pass agent preview",
+          "[test:utterance-coverage] Utterances cover all 4 topics"
+        ],
+        "optimize": [
+          "[optimize:stdm-analyzed] STDM traces queried from Data Cloud",
+          "[optimize:issue-identified] Issues identified from session analysis"
+        ]
+      }
+    }
+  ]
+}

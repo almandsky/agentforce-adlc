@@ -65,7 +65,22 @@ Identity & Transparency, User Safety, Data Handling, Content Safety, Fairness,
 Deception & Manipulation, and Scope & Boundaries.
 
 **If any BLOCK finding exists, STOP deployment and report the findings to the user.**
-WARN findings should be reported but do not block deployment.
+
+WARN findings MUST be reported with clear descriptions. If there are 2+ WARN findings,
+ask the user to explicitly acknowledge them before proceeding. Present a summary:
+
+```
+Safety Review: 0 BLOCK, 3 WARN, 1 INFO
+
+WARN findings:
+1. [Identity] No explicit AI disclosure in system instructions
+2. [Scope] No escalation path for complex cases
+3. [Data] Agent collects email without stating purpose
+
+Proceed with deployment? These warnings will be logged. (yes/no)
+```
+
+Do NOT silently skip warnings — users must see and acknowledge them.
 
 This is especially important for agents being deployed to production orgs — once published
 and activated, a harmful agent is live and interacting with real users.

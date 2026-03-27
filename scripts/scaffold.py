@@ -58,6 +58,20 @@ _DOMAIN_PATTERN = re.compile(
 )
 
 
+def _sanitize_apex_class_name(target_name: str) -> str:
+    """Convert an apex target name to a valid Salesforce Apex class name.
+
+    Apex class names cannot contain dots. For targets like
+    'TargetService.searchProducts', convert to 'TargetServiceSearchProducts'.
+    For 'utils.setVariables', convert to 'UtilsSetVariables'.
+    """
+    if "." not in target_name:
+        return target_name
+    parts = target_name.split(".")
+    # PascalCase each part and join
+    return "".join(p[0].upper() + p[1:] if p else "" for p in parts)
+
+
 def classify_action(action_def: dict) -> str:
     """Classify an action to determine scaffold strategy.
 
@@ -146,7 +160,7 @@ def scaffold(
             _scaffold_flow(target, output_dir, actions, target_org, result)
         elif target.target_type == "apex":
             _scaffold_apex(target, output_dir, actions, target_org, result)
-            apex_classes.append(target.target_name)
+            apex_classes.append(_sanitize_apex_class_name(target.target_name))
         elif target.target_type == "retriever":
             if target.target_name not in seen_retriever_warnings:
                 seen_retriever_warnings.add(target.target_name)
@@ -217,6 +231,9 @@ def _scaffold_apex(
     classes_dir = output_dir / "classes"
     classes_dir.mkdir(parents=True, exist_ok=True)
 
+    # Sanitize class name — dots are invalid in Apex class names
+    cls_name = _sanitize_apex_class_name(target.target_name)
+
     action_def = actions.get(target.target_name, {})
     inputs = action_def.get("inputs", [])
     outputs = action_def.get("outputs", [])
@@ -229,25 +246,25 @@ def _scaffold_apex(
     if is_callout:
         domains = _extract_domains(description_text)
         endpoint = f"https://{domains[0]}" if domains else "https://example.com/api"
-        cls_code = generate_callout_apex_class(target.target_name, inputs, outputs, endpoint, description=description_text)
+        cls_code = generate_callout_apex_class(cls_name, inputs, outputs, endpoint, description=description_text)
     elif classification == "soql":
-        cls_code = generate_soql_apex_class(target.target_name, inputs, outputs, description=description_text)
+        cls_code = generate_soql_apex_class(cls_name, inputs, outputs, description=description_text)
     else:
-        cls_code = generate_apex_class(target.target_name, inputs, outputs, description=description_text)
+        cls_code = generate_apex_class(cls_name, inputs, outputs, description=description_text)
 
-    cls_path = classes_dir / f"{target.target_name}.cls"
+    cls_path = classes_dir / f"{cls_name}.cls"
     cls_path.write_text(cls_code, encoding="utf-8")
     result.files_created.append(cls_path)
 
     # Meta XML
     meta_xml = generate_apex_meta_xml()
-    meta_path = classes_dir / f"{target.target_name}.cls-meta.xml"
+    meta_path = classes_dir / f"{cls_name}.cls-meta.xml"
     meta_path.write_text(meta_xml, encoding="utf-8")
     result.files_created.append(meta_path)
 
     # Test class — use the dedicated generator
-    test_name = f"{target.target_name}Test"
-    test_code = generate_apex_test_class(target.target_name, inputs, outputs, is_callout=is_callout)
+    test_name = f"{cls_name}Test"
+    test_code = generate_apex_test_class(cls_name, inputs, outputs, is_callout=is_callout)
     test_path = classes_dir / f"{test_name}.cls"
     test_path.write_text(test_code, encoding="utf-8")
     result.files_created.append(test_path)
@@ -266,7 +283,7 @@ def _scaffold_apex(
 
         # Custom Metadata for auth if needed
         if _needs_auth_metadata(description_text):
-            _scaffold_custom_metadata(target.target_name, output_dir, result)
+            _scaffold_custom_metadata(cls_name, output_dir, result)
 
 
 def _scaffold_remote_site(

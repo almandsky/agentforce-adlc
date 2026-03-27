@@ -382,8 +382,9 @@ actions:
             description: "Product SKU"
             is_required: True
       outputs:
-         quantity_available: number
+         quantity_available: object
             description: "Available stock quantity"
+            complex_data_type_name: "lightning__integerType"
             is_displayable: True
          warehouse_location: string
             description: "Warehouse where stock is located"

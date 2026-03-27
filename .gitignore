@@ -34,5 +34,8 @@ package-lock.json
 # Claude
 .claude/
 
+# Eval results
+evals/results/
+
 # Salesforce DX
 force-app/

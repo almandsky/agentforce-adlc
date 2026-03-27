@@ -92,6 +92,12 @@ MEDIUM_PATTERNS = [
         "message": "Old API version detected (< v56)",
         "suggestion": "Use API v66+ for latest features",
     },
+    # Warn when deploying or publishing to production-named orgs
+    {
+        "pattern": r"sf\s+(?:agent\s+publish|project\s+deploy)\s+.*(?:--target-org|-o)\s+(?:prod|production|live)\b",
+        "message": "Deploying to production-named org — verify this is intentional",
+        "suggestion": "Use a sandbox or scratch org for development. If this is production, ensure safety review has been completed.",
+    },
 ]
 
 

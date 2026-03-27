@@ -1532,6 +1532,36 @@ jq -r '.plan[] | select(.type == "VariableUpdateStep") | .data.variable_updates[
 
 If new issues surface in the post-fix Phase 1 run, repeat the cycle from Phase 1.4.
 
+### 3.7b Safety Re-Verification (Required)
+
+After applying fixes and verifying behavioral correctness, re-run safety review on the
+modified `.agent` file. Optimization fixes can inadvertently introduce safety regressions:
+
+- Relaxing `available when` guards may expose actions that should be gated
+- Expanding topic descriptions may cause the agent to handle out-of-scope requests
+- Changing instructions to be more permissive may weaken guardrails
+- Adding literal instructions with tool names may bypass safety boundaries
+
+**Run the safety review:**
+
+Read the modified `.agent` file and evaluate against all 7 safety categories from
+`/adlc-safety` (Identity, User Safety, Data Handling, Content Safety, Fairness,
+Deception, Scope). Focus especially on:
+
+1. **Scope boundaries** — Did the fix widen the agent's scope beyond what's appropriate?
+2. **Guard conditions** — Did relaxing `available when` expose sensitive actions?
+3. **Instruction safety** — Do new/modified instructions maintain appropriate guardrails?
+4. **Escalation paths** — Are escalation paths still intact after topic restructuring?
+
+**If any new BLOCK finding is introduced by the fix:**
+- Revert the specific change that caused it
+- Find an alternative fix that doesn't compromise safety
+- Do NOT deploy an agent with new safety violations
+
+**If new WARN findings appear:**
+- Report them to the user alongside the optimization results
+- Note which specific edit introduced the warning
+
 ### 3.8 Update Testing Center test cases (cross-skill with adlc-test)
 
 After fixing issues, create or update test cases in **Testing Center format** so they can be deployed directly to the org via `sf agent test create`. This ensures regressions are caught automatically.

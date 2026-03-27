@@ -18,6 +18,7 @@ Checks:
 14. Linked variable source using `$Context` instead of `@MessagingSession`/`@MessagingEndUser`
 15. Invalid `connection:` block (must be `connection messaging:`)
 16. Nested `description:` under slot-fill `...` token
+17. Redundant routing/menu topics that duplicate start_agent
 
 Safety/content review is handled by the /adlc-safety skill (LLM-driven, not regex).
 
@@ -79,6 +80,7 @@ class AgentScriptValidator:
         self._check_linked_var_source()
         self._check_connection_block()
         self._check_slot_fill_description()
+        self._check_redundant_routing_topic()
         self._auto_resolve_placeholder()
 
         return {
@@ -427,6 +429,20 @@ class AgentScriptValidator:
                         break
                     if next_line and not next_line.startswith("#"):
                         break
+
+    def _check_redundant_routing_topic(self):
+        """Check for redundant routing/menu topics that duplicate start_agent."""
+        redundant_names = {"main_menu", "central_hub", "hub", "router", "routing",
+                           "menu", "navigation", "dispatcher"}
+        for i, line in enumerate(self.lines, 1):
+            match = re.match(r'^topic\s+(\w+)\s*:', line)
+            if match:
+                topic_name = match.group(1).lower()
+                if topic_name in redundant_names:
+                    self.warnings.append((i, "WARN",
+                        f"Topic '{match.group(1)}' looks like a redundant router (line {i}) — "
+                        f"in hub-and-spoke, start_agent IS the router. "
+                        f"Remove this topic and have spokes transition to @topic.topic_selector instead."))
 
     def _auto_resolve_placeholder(self):
         """Auto-resolve REPLACE_WITH_EINSTEIN_AGENT_USER placeholder."""

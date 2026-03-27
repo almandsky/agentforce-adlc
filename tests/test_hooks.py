@@ -151,6 +151,19 @@ class TestAgentValidator:
         errors = [e[2] for e in result["errors"]]
         assert any("Slot-fill" in e for e in errors)
 
+    def test_redundant_routing_topic(self):
+        """Redundant routing topics like main_menu should be warned."""
+        content = (
+            "system:\n\tinstructions: \"Hello\"\n"
+            "config:\n\tdeveloper_name: \"TestAgent\"\n\tdefault_agent_user: \"u@t.com\"\n"
+            "start_agent topic_selector:\n\tdescription: \"Router\"\n"
+            "topic main_menu:\n\tdescription: \"Central hub\"\n"
+            "topic order_support:\n\tdescription: \"Orders\"\n"
+        )
+        result = self._validate(content)
+        warnings = [w[2] for w in result["warnings"]]
+        assert any("redundant router" in w for w in warnings)
+
     def test_agent_type_rejected(self):
         """agent_type in config should be flagged as an error — server crashes with null pointer."""
         content = (

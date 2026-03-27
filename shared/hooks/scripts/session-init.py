@@ -40,7 +40,34 @@ def check_sf_cli() -> tuple[bool, str]:
 
 
 def check_connected_org() -> tuple[bool, str]:
-    """Check if there's a default connected org."""
+    """Check connected orgs and list them."""
+    try:
+        result = subprocess.run(
+            ["sf", "org", "list", "--json"],
+            capture_output=True, text=True, timeout=15,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            orgs = data.get("result", {})
+            # Collect all org types
+            all_orgs = []
+            for org_type in ("nonScratchOrgs", "scratchOrgs", "sandboxes", "devHubs", "other"):
+                for org in orgs.get(org_type, []):
+                    alias = org.get("alias", "")
+                    username = org.get("username", "unknown")
+                    is_default = org.get("isDefaultUsername", False)
+                    org_label = f"{alias or username}"
+                    if is_default:
+                        org_label += " (default)"
+                    all_orgs.append(org_label)
+            if all_orgs:
+                org_list = ", ".join(all_orgs[:5])
+                if len(all_orgs) > 5:
+                    org_list += f" (+{len(all_orgs) - 5} more)"
+                return True, f"Connected orgs: {org_list}"
+    except Exception:
+        pass
+    # Fallback to single org display
     try:
         result = subprocess.run(
             ["sf", "org", "display", "--json"],
@@ -52,7 +79,7 @@ def check_connected_org() -> tuple[bool, str]:
             return True, f"Connected org: {username}"
     except Exception:
         pass
-    return False, "No default org connected. Run: sf org login web"
+    return False, "No orgs connected. Run: sf org login web --alias <name>"
 
 
 def check_project_json() -> tuple[bool, str]:

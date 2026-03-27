@@ -89,6 +89,29 @@ def check_project_json() -> tuple[bool, str]:
     return False, "sfdx-project.json not found in current directory"
 
 
+def detect_adlc_project() -> tuple[bool, str]:
+    """Detect if this is an ADLC project and hint at available skills."""
+    indicators = []
+    if Path("sfdx-project.json").exists():
+        indicators.append("sfdx-project.json")
+    bundles_dir = Path("force-app/main/default/aiAuthoringBundles")
+    if bundles_dir.exists():
+        agents = [d.name for d in bundles_dir.iterdir() if d.is_dir()]
+        indicators.append(f"aiAuthoringBundles ({len(agents)} agent(s))")
+    agent_files = list(Path(".").rglob("*.agent"))
+    if agent_files and not bundles_dir.exists():
+        indicators.append(f"{len(agent_files)} .agent file(s)")
+
+    if indicators:
+        hint = (
+            f"ADLC project detected ({', '.join(indicators)}). "
+            "Use /adlc-author to build agents, /adlc-test to test, "
+            "/adlc-deploy to deploy. All agent requests should use ADLC skills."
+        )
+        return True, hint
+    return False, ""
+
+
 def main():
     """Run preflight checks and report status."""
     checks = [
@@ -104,6 +127,11 @@ def main():
         messages.append(f"  [{status}] {name}: {msg}")
         if not ok:
             all_ok = False
+
+    # Add ADLC project detection hint
+    is_adlc, adlc_hint = detect_adlc_project()
+    if is_adlc:
+        messages.append(f"  [HINT] {adlc_hint}")
 
     context = "ADLC Preflight Checks:\n" + "\n".join(messages)
     if not all_ok:

@@ -152,6 +152,20 @@ Store the selected org alias for all subsequent phases.
 
 ### Phase 2: Setup
 
+**Step 0: Ensure `sfdx-project.json` exists.**
+The CLI validator (`sf agent validate`) requires a valid SFDX project. Check for `sfdx-project.json`
+in the project root. If it doesn't exist, create a minimal one:
+
+```json
+{
+  "packageDirectories": [{"path": "force-app", "default": true}],
+  "namespace": "",
+  "sfdcLoginUrl": "https://login.salesforce.com",
+  "sourceApiVersion": "66.0"
+}
+```
+
+**Step 1: Query the Einstein Agent User.**
 Using the org selected in Phase 1, query for the Einstein Agent User. This value is REQUIRED
 for the `default_agent_user` field in the `config:` block:
 
@@ -173,7 +187,7 @@ ensures correct parameter names.
 sf data query -q "SELECT ApiName, IsActive, Description FROM FlowDefinitionView WHERE IsActive = true AND ProcessType = 'AutoLaunchedFlow'" -o <org> --json
 
 # For each candidate flow, check its actual input/output parameters
-sf api request rest "/services/data/v63.0/actions/custom/flow/<FlowApiName>" -o <org>
+sf api request rest "/services/data/v66.0/actions/custom/flow/<FlowApiName>" -o <org>
 ```
 
 NOTE: `FlowDefinitionView` does NOT have a `Status` column. Use `IsActive` (boolean):
@@ -226,6 +240,37 @@ CRITICAL: Do NOT add `<developerName>`, `<masterLabel>`, `<description>`, `<targ
 other fields. The publish command (`sf agent publish authoring-bundle`) manages these
 automatically. Extra fields cause "Required fields are missing: [BundleType]" deploy errors
 because the Metadata API deploy step fails when unexpected fields are present.
+
+### Phase 3b: Post-Generation Check — setVariables Sequential Collection
+
+**CRITICAL:** If the generated agent uses `@utils.setVariables` actions with `available when`
+guards to collect fields in a specific order (e.g., first name → last name → email), the
+topic instructions MUST explicitly name each action and tell the LLM to invoke it.
+
+**WRONG** — passive/procedural instructions that ask the user:
+```
+instructions: ->
+	| Please provide your first name.
+```
+The LLM interprets this as "ask the user" and won't call the setVariables action even when
+the user already provided the value in their message.
+
+**CORRECT** — literal instructions with explicit action names:
+```
+instructions: |
+	Collect information in this exact order. For each step, use the
+	corresponding action to capture the value BEFORE moving to the next step.
+	Step 1: Use set_first_name to capture the customer's first name.
+	Step 2: Use set_last_name to capture the customer's last name.
+	Step 3: Use set_email to capture the customer's email address.
+	CRITICAL: Always invoke the setVariables action to save data. Do NOT
+	just ask — capture it with the tool immediately.
+```
+
+**Auto-check after generation:** Before moving to Phase 4, scan the generated `.agent` file.
+If any topic has `@utils.setVariables` actions with `available when` guards, verify the
+instructions use literal mode (`|`) with explicit action-invocation directives. If they use
+procedural mode (`->`) with passive phrasing, fix them before validating.
 
 ### Phase 4: Validate
 

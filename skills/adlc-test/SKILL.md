@@ -497,6 +497,20 @@ testCases:
 - For multi-turn workflows, either: (1) omit `expectedActions` and rely on `expectedOutcome`, or (2) use `conversationHistory` to simulate prior turns.
 - For guardrail tests (off-topic), omit `expectedTopic` and use `expectedOutcome` only -- the agent correctly stays in `entry` which has no matching topic assertion. NOTE: The generated XML still includes an empty `topic_assertion` expectation, which will return `FAILURE` with score=0. This is expected and harmless — only check the `output_validation` result for guardrail tests.
 
+**IMPORTANT — Parsing results for guardrail/safety tests:**
+When summarizing results, filter out `topic_assertion` FAILURE for tests that have no
+`expectedTopic` set. These are false negatives caused by the empty assertion XML. Count
+only `output_validation` results for these tests. Example:
+```python
+# When parsing results, skip topic_assertion for guardrail tests
+for tc in test_cases:
+    has_expected_topic = bool(tc.get('expectations', {}).get('expectedTopic'))
+    for r in tc.get('testResults', []):
+        if r['name'] == 'topic_assertion' and not has_expected_topic:
+            continue  # Skip — empty assertion always fails
+        # ... process other results
+```
+
 ### Phase 2: Deploy and Run Tests
 
 `sf agent test create` takes the YAML spec, converts it to `AiEvaluationDefinition` metadata XML, and deploys it to the org. The XML is written to `force-app/main/default/aiEvaluationDefinitions/` as part of the SFDX project.

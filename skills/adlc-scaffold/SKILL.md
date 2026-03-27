@@ -371,6 +371,29 @@ Generated flows are in Draft status. Before activation:
 - Add decision elements for conditional logic
 - Set up logging/debugging as needed
 
+**CRITICAL — Flow XML Element Ordering:**
+When adding business logic to scaffolded flows (e.g., adding `<recordLookups>`,
+`<recordCreates>`, `<decisions>`), all elements of the same type MUST be grouped together.
+The Metadata API rejects Flow XML where elements of the same type are interleaved with
+other types. For example:
+
+```xml
+<!-- WRONG: recordCreates elements separated by other elements -->
+<recordCreates>...</recordCreates>   <!-- Contact -->
+<decisions>...</decisions>
+<recordCreates>...</recordCreates>   <!-- Case -->
+
+<!-- CORRECT: all recordCreates grouped together -->
+<recordCreates>...</recordCreates>   <!-- Contact -->
+<recordCreates>...</recordCreates>   <!-- Case -->
+<decisions>...</decisions>
+```
+
+Recommended element order in Flow XML:
+`apiVersion` → `description` → `label` → `variables` → `assignments` →
+`decisions` → `recordLookups` → `recordCreates` → `recordUpdates` →
+`recordDeletes` → `subflows` → `start` → `status` → `processType`
+
 ### Apex Best Practices
 
 Generated Apex classes need:

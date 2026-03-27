@@ -154,4 +154,4 @@ The HTML report is a single self-contained file with:
 
 ## Special Thanks
 
-- **Joe Shamon** — for driving the eval framework vision and pipeline design
+- [**Joe Shamon**](https://github.com/jsham042) — for his contribution to the evaluations of the ADLC skills

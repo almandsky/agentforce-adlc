@@ -261,7 +261,7 @@ Local preview traces show how the LLM prompt is assembled incrementally via `Var
 **Diagnosis**:
 1. Check the `ACTION_STEP` output field in the trace -- what did the action return?
 2. Compare output field names in the trace vs. the `set` clause:
-   - Trace output: `{"Status": "Active", "Name": "Acme"}`
+   - Trace output: `{"Status": "Active", "Name": "Sample"}`
    - Set clause: `set @variables.status = @outputs.status`  <-- case mismatch! Should be `@outputs.Status`
 3. Check the Flow/Apex -- is it returning values in the expected output variables?
 

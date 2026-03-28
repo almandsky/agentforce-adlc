@@ -216,7 +216,7 @@ The REST endpoint returns the exact input/output parameter schema:
 blocks. Do NOT guess parameter names.
 
 If no suitable existing targets are found, generate action definitions with descriptive
-target names (e.g., `flow://ATT_Check_Area_Outage`). These will need to be scaffolded
+target names (e.g., `flow://Check_Area_Outage`). These will need to be scaffolded
 by Section 17 (Scaffold) before deployment.
 
 ### Phase 3: Generate
@@ -637,7 +637,7 @@ config:
 **WARNING: Do NOT include `agent_type` in the `.agent` file.** The server crashes with a null pointer when `agent_type` is present (e.g. `agent_type: "AgentforceEmployeeAgent"`). Instead, set the agent type via Setup UI after publish. Always ask the user which type they want (see Phase 1) — the answer determines linked variables and connection block, but the `agent_type` field itself must be omitted from the file.
 
 CRITICAL: `developer_name` must exactly match the folder name under `aiAuthoringBundles/`.
-If the folder is `AcmeAgent`, the `developer_name` must be `"AcmeAgent"`.
+If the folder is `MyServiceAgent`, the `developer_name` must be `"MyServiceAgent"`.
 
 ### 3.3 Variables Block
 
@@ -716,7 +716,7 @@ The `instructions:` value can be a single-line string or a multi-line block usin
 ```
 system:
 	instructions: |
-		You are a customer service agent for Acme Corp.
+		You are a customer service agent.
 		Be professional, concise, and helpful.
 		Never disclose internal policies to customers.
 ```
@@ -1380,8 +1380,8 @@ conflict with the built-in escalation keyword.
 
 | Element | Convention | Example |
 |---------|-----------|---------|
-| Agent name | PascalCase or underscore-separated | `AcmeAgent`, `Acme_Agent` |
-| `developer_name` in config | Must match folder name exactly | `AcmeAgent` |
+| Agent name | PascalCase or underscore-separated | `MyServiceAgent`, `My_Service_Agent` |
+| `developer_name` in config | Must match folder name exactly | `MyServiceAgent` |
 | Topic names | snake_case | `order_support`, `identity_verification` |
 | Variable names | camelCase or snake_case (consistent) | `orderId`, `order_id` |
 | Action definition names (Level 1) | snake_case | `get_order_status`, `create_case` |

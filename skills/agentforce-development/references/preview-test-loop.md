@@ -256,13 +256,13 @@ This example shows the complete inner loop: test, analyze, fix, re-test.
 ```bash
 # Start session with authoring bundle
 SESSION_ID=$(sf agent preview start \
-  --authoring-bundle AcmeAgent \
+  --authoring-bundle MyServiceAgent \
   -o DevOrg --json 2>/dev/null | jq -r '.result.sessionId')
 
 # Send test utterance
 RESPONSE=$(sf agent preview send \
   --session-id "$SESSION_ID" \
-  --authoring-bundle AcmeAgent \
+  --authoring-bundle MyServiceAgent \
   --utterance "I want to return my order" \
   -o DevOrg --json 2>/dev/null)
 
@@ -278,7 +278,7 @@ echo "$RESPONSE" | jq '.result.messages[0].message'
 # End session and get traces
 TRACES=$(sf agent preview end \
   --session-id "$SESSION_ID" \
-  --authoring-bundle AcmeAgent -o DevOrg --json 2>/dev/null)
+  --authoring-bundle MyServiceAgent -o DevOrg --json 2>/dev/null)
 
 TRACES_PATH=$(echo "$TRACES" | jq -r '.result.tracesPath')
 
@@ -312,13 +312,13 @@ Use the Edit tool to update the `.agent` file.
 ```bash
 # New session (authoring bundle picks up the edited file)
 SESSION_ID=$(sf agent preview start \
-  --authoring-bundle AcmeAgent \
+  --authoring-bundle MyServiceAgent \
   -o DevOrg --json 2>/dev/null | jq -r '.result.sessionId')
 
 # Same utterance
 RESPONSE=$(sf agent preview send \
   --session-id "$SESSION_ID" \
-  --authoring-bundle AcmeAgent \
+  --authoring-bundle MyServiceAgent \
   --utterance "I want to return my order" \
   -o DevOrg --json 2>/dev/null)
 

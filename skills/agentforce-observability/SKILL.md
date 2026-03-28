@@ -619,7 +619,7 @@ Returns a JSON array of `SessionInsights` objects:
         "start_time": "...", "end_time": "...", "duration_ms": 10000,
         "request_summary": "I want help finding homes in San Jose.",
         "response_summary": "The agent provided details on three homes...",
-        "agent_api_name": "LennarAgent",
+        "agent_api_name": "MyServiceAgent",
         "agent_version": null,
         "quality_score": 5,
         "quality_reasoning": "The agent provided a detailed and helpful response..."
@@ -1744,7 +1744,7 @@ Contains the 5 quality score levels (1-5). Each tag has a numeric value.
 Defines tag categories per agent. Each agent gets its own tag definition (e.g. "Optimization Request Category").
 - `ssot__Id__c` -- Tag Definition ID
 - `ssot__Name__c` -- Display name (e.g. "Optimization Request Category")
-- `ssot__DeveloperName__c` -- API name (e.g. "AIE_Request_Category_LennarHomeSearch")
+- `ssot__DeveloperName__c` -- API name (e.g. "AIE_Request_Category_MyServiceAgent")
 - `ssot__DataType__c` -- Data type (e.g. "Text")
 - `ssot__EngineType__c` -- Engine that generates the tags
 - `ssot__Status__c` -- Definition status

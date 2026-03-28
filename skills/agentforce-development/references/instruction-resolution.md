@@ -331,13 +331,13 @@ reasoning:
 # WRONG -- Persona text duplicated in every topic
 reasoning:
    instructions: |
-      You are a friendly, professional customer service agent for Acme Corp.
+      You are a friendly, professional customer service agent.
       Help the customer with their order.
 
 # CORRECT -- Persona in system instructions, topic has operational instructions only
 system:
    instructions: |
-      You are a friendly, professional customer service agent for Acme Corp.
+      You are a friendly, professional customer service agent.
 
 topic order_support:
    reasoning:

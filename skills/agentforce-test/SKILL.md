@@ -1,8 +1,8 @@
 ---
-name: adlc-test
-description: Smoke test Agentforce agents using sf agent preview and batch testing
+name: agentforce-test
+description: Test Agentforce agents via preview, batch testing, and individual action execution (formerly /adlc-test, /adlc-run)
 allowed-tools: Bash Read Write Edit Glob Grep
-argument-hint: "<org-alias> --authoring-bundle <AgentName> [--utterances <file>]"
+argument-hint: "<org-alias> --authoring-bundle <AgentName> [--utterances <file>] | run <org> --target <flow://Name>"
 ---
 
 # ADLC Test
@@ -46,17 +46,17 @@ sf agent test run --api-name MySuite --wait 10 --result-format json -o <org-alia
 This skill supports two testing modes:
 
 - **Mode A: Ad-Hoc Preview Testing** -- Quick smoke tests during development using `sf agent preview`. No test suite deployment needed (org authentication still required). Best for iterative development and fix validation.
-- **Mode B: Testing Center Batch Testing** -- Persistent test suites deployed to the org via `sf agent test`. Best for regression suites, CI/CD, and cross-skill integration with adlc-optimize.
+- **Mode B: Testing Center Batch Testing** -- Persistent test suites deployed to the org via `sf agent test`. Best for regression suites, CI/CD, and cross-skill integration with /agentforce-observability.
 
 **When to use which:**
 
 | Scenario | Mode |
 |----------|------|
 | Quick smoke test during authoring | Mode A |
-| Validate a fix from adlc-optimize | Mode A |
+| Validate a fix from /agentforce-observability | Mode A |
 | Build a regression suite for CI/CD | Mode B |
 | Deploy tests to share with the team | Mode B |
-| adlc-optimize creates test cases | Mode B |
+| /agentforce-observability creates test cases | Mode B |
 
 ---
 
@@ -168,7 +168,7 @@ Compromised probes:
 - Display a prominent warning in the test report
 - Recommend specific fixes for each compromised probe
 - Flag the agent as not ready for deployment
-- Suggest running `/adlc-safety` for a full safety review
+- Suggest running Section 15 of /agentforce-development for a full safety review
 
 Example derivation from agent structure:
 ```yaml
@@ -693,7 +693,7 @@ topic order_support:
 ### Summary Report
 ```
 Agentforce Agent Test Report
-═══════════════════════════════════════════
+===========================================
 
 Agent: OrderManagementAgent
 Org: production
@@ -701,11 +701,11 @@ Test Cases: 6
 Duration: 45.2s
 
 Results:
-✓ Topic Routing: 5/6 passed (83.3%)
-✓ Action Invocation: 4/6 passed (66.7%)
-✓ Grounding: 6/6 passed (100%)
-✓ Safety: 6/6 passed (100%)
-⚠ Response Quality: 5/6 passed (83.3%)
+  Topic Routing: 5/6 passed (83.3%)
+  Action Invocation: 4/6 passed (66.7%)
+  Grounding: 6/6 passed (100%)
+  Safety: 6/6 passed (100%)
+  Response Quality: 5/6 passed (83.3%)
 
 Overall Score: 86.7%
 Status: PASSED WITH WARNINGS
@@ -714,19 +714,19 @@ Status: PASSED WITH WARNINGS
 ### Detailed Test Cases
 ```
 Test Case 1: "Where is my order?"
-├─ Expected Topic: order_mgmt
-├─ Actual Topic: order_mgmt ✓
-├─ Expected Action: get_order_status
-├─ Actual Action: get_order_status ✓
-├─ Grounding: GROUNDED ✓
-├─ Safety Score: 0.95 ✓
-└─ Response Quality: Relevant ✓
+  Expected Topic: order_mgmt
+  Actual Topic: order_mgmt (pass)
+  Expected Action: get_order_status
+  Actual Action: get_order_status (pass)
+  Grounding: GROUNDED (pass)
+  Safety Score: 0.95 (pass)
+  Response Quality: Relevant (pass)
 
 Test Case 2: "I want to return this"
-├─ Expected Topic: returns
-├─ Actual Topic: order_mgmt ✗ (misrouted)
-├─ Fix Applied: Expanded 'returns' topic description
-└─ Retry Result: Correctly routed ✓
+  Expected Topic: returns
+  Actual Topic: order_mgmt (fail - misrouted)
+  Fix Applied: Expanded 'returns' topic description
+  Retry Result: Correctly routed (pass)
 ```
 
 ## Coverage Analysis
@@ -790,13 +790,13 @@ jobs:
           path: test-results/
 ```
 
-## Cross-Skill Integration (adlc-optimize)
+## Cross-Skill Integration (/agentforce-observability)
 
-The `adlc-optimize` skill creates test cases during its Phase 3.7 after fixing issues found through STDM session analysis. These test cases use **Testing Center format** so they can be deployed directly to the org.
+The /agentforce-observability skill creates test cases during its Phase 3.7 after fixing issues found through STDM session analysis. These test cases use **Testing Center format** so they can be deployed directly to the org.
 
 ### Test Case Convention
 
-Test cases from adlc-optimize follow Testing Center YAML format:
+Test cases from /agentforce-observability follow Testing Center YAML format:
 
 ```yaml
 # tests/<AgentApiName>-regression.yaml
@@ -818,7 +818,7 @@ testCases:
 
 ### Deploying Cross-Skill Tests
 
-When adlc-optimize generates test cases, deploy them using Mode B:
+When /agentforce-observability generates test cases, deploy them using Mode B:
 
 ```bash
 # Deploy the regression test suite
@@ -842,11 +842,11 @@ sf agent test run \
 <project-root>/
   tests/
     <AgentApiName>-testing-center.yaml  # Full smoke suite (Mode B -- Testing Center)
-    <AgentApiName>-regression.yaml      # Regression tests from adlc-optimize (Mode B)
+    <AgentApiName>-regression.yaml      # Regression tests from /agentforce-observability (Mode B)
     <AgentApiName>-smoke.yaml           # Ad-hoc smoke tests (Mode A -- preview only)
 ```
 
-Both adlc-test and adlc-optimize write to the `tests/` directory using the agent's API name as prefix. Testing Center files (`-testing-center.yaml`, `-regression.yaml`) use the `name/subjectType/subjectName/testCases` format.
+Both this skill and /agentforce-observability write to the `tests/` directory using the agent's API name as prefix. Testing Center files (`-testing-center.yaml`, `-regression.yaml`) use the `name/subjectType/subjectName/testCases` format.
 
 ---
 
@@ -926,20 +926,252 @@ This skill uses `sf` CLI commands directly. Required tools:
 
 ---
 
-## Feedback
+## Action Execution
 
-**On test completion:** After presenting the test summary report, offer feedback naturally:
+Execute individual Agentforce actions directly against a Salesforce org for testing and debugging.
+
+### Safety Gate (Required)
+
+Before executing ANY action, perform these checks:
+
+#### 1. Org Safety Check
+Verify the target org is not a production org:
+```bash
+sf data query -q "SELECT IsSandbox FROM Organization" -o <org-alias> --json
+```
+If `IsSandbox` is `false`, display a prominent warning:
+```
+WARNING: Target org is a PRODUCTION org. Running actions against production
+can modify real data. Proceed with extreme caution.
+```
+Ask for explicit confirmation before proceeding on production orgs.
+
+#### 2. DML Safety Check
+If the action target is a Flow or Apex that performs write operations (CREATE, UPDATE, DELETE),
+warn the user and recommend using a sandbox or scratch org first.
+
+#### 3. Input Validation
+- Do NOT include real PII (SSN, credit card numbers, real email addresses) in test inputs
+- Use synthetic test data: `test@example.com`, `000-00-0000`, `4111111111111111`
+- If the user provides what appears to be real PII, warn them and suggest synthetic alternatives
+
+### Action Execution Overview
+
+This section enables direct invocation of Flow and Apex actions referenced in Agent Script files, bypassing the agent runtime. It's useful for testing action logic in isolation, debugging input/output mappings, and validating that actions work correctly before agent deployment.
+
+### Action Execution Usage
+
+#### Setup: Get Org Credentials
+
+```bash
+# Ensure org is authenticated
+sf org display -o <org-alias>
+
+# If not authenticated, login first
+sf org login web --alias <org-alias>
+
+# Extract credentials for API calls
+TOKEN=$(sf org display -o <org-alias> --json | jq -r '.result.accessToken')
+INSTANCE_URL=$(sf org display -o <org-alias> --json | jq -r '.result.instanceUrl')
+```
+
+#### Execute a Flow Action
+
+```bash
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow/Get_Order_Status" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": [{"orderId": "00190000023XXXX"}]}'
+```
+
+#### Execute an Apex Action
+
+```bash
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/apex/OrderProcessor" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": [{"orderId": "00190000023XXXX", "actionType": "cancel", "reason": "Customer request"}]}'
+```
+
+#### Execute with JSON Input File
+
+For complex inputs, write a JSON file and pass it to curl:
+
+```bash
+cat > /tmp/action-inputs.json << 'EOF'
+{
+  "inputs": [
+    {
+      "orderId": "00190000023XXXX",
+      "lineItems": [
+        {"productId": "01tXX0000008cXX", "quantity": 2, "discount": 0.1}
+      ]
+    }
+  ]
+}
+EOF
+
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow/Process_Return" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d @/tmp/action-inputs.json
+```
+
+#### Pretty-Print Response
+
+Pipe through `jq` for readable output:
+
+```bash
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow/Get_Order_Status" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": [{"orderId": "00190000023XXXX"}]}' | jq .
+```
+
+### Target Protocols
+
+#### Flow Actions (`flow://`)
+
+Executes an Autolaunched Flow via REST API:
 
 ```
-Testing complete! If any part of the testing process was unclear or you have ideas
-for better test coverage, you can run /adlc-feedback to share quick feedback.
+POST /services/data/v63.0/actions/custom/flow/{flowApiName}
 ```
 
-**On stuck/flaky tests:** If the user struggles with test failures that seem tool-related rather than agent-related:
+Example request body:
+```json
+{
+  "inputs": [
+    {
+      "orderId": "00190000023XXXX",
+      "includeDetails": true
+    }
+  ]
+}
+```
+
+Example response:
+```json
+{
+  "actionName": "Get_Order_Status",
+  "errors": [],
+  "isSuccess": true,
+  "outputValues": {
+    "orderStatus": "Shipped",
+    "trackingNumber": "1Z999AA10123456784",
+    "estimatedDelivery": "2024-03-15"
+  }
+}
+```
+
+#### Apex Actions (`apex://`)
+
+Executes an @InvocableMethod via REST API:
 
 ```
-It looks like this issue might be a gap in the testing skill itself.
-Want to run /adlc-feedback? I'll draft a quick note so the maintainers can look into it.
+POST /services/data/v63.0/actions/custom/apex/{className}
 ```
 
-Only mention feedback once per session. Do not repeat if the user ignores it.
+The Apex class must have exactly one method annotated with `@InvocableMethod`.
+
+Example request body:
+```json
+{
+  "inputs": [
+    {
+      "orderId": "00190000023XXXX",
+      "actionType": "cancel"
+    }
+  ]
+}
+```
+
+Example response:
+```json
+{
+  "actionName": "OrderProcessor",
+  "errors": [],
+  "isSuccess": true,
+  "outputValues": [
+    {
+      "success": true,
+      "message": "Order cancelled successfully",
+      "refundAmount": 299.99
+    }
+  ]
+}
+```
+
+### Integration Testing
+
+#### Test Flow Pattern
+
+1. **Prepare test data**:
+```bash
+RECORD_ID=$(sf data create record -s Account \
+  -v "Name='Test Account' Type='Customer'" \
+  -o myorg --json | jq -r '.result.id')
+```
+
+2. **Execute action**:
+```bash
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow/Update_Account" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"inputs\": [{\"accountId\": \"$RECORD_ID\", \"status\": \"Active\"}]}" | jq .
+```
+
+3. **Verify results**:
+```bash
+sf data query \
+  --query "SELECT Name, Status__c FROM Account WHERE Id = '$RECORD_ID'" \
+  -o myorg --json
+```
+
+4. **Clean up**:
+```bash
+sf data delete record -s Account -i $RECORD_ID -o myorg
+```
+
+### Action Execution Debugging
+
+#### Retrieve Apex Debug Logs
+
+After executing an Apex action, fetch the most recent debug log:
+
+```bash
+sf apex log get --number 1 -o <org-alias>
+```
+
+#### Inspect Available Actions
+
+List all available custom actions to verify deployment:
+
+```bash
+# List all Flow actions
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow" \
+  -H "Authorization: Bearer $TOKEN" | jq '.actions[].name'
+
+# List all Apex actions
+curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/apex" \
+  -H "Authorization: Bearer $TOKEN" | jq '.actions[].name'
+```
+
+### Action Execution Error Handling
+
+#### Common Errors
+
+| Error | Cause | Fix |
+|-------|-------|-----|
+| `NOT_FOUND` | Flow/Apex not found | Verify target name and deployment |
+| `INVALID_INPUT` | Input parameter mismatch | Check required inputs in Flow/Apex |
+| `INSUFFICIENT_ACCESS` | Permission issue | Verify user permissions |
+| `LIMIT_EXCEEDED` | Governor limit hit | Reduce batch size or optimize logic |
+| `INVALID_SESSION_ID` | Auth expired | Re-authenticate: `sf org login web` |
+
+#### Best Practices
+
+- Check `isSuccess` in the response before processing outputs
+- Verify ID format (15 or 18 characters) before sending
+- Use `jq` to extract specific fields from responses
+- Create and clean up test data to avoid polluting the org

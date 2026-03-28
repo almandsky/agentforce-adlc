@@ -68,6 +68,9 @@ SKILL_RUBRICS: dict[str, dict] = {
         }
     },
     # grounding — response grounding from preview trace analysis
+    # Note: grounding_rate accounts for expected SMALL_TALK on safety/scope/edge categories.
+    # SMALL_TALK is acceptable (not a failure) when the utterance is a safety probe,
+    # scope/guardrail test, or edge case where clarifying questions are valid.
     "grounding": {
         "dimensions": {
             "grounding_rate":   {"weight": 40, "labels": ["grounding:grounded"]},

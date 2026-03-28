@@ -1,11 +1,12 @@
 ---
-name: adlc-optimize
-description: Analyze Agentforce session traces from Data Cloud, reproduce issues with live preview, and improve the .agent file directly
+name: agentforce-observability
+description: Analyze Agentforce session traces from Data Cloud, reproduce issues with live preview, and improve the .agent file directly (formerly /adlc-optimize)
 allowed-tools: Bash Read Write Edit Glob Grep
 argument-hint: "<org-alias> [--agent-file <path>] [--session-id <id>] [--days <n>]"
 ---
 
-# Agentforce Optimize (ADLC)
+
+# Agentforce Observability
 
 Improve Agentforce agents using session trace data and live preview testing.
 
@@ -353,17 +354,17 @@ Methods:
 mkdir -p <project-root>/force-app/main/default/classes
 
 # Copy from the installed skill location
-cp skills/adlc-optimize/apex/AgentforceOptimizeService.cls \
+cp skills/agentforce-observability/apex/AgentforceOptimizeService.cls \
    <project-root>/force-app/main/default/classes/
-cp skills/adlc-optimize/apex/AgentforceOptimizeService.cls-meta.xml \
+cp skills/agentforce-observability/apex/AgentforceOptimizeService.cls-meta.xml \
    <project-root>/force-app/main/default/classes/
 ```
 
 If the skill is installed globally via the installer, use the installed path:
 ```bash
-cp ~/.claude/skills/adlc-optimize/apex/AgentforceOptimizeService.cls \
+cp ~/.claude/skills/agentforce-observability/apex/AgentforceOptimizeService.cls \
    <project-root>/force-app/main/default/classes/
-cp ~/.claude/skills/adlc-optimize/apex/AgentforceOptimizeService.cls-meta.xml \
+cp ~/.claude/skills/agentforce-observability/apex/AgentforceOptimizeService.cls-meta.xml \
    <project-root>/force-app/main/default/classes/
 ```
 
@@ -1148,7 +1149,7 @@ Action Target Availability:
 
 If any targets are missing or unregistered, present these options before proceeding:
 
-1. **Deploy missing targets first** — Use `/adlc-scaffold` to generate stubs, then `/adlc-deploy` to deploy them
+1. **Deploy missing targets first** — Use `Section 17 of /agentforce-development` to generate stubs, then `Section 18 of /agentforce-development` to deploy them
 2. **Remove unresolvable actions** — Delete the action definitions from the `.agent` file and focus Phase 3 on routing/instruction improvements
 3. **Register via Agent Builder UI** — For targets that exist but aren't registered as `GenAiFunction`, user can register them through Setup > Agent Builder
 4. **Proceed anyway** — If the planned fix only touches routing logic or instructions (not action targets)
@@ -1249,8 +1250,8 @@ Decision tree:
 | Target exists? | Registered as GenAiFunction? | Action |
 |---|---|---|
 | Yes | Yes | Issue is elsewhere (check action bindings, instructions) |
-| Yes | No | Deploy/register: use `/adlc-deploy` or register via Agent Builder UI |
-| No | N/A | Scaffold first: use `/adlc-scaffold` to generate stub, then deploy |
+| Yes | No | Deploy/register: use `Section 18 of /agentforce-development` or register via Agent Builder UI |
+| No | N/A | Scaffold first: use `Section 17 of /agentforce-development` to generate stub, then deploy |
 | Can't deploy now | N/A | Pivot to routing fixes: remove action from `.agent`, focus on instructions and transitions |
 
 **When fixing topic instructions**, always quote the current instruction from the `.agent` file before proposing a replacement:
@@ -1545,7 +1546,7 @@ modified `.agent` file. Optimization fixes can inadvertently introduce safety re
 **Run the safety review:**
 
 Read the modified `.agent` file and evaluate against all 7 safety categories from
-`/adlc-safety` (Identity, User Safety, Data Handling, Content Safety, Fairness,
+`Section 15 of /agentforce-development` (Identity, User Safety, Data Handling, Content Safety, Fairness,
 Deception, Scope). Focus especially on:
 
 1. **Scope boundaries** — Did the fix widen the agent's scope beyond what's appropriate?
@@ -1624,7 +1625,7 @@ JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/regression_run.json
 sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json
 ```
 
-Or invoke the adlc-test skill directly: `/adlc-test <org> --api-name <AgentApiName>`
+Or invoke the agentforce-test skill directly: `/agentforce-test <org> --api-name <AgentApiName>`
 
 **Step 4 -- Verify all previously-broken scenarios now pass:**
 
@@ -1816,22 +1817,3 @@ The only Salesforce metadata object that should be queried directly is `GenAiPla
 The `.agent` file is the single source of truth. All fixes should be applied to it and deployed via the Phase 3.5 deployment chain.
 
 ---
-
-## Feedback
-
-**After optimization cycle:** When the fix loop completes (issues identified, fixes applied, re-tested):
-
-```
-Optimization cycle complete. If the trace analysis missed something or
-you have suggestions for better issue detection, run /adlc-feedback — I'll
-draft a quick summary for you to review and submit.
-```
-
-**When STDM data is unavailable:** If the user can't access Data Cloud or DMOs aren't activated:
-
-```
-Since STDM data wasn't available, we used the fallback path. If you'd like to
-let the team know about your Data Cloud setup experience, run /adlc-feedback.
-```
-
-Only mention feedback once per session. Do not repeat if the user ignores it.

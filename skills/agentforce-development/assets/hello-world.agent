@@ -1,39 +1,20 @@
 # Hello World Agent
-# The minimal viable Agentforce agent - start here!
+# The minimal viable Agentforce agent — start here.
 #
-# This template shows the absolute minimum structure required for a working agent.
-# Use this as your starting point when learning Agent Script.
+# This template shows the minimum structure for a deployable service agent.
+# All indentation uses TABS (required by the Agent Script compiler).
 #
-# ★ Why This Structure?
-#   - system: Sets agent personality and default messages
-#   - config: Required metadata for deployment (agent_name must be unique)
-#   - variables: Linked variables connect to Messaging context (required for deployment)
-#   - language: Locale settings (required for deployment)
-#   - start_agent: Entry point topic (exactly one required)
-#
-# ★ Key Validation Points (from 100-point scoring):
-#   - [10 pts] config block with all 5 required fields
-#   - [10 pts] 3 linked variables (EndUserId, RoutableId, ContactId) with visibility
-#   - [5 pts] language block present
-#   - [10 pts] At least one start_agent topic
-#
-# Deploy with: sf agent publish authoring-bundle --api-name Hello_World_Agent -o <org-alias> --json
-
-system:
-	instructions: "You are a friendly assistant. Greet users warmly and help them."
-	messages:
-		welcome: "Hello! I'm here to help. What can I do for you today?"
-		error: "I'm sorry, something went wrong. Please try again."
+# Deploy with:
+#   sf agent publish authoring-bundle --api-name HelloWorldAgent -o <org-alias> --json
+#   sf agent activate --api-name HelloWorldAgent -o <org-alias>
 
 config:
-	developer_name: "Hello_World_Agent"
+	developer_name: "HelloWorldAgent"
 	agent_label: "Hello World Agent"
 	description: "A minimal example agent to learn Agent Script basics"
-	default_agent_user: "your.user@company.com"
-	agent_type: "AgentforceServiceAgent"
+	default_agent_user: "einsteinagent@00dxx000001234.ext"
 
 variables:
-	# Linked variables (required) - Connect to Salesforce Messaging context
 	EndUserId: linked string
 		source: @MessagingSession.MessagingEndUserId
 		description: "Messaging End User ID"
@@ -47,20 +28,37 @@ variables:
 		description: "Contact ID"
 		visibility: "External"
 
+system:
+	instructions: |
+		You are an AI assistant. Greet users warmly and help them.
+		If you cannot help, offer to connect them with a human agent.
+	messages:
+		welcome: "Hello! I'm here to help. What can I do for you today?"
+		error: "I'm sorry, something went wrong. Please try again."
+
 language:
 	default_locale: "en_US"
 	additional_locales: ""
 	all_additional_locales: False
 
-# Entry point topic - this is where every conversation starts
-start_agent: greeting
+start_agent topic_selector:
+	description: "Route user requests"
+	reasoning:
+		instructions: |
+			You are a router only. Do NOT answer questions or provide help directly.
+			Always use a transition action to route to the greeting topic immediately.
+		actions:
+			to_greeting: @utils.transition to @topic.greeting
+				description: "Greet the user and provide help"
 
 topic greeting:
 	label: "Greeting"
-	description: "Greets users and provides help"
-
+	description: "Greet users and provide general help"
 	reasoning:
-		instructions: ->
-			| Welcome the user warmly.
-			| Ask how you can help them today.
-			| Be friendly and conversational.
+		instructions: |
+			Welcome the user warmly.
+			Ask how you can help them today.
+			Be friendly and conversational.
+		actions:
+			escalate_now: @utils.escalate
+				description: "Transfer to human agent"

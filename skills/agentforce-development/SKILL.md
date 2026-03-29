@@ -290,15 +290,17 @@ See [references/scoring-rubric.md](references/scoring-rubric.md) for the complet
 
 ## 8. TEMPLATE ASSETS
 
-> **Note:** Template files are planned but not yet available.
-> Use the complete examples in [references/examples.md](references/examples.md) as starting points.
+Ready-to-use `.agent` templates. Copy and customize for new agents.
 
 | Template | Description | File |
 |----------|-------------|------|
-| Hello World | Minimal single-topic agent | `assets/hello-world.agent` (planned) |
-| Multi-Topic | Two topics with routing | `assets/multi-topic.agent` (planned) |
-| Verification Gate | Identity verification pattern | `assets/verification-gate.agent` (planned) |
-| Hub-and-Spoke | Central router with spokes | `assets/hub-and-spoke.agent` (planned) |
+| Hello World | Minimal single-topic agent | `assets/hello-world.agent` |
+| Hub-and-Spoke | Central router with 3 spokes | `assets/hub-and-spoke.agent` |
+| Multi-Topic | Hub-and-spoke with Flow actions | `assets/multi-topic.agent` |
+| Order Service | Verification gate + order/tracking/returns | `assets/order-service.agent` |
+| Verification Gate | Security gate with churn-risk refund logic | `assets/verification-gate.agent` |
+
+See also [references/examples.md](references/examples.md) for inline code examples.
 
 ---
 
@@ -344,7 +346,9 @@ Generates stub metadata (Flow XML, Apex classes + tests) for missing action targ
 python3 "$ADLC_SCRIPTS/scaffold.py" --agent-file <path> -o <org-alias> --output-dir force-app/main/default
 ```
 
-See [references/scaffold-reference.md](references/scaffold-reference.md) for full usage, type mapping, and best practices.
+**CRITICAL:** Stubs must return realistic data, not `'TODO'`. Placeholder responses cause SMALL_TALK grounding because the LLM falls back to training data.
+
+See [references/scaffold-reference.md](references/scaffold-reference.md) for full usage, type mapping, stub data guidelines, and best practices.
 
 ---
 

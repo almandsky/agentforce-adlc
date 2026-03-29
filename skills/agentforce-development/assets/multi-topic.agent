@@ -1,23 +1,18 @@
-# Multi-Topic Agent Template
-# An agent with multiple conversation topics (hub-and-spoke pattern)
-# Users are routed to specialized topics based on their needs
+# Multi-Topic Agent with Actions
+# ================================
 #
-# Usage: Replace {{placeholders}} with your values
-# Required: agent_name, default_agent_user, agent_label, description
-# Required: At least 2 topics with label and description
-
-system:
-	instructions: "{{SystemInstructions}}"
-	messages:
-		welcome: "{{WelcomeMessage}}"
-		error: "I'm sorry, I encountered an issue. Please try again."
+# A hub-and-spoke agent with backend actions (Flow and Apex targets).
+# Demonstrates the two-level action system:
+#   Level 1 (topic > actions): Defines WHAT — target, inputs, outputs
+#   Level 2 (reasoning > actions): Defines HOW — with/set bindings
+#
+# Replace placeholder values before deploying.
 
 config:
-	developer_name: "{{AgentApiName}}"
-	agent_label: "{{AgentLabel}}"
-	description: "{{AgentDescription}}"
-	default_agent_user: "{{AgentUser}}"
-	agent_type: "AgentforceServiceAgent"
+	developer_name: "MultiTopicAgent"
+	agent_label: "Multi-Topic Support Agent"
+	description: "Handles order inquiries, returns, and general support with backend actions"
+	default_agent_user: "einsteinagent@00dxx000001234.ext"
 
 variables:
 	EndUserId: linked string
@@ -32,80 +27,141 @@ variables:
 		source: @MessagingEndUser.ContactId
 		description: "Contact ID"
 		visibility: "External"
-	user_intent: mutable string = ""
-		description: "What the user is trying to accomplish"
+	order_id: mutable string = ""
+		description: "Current order being discussed"
+	order_status: mutable string = ""
+		description: "Status of the current order"
+	return_id: mutable string = ""
+		description: "Return authorization ID"
+
+system:
+	instructions: |
+		You are an AI customer service agent for TechCorp.
+		Be professional, concise, and solution-oriented.
+		Do not fabricate data — always use action results.
+	messages:
+		welcome: "Welcome to TechCorp Support! How can I assist you?"
+		error: "I apologize for the issue. Please try again."
 
 language:
 	default_locale: "en_US"
 	additional_locales: ""
 	all_additional_locales: False
 
-start_agent: topic_selector
-
-topic topic_selector:
-	label: "Topic Selector"
-	description: "Routes users to the appropriate topic based on their needs"
-
+start_agent topic_selector:
+	description: "Route customers to the right support topic"
 	reasoning:
-		instructions: ->
-			| Determine what the user needs help with.
-			| Route them to the most appropriate topic.
-			| If unclear, ask clarifying questions.
+		instructions: |
+			You are a router only. Do NOT answer questions or provide help directly.
+			Always use a transition action to route to the correct topic immediately.
+			- Order status or tracking -> use to_orders
+			- Returns or refunds -> use to_returns
+			- General questions -> use to_general
+			Never attempt to help the customer yourself. Always route.
 		actions:
-			go_to_topic_one: @utils.transition to @topic.{{topic_one_name}}
-			go_to_topic_two: @utils.transition to @topic.{{topic_two_name}}
-			go_to_topic_three: @utils.transition to @topic.{{topic_three_name}}
-			go_to_farewell: @utils.transition to @topic.farewell
-			go_to_escalation: @utils.transition to @topic.escalation
+			to_orders: @utils.transition to @topic.order_support
+				description: "Check order status or tracking"
+			to_returns: @utils.transition to @topic.return_support
+				description: "Process a return or refund"
+			to_general: @utils.transition to @topic.general_support
+				description: "General questions and support"
 
-topic {{topic_one_name}}:
-	label: "{{TopicOneLabel}}"
-	description: "{{TopicOneDescription}}"
+topic order_support:
+	label: "Order Support"
+	description: "Handle order status and tracking inquiries"
+
+	actions:
+		get_order:
+			description: "Look up order by ID"
+			target: "flow://Get_Order_Status"
+			inputs:
+				order_id: string
+					description: "Order ID"
+			outputs:
+				status: string
+					description: "Order status"
+					is_displayable: True
+				tracking_url: string
+					description: "Tracking URL"
+					is_displayable: True
 
 	reasoning:
 		instructions: ->
-			| {{TopicOneInstructions}}
+			if @variables.order_status != "":
+				| Order {!@variables.order_id} status: {!@variables.order_status}
+
+			| What is your order number? I will look it up for you.
+			| Use the lookup action to retrieve order details.
+			| Do not guess order status — always use the action result.
+
 		actions:
-			back_to_menu: @utils.transition to @topic.topic_selector
+			lookup: @actions.get_order
+				description: "Look up order"
+				with order_id = ...
+				set @variables.order_id = @outputs.order_id
+				set @variables.order_status = @outputs.status
 
-topic {{topic_two_name}}:
-	label: "{{TopicTwoLabel}}"
-	description: "{{TopicTwoDescription}}"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
+
+topic return_support:
+	label: "Return Support"
+	description: "Handle returns and refund requests"
+
+	actions:
+		initiate_return:
+			description: "Start a return process"
+			target: "flow://Initiate_Return"
+			inputs:
+				order_id: string
+					description: "Order ID for the return"
+				reason: string
+					description: "Reason for return"
+			outputs:
+				return_id: string
+					description: "Return authorization ID"
+					is_displayable: True
 
 	reasoning:
-		instructions: ->
-			| {{TopicTwoInstructions}}
+		instructions: |
+			I can help with your return request.
+			Please provide your order number and the reason for the return.
+			Use the start_return action to process — do not fabricate return IDs.
+
 		actions:
-			back_to_menu: @utils.transition to @topic.topic_selector
+			start_return: @actions.initiate_return
+				description: "Start a return"
+				with order_id = ...
+				with reason = ...
+				set @variables.return_id = @outputs.return_id
 
-topic {{topic_three_name}}:
-	label: "{{TopicThreeLabel}}"
-	description: "{{TopicThreeDescription}}"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 
+	after_reasoning: ->
+		if @variables.return_id != "":
+			transition to @topic.confirmation
+
+topic general_support:
+	label: "General Support"
+	description: "Handle general support questions"
 	reasoning:
-		instructions: ->
-			| {{TopicThreeInstructions}}
+		instructions: |
+			Help the customer with general questions.
+			If the question is about orders or returns, route appropriately.
 		actions:
-			back_to_menu: @utils.transition to @topic.topic_selector
+			escalate_now: @utils.escalate
+				description: "Transfer to human agent"
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
 
-topic farewell:
-	label: "Farewell"
-	description: "Ends the conversation gracefully"
-
+topic confirmation:
+	label: "Confirmation"
+	description: "Confirm the completed action"
 	reasoning:
 		instructions: ->
-			| Thank the user for reaching out.
-			| Wish them a great day.
-			| Let them know they can return anytime.
-
-topic escalation:
-	label: "Escalation"
-	description: "Handles requests to transfer to a live human agent"
-
-	reasoning:
-		instructions: ->
-			| If the user explicitly asks to speak with a human, escalate.
-			| Acknowledge the request and transfer gracefully.
+			| Your request has been processed. Reference: {!@variables.return_id}
+			| Is there anything else I can help with?
 		actions:
-			escalate_to_human: @utils.escalate
-				description: "Escalate to a human agent"
+			new_request: @utils.transition to @topic.topic_selector
+				description: "Start a new request"

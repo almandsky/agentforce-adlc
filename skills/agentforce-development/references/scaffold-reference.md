@@ -74,6 +74,25 @@ force-app/main/default/
 
 ## Best Practices
 
+### Stub Data Quality (CRITICAL for Grounding)
+
+Scaffolded stubs MUST return **realistic-looking data**, not `'TODO'` or empty strings. When the platform LLM invokes an action and gets `'TODO'` back, it has no useful data to present — so it falls back to its training data (SMALL_TALK grounding) or fabricates results (hallucination).
+
+**Evidence:** Comcast eval stubs returned realistic comparison data → 93% grounding rate. JPMorgan eval stubs returned `'TODO'` → 40% grounding rate.
+
+| WRONG | CORRECT |
+|-------|---------|
+| `res.status = 'TODO';` | `res.status = 'Shipped - In Transit';` |
+| `res.summary = '';` | `res.summary = '23 cases open, 8 high-priority, avg resolution 2.3 days';` |
+| `res.result = 'TODO: implement';` | `res.result = '{"match_score": 0.92, "case_id": "500ABC"}';` |
+
+**Guidelines for realistic stub data:**
+- Use the action description and output field names to infer plausible values
+- Include the input values in the response (e.g., `'Order ' + req.order_id + ' is Shipped'`)
+- For JSON outputs, return a valid JSON string with all expected fields populated
+- For numeric outputs, return non-zero values that make business sense
+- For list outputs, return 2-3 sample items
+
 ### I/O Variable Matching
 Scaffolded stubs MUST have I/O names that **exactly match** the `.agent` file. Case sensitivity matters: `order_id` != `Order_Id` != `orderId`.
 

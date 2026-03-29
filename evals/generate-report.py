@@ -521,7 +521,7 @@ h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .tab-buttons { display: flex; gap: 0; border-bottom: 2px solid var(--border); flex-wrap: wrap; }
 .tab-btn { padding: 6px 14px; font-size: 12px; border: none; background: none; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -2px; white-space: nowrap; }
 .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.tab-panel { display: none; padding: 12px 0; overflow-x: auto; }
+.tab-panel { display: none; padding: 12px 0; }
 .tab-panel.active { display: block; }
 
 .agent-code { white-space: pre-wrap; word-break: break-word; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; background: #1e1e2e; color: #cdd6f4; padding: 16px; border-radius: 8px; border: 1px solid #313244; max-height: 600px; overflow-y: auto; line-height: 1.5; }
@@ -592,7 +592,8 @@ table { table-layout: auto; }
 .verdicts-table td, .stats-table td, .heatmap-table td { word-break: break-word; }
 
 @media (max-width: 768px) {
-  body { padding: 10px; font-size: 13px; max-width: 100%; overflow-x: hidden; }
+  html { overflow-x: hidden; }
+  body { padding: 10px; font-size: 13px; max-width: 100vw; overflow-x: hidden; width: 100%; }
   h1 { font-size: 20px; }
   h2 { font-size: 16px; margin: 20px 0 10px; }
   .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -604,34 +605,40 @@ table { table-layout: auto; }
   .pipeline-arrow { width: 12px; }
   .pipeline-dot { width: 24px; height: 24px; font-size: 9px; }
   .pipeline-label { font-size: 8px; }
+  .tab-container { overflow: hidden; width: 100%; }
   .tab-buttons { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; scrollbar-width: none; -ms-overflow-style: none; }
   .tab-buttons::-webkit-scrollbar { display: none; }
   .tab-btn { padding: 6px 10px; font-size: 11px; flex-shrink: 0; }
-  .tab-panel { overflow-x: auto; }
-  .heatmap-table, .verdicts-table, .stats-table { font-size: 11px; }
-  .verdicts-table td, .verdicts-table th { padding: 4px 4px; }
+  .tab-panel { overflow-x: hidden; overflow-y: visible; width: 100%; max-width: 100vw; }
+  .tab-panel .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .heatmap-table, .verdicts-table, .stats-table { font-size: 11px; width: 100%; table-layout: fixed; }
+  .verdicts-table td, .verdicts-table th { padding: 4px 4px; word-break: break-word; overflow-wrap: break-word; }
   .heatmap-table td, .heatmap-table th { padding: 4px 6px; }
   /* Hide less-critical columns on mobile */
   .verdicts-table th:nth-child(2), .verdicts-table td:nth-child(2),
   .verdicts-table th:nth-child(4), .verdicts-table td:nth-child(4),
   .verdicts-table th:nth-child(6), .verdicts-table td:nth-child(6) { display: none; }
-  .test-case { padding: 12px; overflow: hidden; }
+  .test-case { padding: 12px; overflow: hidden; width: 100%; box-sizing: border-box; }
   .test-case-header { flex-direction: column; gap: 8px; }
-  .msg-container { max-height: 500px; }
+  .msg-container { max-height: none; overflow-y: visible; }
   .msg-row { padding: 8px 10px; }
-  .agent-code { font-size: 10px; padding: 10px; max-height: 400px; }
+  .agent-code { font-size: 10px; padding: 10px; max-height: none; overflow-y: visible; word-break: break-all; }
   .agent-code .line-num { width: 2.5em; margin-right: 0.5em; }
   .skill-card-header { padding: 10px 12px; }
   .skill-card-body { padding: 0 12px 12px; }
   .insight-box { font-size: 10px; padding: 6px 8px; }
-  .stats-table td:first-child { width: auto; min-width: 80px; }
-  .comparison th, .comparison td { padding: 4px 6px; font-size: 11px; }
-  .json-content, .log-content { font-size: 10px; padding: 8px; max-height: 300px; }
+  .stats-table { table-layout: fixed; width: 100%; }
+  .stats-table td:first-child { width: 40%; min-width: 80px; }
+  .stats-table td { word-break: break-word; overflow-wrap: break-word; }
+  .comparison { overflow: hidden; }
+  .comparison table { table-layout: fixed; width: 100%; }
+  .comparison th, .comparison td { padding: 4px 6px; font-size: 11px; word-break: break-word; }
+  .json-content, .log-content { font-size: 10px; padding: 8px; max-height: none; overflow-y: visible; word-break: break-all; }
   .msg-body, .msg-text { font-size: 12px; }
 }
 
 @media (max-width: 480px) {
-  body { padding: 6px; }
+  body { padding: 6px; width: 100%; }
   .summary-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
   .summary-card { padding: 8px 10px; }
   .summary-card .value { font-size: 16px; }
@@ -644,9 +651,8 @@ table { table-layout: auto; }
   .pipeline-arrow { width: 8px; }
   .test-case { padding: 8px; overflow: hidden; }
   .msg-row { padding: 6px 8px; font-size: 12px; }
-  .msg-container { max-height: 400px; }
-  .agent-code { max-height: 300px; }
-  .json-content, .log-content { max-height: 250px; }
+  .agent-code { max-height: none; }
+  .json-content, .log-content { max-height: none; }
 }
 """
 

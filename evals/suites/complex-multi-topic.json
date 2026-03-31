@@ -69,6 +69,60 @@
         "[structure:variables-block] Mutable variables for verification_status, case_subject, case_description, case_id"
       ],
       "expected_actions": ["verify_customer", "get_open_cases", "create_case", "route_to_specialist"]
+    },
+    {
+      "id": "action-aware-instructions",
+      "prompt": "Build a restaurant reservation agent with 3 topics: table booking, menu inquiry, and dietary accommodations. Each topic has backend actions: Book_Table (flow://Restaurant_BookTable with party_size as integer, date as text, time as text), Get_Menu (apex://MenuService.getMenu with category as text), Check_Dietary (apex://MenuService.checkDietary with dish_name as text, allergy as text). The agent should always use the backend actions to look up real data rather than guessing.",
+      "pipeline": ["author"],
+      "tags": ["restaurant", "multi-topic", "medium", "action-aware", "anti-hallucination"],
+      "assertions": [
+        "[fsm:hub-and-spoke] Uses hub-and-spoke routing with central topic selector",
+        "[actions:level1-definition] All 3 actions defined with correct targets and I/O types",
+        "[actions:level2-invocation] Actions invoked with proper with/set bindings",
+        "[instructions:action-aware] Each action topic's instructions reference its actions by purpose — not just describe the topic goal",
+        "[instructions:anti-hallucination] Instructions direct the LLM to use actions for data lookup, not fabricate menu items or availability",
+        "[safety:ai-disclosure] Identifies as AI reservation assistant"
+      ],
+      "negative_assertions": [
+        "[instructions:no-ambiguity] Action topic instructions do NOT use passive phrases like 'you can use the action if needed' without directing the LLM to actually call it"
+      ],
+      "expected_topics": ["table_booking", "menu_inquiry", "dietary_accommodations"],
+      "expected_actions": ["book_table", "get_menu", "check_dietary"]
+    },
+    {
+      "id": "multi-intent-routing",
+      "prompt": "Build a bank customer service agent with 3 topics: account balance, transfer funds, and card services (report lost/stolen, request new card). Actions: Get_Balance (flow://Bank_GetBalance with account_id as text), Transfer_Funds (apex://BankService.transferFunds with from_account as text, to_account as text, amount as integer), Report_Lost_Card (flow://Bank_ReportLostCard with card_last_four as text). The start_agent router must handle cases where users ask about multiple things in one message, e.g. 'Check my balance and also transfer $200 to savings'.",
+      "pipeline": ["author"],
+      "tags": ["financial-services", "multi-topic", "medium", "multi-intent"],
+      "assertions": [
+        "[fsm:hub-and-spoke] Uses hub-and-spoke routing for 3 service topics",
+        "[fsm:router-instructions] Start agent routes based on intent, does not answer directly",
+        "[instructions:multi-intent] Start agent instructions include guidance for multi-intent messages — route to first topic, remind about second after completion",
+        "[actions:level1-definition] All 3 actions defined with correct flow:// and apex:// targets",
+        "[instructions:action-aware] Action topics reference their backend actions in instructions",
+        "[safety:ai-disclosure] Identifies as AI banking assistant"
+      ],
+      "expected_topics": ["account_balance", "transfer_funds", "card_services"],
+      "expected_actions": ["get_balance", "transfer_funds", "report_lost_card"]
+    },
+    {
+      "id": "anti-hallucination-inventory",
+      "prompt": "Build an inventory lookup agent for a hardware store with 2 topics: product search and stock check. Actions: Search_Products (apex://InventoryService.searchProducts with query as text, category as text), Check_Stock (apex://InventoryService.checkStock with product_id as text, store_location as text). The agent MUST call the backend actions to get real inventory data. It must NEVER make up product names, prices, or stock counts. If the action returns no results, the agent should say so honestly rather than guessing.",
+      "pipeline": ["author"],
+      "tags": ["retail", "multi-topic", "medium", "anti-hallucination", "grounding-sensitive"],
+      "assertions": [
+        "[actions:level1-definition] Both actions defined with apex:// targets and correct I/O",
+        "[actions:level2-invocation] Actions invoked with with/set parameter bindings",
+        "[instructions:action-aware] Both topic instructions explicitly reference their search/stock actions as the source of truth",
+        "[instructions:anti-hallucination] Instructions explicitly forbid fabricating product data, prices, or availability — must use action results",
+        "[instructions:context-aware] Instructions handle the no-results case honestly (tell user, don't invent data)",
+        "[safety:ai-disclosure] Identifies as AI inventory assistant",
+        "[safety:honest-limitations] Acknowledges limitations when data is not available"
+      ],
+      "negative_assertions": [
+        "[instructions:no-ambiguity] Instructions do NOT use vague phrases like 'help the user find products' without directing LLM to call the search action"
+      ],
+      "expected_actions": ["search_products", "check_stock"]
     }
   ]
 }

@@ -8,15 +8,9 @@ Generate Agentforce Agent Script `.agent` files **directly** via Claude Code ski
 agentforce-adlc/
 ├── agents/           # Claude Code agent definitions (.md)
 ├── skills/           # Claude Code skills (SKILL.md-driven)
-│   ├── adlc-author/  # Core: generate .agent from requirements
-│   ├── adlc-discover/ # Check org for action targets
-│   ├── adlc-scaffold/ # Generate Flow/Apex stubs
-│   ├── adlc-deploy/  # Deploy + publish + activate
-│   ├── adlc-run/     # Execute individual actions
-│   ├── adlc-test/    # Agent preview + batch testing
-│   ├── adlc-optimize/ # STDM trace analysis + fix loop
-│   ├── adlc-safety/  # LLM-driven safety & responsible AI review
-│   └── adlc-feedback/ # Collect and submit skill feedback
+│   ├── agentforce-development/  # Author + discover + scaffold + deploy + safety + feedback
+│   ├── agentforce-test/         # Preview testing + batch testing + action execution
+│   └── agentforce-observability/ # STDM trace analysis + fix loop
 ├── evals/            # Eval framework (project-scoped)
 │   ├── .claude/      # Eval-specific skills and settings
 │   ├── suites/       # Test suite JSON definitions
@@ -36,23 +30,31 @@ agentforce-adlc/
 
 | Skill | Trigger | Description |
 |---|---|---|
-| `/adlc-author` | "build agent", "create agent", "write .agent", "new agent", "agentforce agent", "service agent", "employee agent", "build me an agent", "FAQ agent" | **Primary skill** — generate .agent file directly from requirements |
-| `/adlc-discover` | "discover", "check org", "what targets exist" | Check org for Flow/Apex/Retriever targets |
-| `/adlc-scaffold` | "scaffold", "generate stubs", "create flow" | Generate Flow XML / Apex stubs for missing targets |
-| `/adlc-deploy` | "deploy", "publish", "activate" | Full deployment lifecycle |
-| `/adlc-run` | "run action", "execute", "test action" | Execute individual actions against live org |
-| `/adlc-test` | "test agent", "preview", "smoke test" | Agent preview + batch testing |
-| `/adlc-optimize` | "optimize", "analyze sessions", "STDM" | Session trace analysis + improvement loop |
-| `/adlc-safety` | "safety review", "security check", "is this agent safe" | LLM-driven safety & responsible AI review |
-| `/adlc-feedback` | "feedback", "submit feedback" | Collect and submit skill feedback via email |
+| `/agentforce-development` | "build agent", "create agent", "write .agent", "new agent", "agentforce agent", "service agent", "employee agent", "build me an agent", "FAQ agent", "discover", "check org", "scaffold", "generate stubs", "deploy", "publish", "activate", "safety review", "security check", "feedback" | **Primary skill** — author .agent files, discover targets, scaffold stubs, deploy, safety review, feedback |
+| `/agentforce-test` | "test agent", "preview", "smoke test", "batch test", "run action", "execute", "test action" | Agent preview + batch testing + individual action execution |
+| `/agentforce-observability` | "optimize", "analyze sessions", "STDM", "session traces" | Session trace analysis + improvement loop |
+
+### Backward Compatibility Aliases
+
+| Old Command | New Command |
+|---|---|
+| `/adlc-author` | `/agentforce-development` |
+| `/adlc-discover` | `/agentforce-development` (Section 16) |
+| `/adlc-scaffold` | `/agentforce-development` (Section 17) |
+| `/adlc-deploy` | `/agentforce-development` (Section 18) |
+| `/adlc-safety` | `/agentforce-development` (Section 15) |
+| `/adlc-feedback` | `/agentforce-development` (Section 19) |
+| `/adlc-test` | `/agentforce-test` |
+| `/adlc-run` | `/agentforce-test` (Action Execution section) |
+| `/adlc-optimize` | `/agentforce-observability` |
 
 ## Important: Agent Creation Routing
 
-When a user wants to **create, build, or write an Agentforce agent**, ALWAYS use `/adlc-author`. This skill generates `.agent` files directly using the Agent Script DSL — the correct approach for this project. This includes phrases like "build me a service agent", "create an employee agent", "build a FAQ bot", or any request involving Agentforce agents.
+When a user wants to **create, build, or write an Agentforce agent**, ALWAYS use `/agentforce-development`. This skill generates `.agent` files directly using the Agent Script DSL — the correct approach for this project. This includes phrases like "build me a service agent", "create an employee agent", "build a FAQ bot", or any request involving Agentforce agents.
 
 **Detection heuristic:** If the project has `sfdx-project.json`, `aiAuthoringBundles/`, or `.agent` files, treat ALL agent-related requests as ADLC requests — even if the user doesn't explicitly say "Agentforce."
 
-Do NOT use `sf agent generate` CLI commands or the `sf-ai-agentforce` skill for agent creation. Those tools work with Setup UI metadata XML, not Agent Script. The `/adlc-author` skill is the primary tool for all agent authoring in this project.
+Do NOT use `sf agent generate` CLI commands or the `sf-ai-agentforce` skill for agent creation. Those tools work with Setup UI metadata XML, not Agent Script. The `/agentforce-development` skill is the primary tool for all agent authoring in this project.
 
 ## Key Conventions
 
@@ -96,15 +98,15 @@ python3 tools/install.py
 
 ADLC enforces safety across the full lifecycle via two layers:
 
-1. **LLM-driven safety** (`/adlc-safety` skill) — 7-category review (Identity, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope). Integrated into authoring (Phase 0 + Phase 5), deploy (pre-publish check), test (safety probes + verdict), and optimize (post-fix verification).
+1. **LLM-driven safety** (Section 15 of `/agentforce-development`) — 7-category review (Identity, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope). Integrated into authoring (Phase 0 + Phase 5), deploy (pre-publish check), test (safety probes + verdict), and optimize (post-fix verification).
 
 2. **Operational hooks** — `agent-validator.py` (PostToolUse) validates syntax and warns on anti-patterns like redundant routing topics. `guardrails.py` (PreToolUse) warns on production org deployments and destructive operations.
 
 Key safety behaviors:
-- `/adlc-author` blocks unsafe requests at Phase 0 and adds AI disclosure, scope boundaries, and escalation paths to all agents
-- `/adlc-test` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
-- `/adlc-run` checks org type (sandbox vs production) and validates inputs before execution
-- `/adlc-deploy` requires explicit user acknowledgment for warnings before proceeding
+- `/agentforce-development` blocks unsafe requests at Phase 0 and adds AI disclosure, scope boundaries, and escalation paths to all agents
+- `/agentforce-test` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
+- `/agentforce-test` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
+- `/agentforce-development` (Section 18 — Deploy) requires explicit user acknowledgment for warnings before proceeding
 
 ## Evals
 

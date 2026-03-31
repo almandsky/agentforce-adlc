@@ -1,6 +1,6 @@
 # ADLC Eval — Agent Quality Evaluation Framework
 
-Automated evaluation framework for Agentforce agents built with the ADLC skills. Runs test suites against installed `/adlc-*` skills, judges outputs against assertion criteria, and generates interactive HTML reports.
+Automated evaluation framework for Agentforce agents built with the ADLC skills. Runs test suites against installed `/agentforce-*` skills, judges outputs against assertion criteria, and generates interactive HTML reports.
 
 ## Quick Start
 
@@ -23,15 +23,15 @@ run suite full-pipeline --compare results/run-20260326-120000
 
 ## How It Works
 
-The eval framework is an **orchestrator and judge** — it delegates all agent generation, testing, and optimization to the installed `/adlc-*` skills (the same way a user would), then evaluates the outputs.
+The eval framework is an **orchestrator and judge** — it delegates all agent generation, testing, and optimization to the installed `/agentforce-*` skills (the same way a user would), then evaluates the outputs.
 
 ### 4-Phase Workflow
 
 | Phase | What Happens |
 |-------|-------------|
-| **0. Spec & Discovery** | Load/generate agent spec, discover installed `/adlc-*` skills |
+| **0. Spec & Discovery** | Load/generate agent spec, discover installed `/agentforce-*` skills |
 | **1. Load Suite** | Read test suite JSON, validate structure, apply filters |
-| **2. Execute Pipeline** | Invoke `/adlc-author`, `/adlc-discover`, `/adlc-scaffold`, `/adlc-deploy`, `/adlc-test`, `/adlc-optimize` per test's `pipeline` field |
+| **2. Execute Pipeline** | Invoke `/agentforce-development` (author, discover, scaffold, deploy), `/agentforce-test`, `/agentforce-observability` per test's `pipeline` field |
 | **3. Judge** | Evaluate outputs against spec-derived + suite-defined assertions using taxonomy labels |
 | **4. Report** | Aggregate scores, generate `summary.json`, produce HTML report |
 
@@ -145,7 +145,7 @@ The HTML report is a single self-contained file with:
 
 ## Key Principles
 
-- **Never hardcode skill paths** — interact with skills only through `/adlc-*` interface
+- **Never hardcode skill paths** — interact with skills only through `/agentforce-*` interface
 - **Capture everything** — errors, logs, conversations, traces, fixes
 - **Per-skill rubrics** — different evaluation dimensions per skill
 - **Spec-driven** — all judging is against the agent spec, not just assertions

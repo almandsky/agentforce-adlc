@@ -2,7 +2,7 @@
 name: adlc-engineer
 description: Platform engineer — scaffolds Flow/Apex metadata and deploys agent bundles
 tools: Read, Edit, Write, Bash, Grep, Glob
-skills: adlc-discover, adlc-scaffold, adlc-deploy, adlc-run
+skills: agentforce-development, agentforce-test
 ---
 
 # ADLC Engineer Agent

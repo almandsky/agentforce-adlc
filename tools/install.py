@@ -87,18 +87,27 @@ INSTALLER_DEST = CLAUDE_DIR / "adlc-install.py"
 SETTINGS_FILE = CLAUDE_DIR / "settings.json"
 
 # Prefixes (only manage our own files, never touch sf-* or agentforce-md-*)
-SKILL_PREFIX = "adlc-"
+SKILL_PREFIX = "agentforce-"
+OLD_SKILL_PREFIX = "adlc-"
 
 # Skills to install (relative to repo root)
 SKILL_DIRS = [
-    "skills/adlc-author",
-    "skills/adlc-discover",
-    "skills/adlc-scaffold",
-    "skills/adlc-deploy",
-    "skills/adlc-run",
-    "skills/adlc-test",
-    "skills/adlc-optimize",
-    "skills/adlc-feedback",
+    "skills/agentforce-development",
+    "skills/agentforce-test",
+    "skills/agentforce-observability",
+]
+
+# Old skill dirs to clean up during install
+OLD_SKILL_DIRS = [
+    "adlc-author",
+    "adlc-discover",
+    "adlc-scaffold",
+    "adlc-deploy",
+    "adlc-run",
+    "adlc-test",
+    "adlc-optimize",
+    "adlc-feedback",
+    "adlc-safety",
 ]
 
 # Agent definitions to install
@@ -521,7 +530,7 @@ def install_hooks(source_dir: Path, tgt: Dict, dry_run: bool = False) -> List[st
 
 
 def prune_orphan_skills(tgt: Dict, current_skills: List[str], dry_run: bool = False) -> int:
-    """Remove adlc-* skills that are no longer in the repo."""
+    """Remove old adlc-* and orphan agentforce-* skills that are no longer in the repo."""
     pruned = 0
     skills_dir = tgt["skills_dir"]
     if not skills_dir.exists():
@@ -529,7 +538,18 @@ def prune_orphan_skills(tgt: Dict, current_skills: List[str], dry_run: bool = Fa
 
     current_set = set(current_skills)
     for item in sorted(skills_dir.iterdir()):
-        if item.is_dir() and item.name.startswith(SKILL_PREFIX) and item.name not in current_set:
+        if not item.is_dir():
+            continue
+        # Remove old adlc-* skill dirs (consolidated into agentforce-* skills)
+        if item.name.startswith(OLD_SKILL_PREFIX):
+            if dry_run:
+                print_info(f"Would remove old skill: {item.name}")
+            else:
+                safe_rmtree(item)
+                print_substep(f"Removed old skill: {item.name}")
+            pruned += 1
+        # Remove orphan agentforce-* skills not in current list
+        elif item.name.startswith(SKILL_PREFIX) and item.name not in current_set:
             if dry_run:
                 print_info(f"Would remove orphan skill: {item.name}")
             else:
@@ -847,7 +867,7 @@ def _install_for_target(tgt: Dict, source_dir: Path, version: str,
 
     pruned = prune_orphan_skills(tgt, skills, dry_run)
     if pruned:
-        print_substep(f"{pruned} orphan skill(s) removed")
+        print_substep(f"{pruned} old skill(s) cleaned up (consolidated into {len(skills)} skills)")
 
     # Agents (Claude Code only)
     agents = []
@@ -901,11 +921,17 @@ def _install_for_target(tgt: Dict, source_dir: Path, version: str,
 
 
 def cmd_install(dry_run: bool = False, force: bool = False,
-                called_from_bash: bool = False, target: str = "claude") -> int:
+                called_from_bash: bool = False, target: str = "claude",
+                _is_update: bool = False) -> int:
     """Install agentforce-adlc."""
     _download_tmp = None  # Set if remote install uses a temp dir
     if not called_from_bash:
         print(f"\n{c('agentforce-adlc installer', Colors.BOLD)}")
+        if not _is_update:
+            print()
+            print(f"  {c('Prerequisites:', Colors.BOLD)} Python 3.9+, Claude Code or Cursor")
+            print(f"  {c('Optional:', Colors.BOLD)}      Salesforce CLI (sf)")
+            print()
 
     targets = get_target_dirs(target)
 
@@ -1084,7 +1110,7 @@ def cmd_update(dry_run: bool = False, force_update: bool = False,
     elif content_changed:
         print_info(f"Content update available: {local_sha} -> {remote_sha}")
 
-    return cmd_install(dry_run=dry_run, force=True, target=target)
+    return cmd_install(dry_run=dry_run, force=True, target=target, _is_update=True)
 
 
 def cmd_uninstall(dry_run: bool = False, force: bool = False,

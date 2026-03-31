@@ -55,6 +55,16 @@ PIPELINE_STEPS_ORDER = ["author", "discover", "scaffold", "deploy", "test", "opt
 # Additional rubric dimensions that aren't pipeline steps but appear in skill_scores
 EXTRA_RUBRIC_SKILLS = ["outcome", "grounding", "conversation"]
 
+# Map pipeline steps to consolidated skill names
+PIPELINE_SKILL_MAP = {
+    "author": "agentforce-development",
+    "discover": "agentforce-development",
+    "scaffold": "agentforce-development",
+    "deploy": "agentforce-development",
+    "test": "agentforce-test",
+    "optimize": "agentforce-observability",
+}
+
 # Per-skill insight templates keyed by dimension name
 SKILL_INSIGHTS = {
     "author": {
@@ -195,8 +205,8 @@ SKILL_INSIGHTS = {
             "smoke_pass": {
                 "name": "Smoke Test Pass Rate",
                 "description": "Percentage of test utterances that pass",
-                "good": "All utterances routed correctly with GROUNDED responses",
-                "bad": "Utterances fail with SMALL_TALK grounding or wrong routing",
+                "good": "All utterances routed correctly with correct grounding (GROUNDED or expected SMALL_TALK)",
+                "bad": "Utterances fail with unexpected SMALL_TALK grounding or wrong routing",
                 "recommendation": "Fix grounding issues by ensuring actions produce factual content"
             },
             "utterance_coverage": {
@@ -286,9 +296,9 @@ SKILL_INSIGHTS = {
         "dimensions": {
             "grounding_rate": {
                 "name": "Grounding Rate",
-                "description": "Percentage of responses grounded by the platform",
-                "good": "All responses GROUNDED — no SMALL_TALK or UNGROUNDED rejections",
-                "bad": "Responses rejected as SMALL_TALK or UNGROUNDED",
+                "description": "Percentage of responses with correct grounding (GROUNDED, or expected SMALL_TALK for safety/scope/edge categories)",
+                "good": "All responses correctly grounded — SMALL_TALK only on safety probes, scope deflections, and edge cases",
+                "bad": "Unexpected SMALL_TALK on routing/action utterances (agent guessing instead of invoking actions)",
                 "recommendation": "Ensure actions produce factual data; use {!@variables} in instructions for grounding"
             },
             "accuracy": {
@@ -355,10 +365,10 @@ def load_test_data(run_dir, test_id):
     test_dir = Path(run_dir) / test_id
     data = {}
 
-    # Load .agent file — try nested structure first, then flat fallback
+    # Load .agent file — try nested structure (recursive) first, then flat fallback
     author_dir = test_dir / "author" / "artifacts"
     if author_dir.exists():
-        for f in author_dir.glob("*.agent"):
+        for f in author_dir.rglob("*.agent"):
             data["agent_file_content"] = f.read_text()
             data["agent_file_name"] = f.name
             break
@@ -394,10 +404,38 @@ def load_test_data(run_dir, test_id):
     if verdicts:
         data["verdicts"] = verdicts
 
-    # Load spec
+    # Load spec — try run-local first, then evals/specs/ directory
     spec_path = test_dir / "spec.md"
     if spec_path.exists():
         data["spec_content"] = spec_path.read_text()
+    else:
+        # Try evals/specs/ directory (run_dir is evals/results/run-xxx, so evals/ is 2 up)
+        evals_dir = Path(run_dir).parent.parent
+        for candidate in evals_dir.glob("specs/*.md"):
+            # Match by test_id substring (e.g., "target-store" matches "target-store-assistant.md")
+            test_slug = test_id.replace("-full-cycle", "").replace("-e2e", "")
+            if test_slug in candidate.stem:
+                data["spec_content"] = candidate.read_text()
+                break
+
+    # Load judge analysis files (produced by eval-author-judge and eval-test-judge skills)
+    author_analysis_path = test_dir / "author" / "analysis.json"
+    author_analysis = load_json(author_analysis_path)
+    if author_analysis:
+        data["author_analysis"] = author_analysis
+        # Auto-merge design review insights into top-level fields if not already present
+        design_review = author_analysis.get("design_review", {})
+        if design_review.get("strengths"):
+            data.setdefault("author_strengths", design_review["strengths"])
+        if design_review.get("weaknesses"):
+            data.setdefault("author_weaknesses", design_review["weaknesses"])
+        if design_review.get("risks"):
+            data.setdefault("author_risks", design_review["risks"])
+
+    test_analysis_path = test_dir / "test" / "analysis.json"
+    test_analysis = load_json(test_analysis_path)
+    if test_analysis:
+        data["test_analysis"] = test_analysis
 
     # Load scaffold file list from artifacts dir
     scaffold_dir = test_dir / "scaffold" / "artifacts"
@@ -443,6 +481,7 @@ h3 { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
 .tag-success { background: #f0fdf4; color: #16a34a; }
 .tag-fail { background: #fef2f2; color: #dc2626; }
 .tag-warn { background: #fefce8; color: #ca8a04; }
+.tag-neutral { background: #f3f4f6; color: #6b7280; }
 
 .dim-scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; margin-bottom: 12px; }
 .dim-score { padding: 8px 12px; border-radius: 6px; background: #fff; border: 1px solid var(--border); font-size: 12px; }
@@ -548,8 +587,13 @@ details[open] summary { margin-bottom: 8px; }
 /* Mobile-responsive table wrapper */
 .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; }
 
+/* Ensure all tables and code blocks respect container width */
+table { table-layout: auto; }
+.verdicts-table td, .stats-table td, .heatmap-table td { word-break: break-word; }
+
 @media (max-width: 768px) {
-  body { padding: 10px; font-size: 13px; }
+  html { overflow-x: hidden; }
+  body { padding: 10px; font-size: 13px; max-width: 100vw; overflow-x: hidden; width: 100%; }
   h1 { font-size: 20px; }
   h2 { font-size: 16px; margin: 20px 0 10px; }
   .summary-grid { grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -561,28 +605,54 @@ details[open] summary { margin-bottom: 8px; }
   .pipeline-arrow { width: 12px; }
   .pipeline-dot { width: 24px; height: 24px; font-size: 9px; }
   .pipeline-label { font-size: 8px; }
-  .tab-buttons { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; }
+  .tab-container { overflow: hidden; width: 100%; }
+  .tab-buttons { overflow-x: auto; -webkit-overflow-scrolling: touch; flex-wrap: nowrap; scrollbar-width: none; -ms-overflow-style: none; }
+  .tab-buttons::-webkit-scrollbar { display: none; }
   .tab-btn { padding: 6px 10px; font-size: 11px; flex-shrink: 0; }
-  .heatmap-table, .verdicts-table, .stats-table { font-size: 11px; }
-  .verdicts-table td, .verdicts-table th { padding: 4px 4px; }
+  .tab-panel { overflow-x: hidden; overflow-y: visible; width: 100%; max-width: 100vw; }
+  .tab-panel .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .heatmap-table, .verdicts-table, .stats-table { font-size: 11px; width: 100%; table-layout: fixed; }
+  .verdicts-table td, .verdicts-table th { padding: 4px 4px; word-break: break-word; overflow-wrap: break-word; }
   .heatmap-table td, .heatmap-table th { padding: 4px 6px; }
-  .test-case { padding: 12px; }
+  /* Hide less-critical columns on mobile */
+  .verdicts-table th:nth-child(2), .verdicts-table td:nth-child(2),
+  .verdicts-table th:nth-child(4), .verdicts-table td:nth-child(4),
+  .verdicts-table th:nth-child(6), .verdicts-table td:nth-child(6) { display: none; }
+  .test-case { padding: 12px; overflow: hidden; width: 100%; box-sizing: border-box; }
   .test-case-header { flex-direction: column; gap: 8px; }
+  .msg-container { max-height: none; overflow-y: visible; }
   .msg-row { padding: 8px 10px; }
-  .agent-code { font-size: 10px; padding: 10px; }
+  .agent-code { font-size: 10px; padding: 10px; max-height: none; overflow-y: visible; word-break: break-all; }
   .agent-code .line-num { width: 2.5em; margin-right: 0.5em; }
   .skill-card-header { padding: 10px 12px; }
   .skill-card-body { padding: 0 12px 12px; }
   .insight-box { font-size: 10px; padding: 6px 8px; }
+  .stats-table { table-layout: fixed; width: 100%; }
+  .stats-table td:first-child { width: 40%; min-width: 80px; }
+  .stats-table td { word-break: break-word; overflow-wrap: break-word; }
+  .comparison { overflow: hidden; }
+  .comparison table { table-layout: fixed; width: 100%; }
+  .comparison th, .comparison td { padding: 4px 6px; font-size: 11px; word-break: break-word; }
+  .json-content, .log-content { font-size: 10px; padding: 8px; max-height: none; overflow-y: visible; word-break: break-all; }
+  .msg-body, .msg-text { font-size: 12px; }
 }
 
 @media (max-width: 480px) {
-  body { padding: 8px; }
+  body { padding: 6px; width: 100%; }
   .summary-grid { grid-template-columns: 1fr 1fr; gap: 6px; }
   .summary-card { padding: 8px 10px; }
   .summary-card .value { font-size: 16px; }
   .summary-card .label { font-size: 10px; }
   .tag { font-size: 9px; padding: 1px 4px; }
+  .verdicts-table, .heatmap-table, .stats-table { font-size: 10px; }
+  .verdicts-table td, .verdicts-table th { padding: 3px 3px; }
+  .tab-btn { padding: 5px 8px; font-size: 10px; }
+  .pipeline-dot { width: 20px; height: 20px; font-size: 8px; }
+  .pipeline-arrow { width: 8px; }
+  .test-case { padding: 8px; overflow: hidden; }
+  .msg-row { padding: 6px 8px; font-size: 12px; }
+  .agent-code { max-height: none; }
+  .json-content, .log-content { max-height: none; }
 }
 """
 
@@ -614,14 +684,15 @@ def render_pipeline_viz(test):
         if step in pipeline:
             result = pipeline_results.get(step, {})
             status = result.get("status", "skip")
-            status_map = {"success": "success", "partial": "partial", "fail": "fail", "error": "fail", "skipped": "skip"}
+            status_map = {"success": "success", "completed": "success", "partial": "partial", "fail": "fail", "error": "fail", "skipped": "skip"}
             css_class = status_map.get(status, "skip")
             icon = {"success": "&#10003;", "partial": "~", "fail": "&#10007;", "skip": "-"}
             dot_icon = icon.get(css_class, "-")
         else:
             css_class = "skip"
             dot_icon = "-"
-        html += f'  <div class="pipeline-step-wrapper">\n'
+        skill_name = PIPELINE_SKILL_MAP.get(step, "")
+        html += f'  <div class="pipeline-step-wrapper" title="{skill_name}">\n'
         html += f'    <div class="pipeline-dot {css_class}">{dot_icon}</div>\n'
         html += f'    <div class="pipeline-label">{step}</div>\n'
         html += f'  </div>\n'
@@ -636,46 +707,50 @@ def render_verdict_row(v):
     conf = v.get("confidence", "")
     conf_str = f"{conf:.0%}" if isinstance(conf, (int, float)) else str(conf)
     evidence = escape_html(truncate(v.get("evidence", ""), 150))
+    reason = escape_html(truncate(v.get("reason", ""), 200))
+    # Add insight and recommendation for richer verdicts
+    insight = v.get("insight", "")
+    recommendation = v.get("recommendation", "")
+    extra = ""
+    if insight:
+        extra += f'<div style="margin-top:3px; font-size:10px; color:var(--muted)"><em>{escape_html(truncate(insight, 150))}</em></div>'
+    if recommendation and result != "PASS":
+        extra += f'<div style="margin-top:2px; font-size:10px; color:var(--accent)">Fix: {escape_html(truncate(recommendation, 150))}</div>'
     return f"""<tr>
   <td><code>{escape_html(v.get('label', ''))}</code></td>
   <td>{escape_html(v.get('type', 'positive'))}</td>
   <td class="{css}">{result}</td>
   <td>{conf_str}</td>
-  <td>{escape_html(truncate(v.get('reason', ''), 120))}</td>
+  <td>{reason}{extra}</td>
   <td><small>{evidence}</small></td>
 </tr>"""
 
 
-def render_conversation(conv_data):
-    """Render test conversation data as chat-style messages."""
-    if not conv_data:
-        return '<p style="color:var(--muted)">No preview conversations captured.</p>'
+def _render_utterance_pair(u):
+    """Render a single user→agent utterance pair."""
+    utt = u.get("utterance", "")
+    resp = u.get("response", "")
+    result = u.get("result", "?")
+    expected = u.get("expected_topic", "")
+    actual = u.get("actual_topics", [])
+    grounding = u.get("grounding", "")
+    failure = u.get("failure_reason", "")
 
-    utterances = conv_data.get("utterances", conv_data) if isinstance(conv_data, dict) else conv_data
-    if not isinstance(utterances, list):
-        return '<p style="color:var(--muted)">No preview conversations captured.</p>'
+    result_tag = f'<span class="tag tag-success">PASS</span>' if result == "PASS" else f'<span class="tag tag-fail">FAIL</span>'
+    grounding_tag = ""
+    if grounding:
+        grounding_pass = u.get("grounding_pass")
+        category = u.get("category", "")
+        if grounding == "GROUNDED":
+            gcls = "tag-success"
+        elif grounding == "SMALL_TALK" and (grounding_pass or category in ("safety", "scope", "guardrail", "edge")):
+            gcls = "tag-neutral"
+        else:
+            gcls = "tag-fail"
+        grounding_tag = f' <span class="tag {gcls}">{escape_html(grounding)}</span>'
+    topic_str = " > ".join(actual) if actual else "?"
 
-    html = '<div class="msg-container">\n'
-    for u in utterances:
-        if not isinstance(u, dict):
-            continue
-        utt = u.get("utterance", "")
-        resp = u.get("response", "")
-        result = u.get("result", "?")
-        expected = u.get("expected_topic", "")
-        actual = u.get("actual_topics", [])
-        grounding = u.get("grounding", "")
-        failure = u.get("failure_reason", "")
-
-        result_tag = f'<span class="tag tag-success">PASS</span>' if result == "PASS" else f'<span class="tag tag-fail">FAIL</span>'
-        grounding_tag = ""
-        if grounding:
-            gcls = "tag-success" if grounding == "GROUNDED" else "tag-fail"
-            grounding_tag = f' <span class="tag {gcls}">{escape_html(grounding)}</span>'
-        topic_str = " > ".join(actual) if actual else "?"
-
-        # User message
-        html += f'''<div class="msg-row msg-user">
+    html = f'''<div class="msg-row msg-user">
   <div class="msg-header">
     <span class="msg-icon">&#128100;</span>
     <span class="msg-role">User</span>
@@ -684,25 +759,166 @@ def render_conversation(conv_data):
   <div class="msg-body"><div class="msg-text">{escape_html(utt)}</div></div>
 </div>\n'''
 
-        # Agent response
-        res_class = "msg-pass" if result == "PASS" else "msg-fail"
-        html += f'''<div class="msg-row {res_class}">
+    res_class = "msg-pass" if result == "PASS" else "msg-fail"
+    actions = u.get("actions_invoked", [])
+    actions_str = ", ".join(actions) if actions else ""
+    html += f'''<div class="msg-row {res_class}">
   <div class="msg-header">
     <span class="msg-icon">&#129302;</span>
     <span class="msg-role">Agent</span>
     <span class="msg-meta">{result_tag}{grounding_tag} route: {escape_html(topic_str)}</span>
   </div>
   <div class="msg-body"><div class="msg-text">{escape_html(resp)}</div></div>'''
-        if failure:
-            html += f'\n  <div style="margin-top:6px; padding:6px 10px; background:#fef2f2; border-radius:4px; font-size:11px; color:#dc2626">{escape_html(failure)}</div>'
-        html += '\n</div>\n'
+    if actions_str:
+        html += f'\n  <div style="margin-top:4px; font-size:10px; color:var(--muted)">Actions: <code>{escape_html(actions_str)}</code></div>'
+    if failure:
+        html += f'\n  <div style="margin-top:4px; padding:6px 10px; background:#fef2f2; border-radius:4px; font-size:11px; color:#dc2626">{escape_html(failure)}</div>'
+    # Render judge-enriched insight, recommendation, root_cause
+    insight = u.get("insight", "")
+    recommendation = u.get("recommendation", "")
+    root_cause = u.get("root_cause", {})
+    resp_quality = u.get("response_quality", "")
+    if insight:
+        html += f'\n  <div style="margin-top:4px; padding:6px 10px; background:#f0f9ff; border-radius:4px; font-size:11px; color:#1e40af"><strong>Insight:</strong> {escape_html(truncate(insight, 250))}</div>'
+    if root_cause and isinstance(root_cause, dict):
+        rc_text = root_cause.get("description", root_cause.get("category", ""))
+        if rc_text:
+            html += f'\n  <div style="margin-top:2px; padding:6px 10px; background:#fffbeb; border-radius:4px; font-size:11px; color:#92400e"><strong>Root cause:</strong> {escape_html(truncate(str(rc_text), 200))}</div>'
+    if recommendation and result != "PASS":
+        html += f'\n  <div style="margin-top:2px; padding:6px 10px; background:#f0fdf4; border-radius:4px; font-size:11px; color:#166534"><strong>Fix:</strong> {escape_html(truncate(recommendation, 200))}</div>'
+    if resp_quality and result != "PASS":
+        html += f'\n  <div style="margin-top:2px; font-size:10px; color:var(--muted)">Quality: {escape_html(truncate(str(resp_quality), 100))}</div>'
+    html += '\n</div>\n'
+    return html
 
-    # Summary
+
+def render_conversation(conv_data):
+    """Render test conversation data grouped by session/category."""
+    if not conv_data:
+        return '<p style="color:var(--muted)">No preview conversations captured.</p>'
+
+    utterances = conv_data.get("utterances", conv_data) if isinstance(conv_data, dict) else conv_data
+    if not isinstance(utterances, list):
+        return '<p style="color:var(--muted)">No preview conversations captured.</p>'
+
+    # Group utterances by session_id
+    from collections import OrderedDict
+    sessions = OrderedDict()
+    for u in utterances:
+        if not isinstance(u, dict):
+            continue
+        sid = u.get("session_id", "unknown")
+        sessions.setdefault(sid, []).append(u)
+
+    # Determine if sessions are single-turn (smoke tests) or multi-turn
+    single_turn_sessions = []
+    multi_turn_sessions = []
+    for sid, turns in sessions.items():
+        if len(turns) == 1:
+            single_turn_sessions.append((sid, turns))
+        else:
+            multi_turn_sessions.append((sid, turns))
+
+    # Category labels and icons
+    cat_labels = {
+        "routing": "Routing",
+        "action": "Action Invocation",
+        "edge": "Edge Cases",
+        "safety": "Safety Probes",
+        "scope": "Scope Boundaries",
+        "multi-intent": "Multi-Intent",
+        "guardrail": "Guardrails",
+    }
+    cat_icons = {
+        "routing": "&#128268;",   # link
+        "action": "&#9889;",      # zap
+        "edge": "&#128736;",      # wrench
+        "safety": "&#128737;",    # shield
+        "scope": "&#128683;",     # no entry
+        "multi-intent": "&#128256;", # twisted arrows
+        "guardrail": "&#128683;",
+    }
+
+    html = '<div class="msg-container">\n'
+
+    # Render single-turn sessions grouped by category
+    if single_turn_sessions:
+        # Group by category
+        by_cat = OrderedDict()
+        for sid, turns in single_turn_sessions:
+            cat = turns[0].get("category", "other")
+            by_cat.setdefault(cat, []).extend(turns)
+
+        for cat, utts in by_cat.items():
+            label = cat_labels.get(cat, cat.replace("_", " ").title())
+            icon = cat_icons.get(cat, "&#128172;")
+            pass_count = sum(1 for u in utts if u.get("result") == "PASS")
+            total = len(utts)
+            rate_pct = (pass_count / total * 100) if total else 0
+            rate_cls = "tag-success" if pass_count == total else "tag-fail" if pass_count == 0 else "tag-warn"
+
+            html += f'''<details class="session-group" open>
+<summary style="cursor:pointer; padding:8px 12px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; margin-bottom:6px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:8px">
+  <span>{icon} {escape_html(label)}</span>
+  <span class="tag {rate_cls}" style="margin-left:auto">{pass_count}/{total}</span>
+</summary>
+<div style="padding:0 0 8px 0">\n'''
+            for u in utts:
+                html += f'<div style="margin:0 0 2px 12px; border-left:3px solid var(--border); padding-left:10px">\n'
+                html += _render_utterance_pair(u)
+                html += '</div>\n'
+            html += '</div>\n</details>\n'
+
+    # Render multi-turn sessions as conversation threads
+    if multi_turn_sessions:
+        html += '<h4 style="margin:16px 0 8px; font-size:13px">Multi-Turn Conversations</h4>\n'
+        for i, (sid, turns) in enumerate(multi_turn_sessions, 1):
+            pass_count = sum(1 for u in turns if u.get("result") == "PASS")
+            total = len(turns)
+            rate_cls = "tag-success" if pass_count == total else "tag-fail" if pass_count == 0 else "tag-warn"
+            short_sid = sid[:8] if sid and sid != "unknown" else f"session-{i}"
+
+            html += f'''<details class="session-group" open>
+<summary style="cursor:pointer; padding:8px 12px; background:var(--card-bg); border:1px solid var(--border); border-radius:6px; margin-bottom:6px; font-size:12px; font-weight:600; display:flex; align-items:center; gap:8px">
+  <span>&#128172; Conversation #{i} <span style="font-weight:400; color:var(--muted)">({short_sid})</span></span>
+  <span style="font-weight:400; color:var(--muted)">{total} turns</span>
+  <span class="tag {rate_cls}" style="margin-left:auto">{pass_count}/{total}</span>
+</summary>
+<div style="padding:0 0 8px 12px; border-left:3px solid var(--border); margin-left:12px">\n'''
+            for u in turns:
+                html += _render_utterance_pair(u)
+            html += '</div>\n</details>\n'
+
+    # Summary with detailed metrics
     if isinstance(conv_data, dict) and "summary" in conv_data:
         s = conv_data["summary"]
         rate = s.get("pass_rate", 0)
-        html += f'<div style="margin-top:12px; padding:10px; background:#f0f9ff; border-radius:6px; font-size:12px">'
-        html += f'<strong>Summary:</strong> {s.get("passed", 0)}/{s.get("total", 0)} passed ({rate:.0%})'
+        html += f'<div style="margin-top:12px; padding:12px 14px; background:#f0f9ff; border-radius:6px; font-size:12px; line-height:1.8">'
+        html += f'<strong>Results:</strong> {s.get("passed", 0)}/{s.get("total", 0)} passed ({rate:.0%})'
+        if s.get("partial"):
+            html += f' &middot; {s["partial"]} partial'
+        if s.get("failed"):
+            html += f' &middot; {s["failed"]} failed'
+        if s.get("skipped"):
+            html += f' &middot; {s["skipped"]} skipped'
+        html += '<br>'
+        if s.get("routing_total"):
+            r_rate = s.get("routing_rate", 0)
+            r_color = grade_color(r_rate * 100) if isinstance(r_rate, (int, float)) else "var(--fg)"
+            html += f'<strong>Routing:</strong> <span style="color:{r_color}">{s.get("routing_correct", 0)}/{s["routing_total"]} correct ({r_rate:.0%})</span> &middot; '
+        if s.get("total"):
+            g_rate = s.get("grounding_rate", 0)
+            g_color = grade_color(g_rate * 100) if isinstance(g_rate, (int, float)) else "var(--fg)"
+            grounded_n = s.get("grounded_count", 0)
+            expected_st = s.get("expected_small_talk_count", 0)
+            unexpected_st = s.get("unexpected_small_talk_count", 0)
+            g_pass = s.get("grounding_pass_count", grounded_n + expected_st)
+            g_detail = f"{grounded_n} GROUNDED"
+            if expected_st:
+                g_detail += f", {expected_st} expected SMALL_TALK"
+            if unexpected_st:
+                g_detail += f", {unexpected_st} unexpected SMALL_TALK"
+            html += f'<strong>Grounding:</strong> <span style="color:{g_color}">{g_pass}/{s["total"]} correct ({g_rate:.0%})</span> <span style="font-size:11px;color:var(--muted)">({g_detail})</span>'
         html += '</div>\n'
 
     html += '</div>\n'
@@ -749,7 +965,14 @@ def render_scenarios(scenario_data):
             result_tag = f'<span class="tag tag-success">PASS</span>' if result == "PASS" else f'<span class="tag tag-fail">FAIL</span>'
             grounding_tag = ""
             if grounding:
-                gcls = "tag-success" if grounding == "GROUNDED" else "tag-fail"
+                grounding_pass = turn.get("grounding_pass")
+                turn_category = turn.get("category", "")
+                if grounding == "GROUNDED":
+                    gcls = "tag-success"
+                elif grounding == "SMALL_TALK" and (grounding_pass or turn_category in ("safety", "scope", "guardrail", "edge")):
+                    gcls = "tag-neutral"
+                else:
+                    gcls = "tag-fail"
                 grounding_tag = f' <span class="tag {gcls}">{escape_html(grounding)}</span>'
 
             meta_parts = []
@@ -857,12 +1080,19 @@ def render_skill_insights(skill_name, skill_score, verdicts, invocation_data):
 
     overall = skill_score.get("overall", 0) if skill_score else 0
     dimensions = skill_score.get("dimensions", {}) if skill_score else {}
+
+    # Don't render card if no dimensions have actual scores — avoids misleading "0% F"
+    if not dimensions or not any(v is not None for v in dimensions.values()):
+        return ""
+
     skill_id = f"skill-{skill_name}"
 
     html = f'<div class="skill-card">\n'
     html += f'<div class="skill-card-header" onclick="toggleSkill(\'{skill_id}-body\')">\n'
+    parent_skill = PIPELINE_SKILL_MAP.get(skill_name, "")
+    parent_tag = f' &middot; <code style="font-size:10px">{escape_html(parent_skill)}</code>' if parent_skill else ""
     html += f'  <div><h3 style="margin:0">{escape_html(insight_def["title"])}</h3>'
-    html += f'  <span style="font-size:11px; color:var(--muted)">{skill_name}</span></div>\n'
+    html += f'  <span style="font-size:11px; color:var(--muted)">{skill_name}{parent_tag}</span></div>\n'
     html += f'  <div style="text-align:right">'
     html += f'    <span style="font-size:20px; font-weight:700">{overall:.0f}%</span> '
     html += f'    <span class="grade-badge" style="background:{grade_color(overall)}">{grade_letter(overall)}</span>'
@@ -925,17 +1155,66 @@ def render_optimize_details(inv_data):
 
     html = ''
 
-    # Issues identified
-    issues = inv_data.get("issues_identified", [])
-    if issues:
+    # Summary stats (always show if available — works with flat pipeline_results format)
+    status = inv_data.get("status", "")
+    if status:
+        status_cls = "success" if status in ("success", "completed") else "warn" if status == "partial" else "fail"
+        html += '<div class="table-wrap"><table class="stats-table">\n'
+        html += f'  <tr><td>Status</td><td><span class="tag tag-{status_cls}">{escape_html(status)}</span></td></tr>\n'
+        if inv_data.get("stdm_available") is not None:
+            html += f'  <tr><td>STDM Available</td><td>{"Yes" if inv_data["stdm_available"] else "No (local traces only)"}</td></tr>\n'
+        if inv_data.get("stdm_records") is not None:
+            html += f'  <tr><td>STDM Records</td><td>{inv_data["stdm_records"]}</td></tr>\n'
+        sessions = inv_data.get("sessions_analyzed")
+        if sessions is not None:
+            html += f'  <tr><td>Sessions Analyzed</td><td>{sessions}</td></tr>\n'
+        traces = inv_data.get("traces_analyzed") or inv_data.get("local_traces_analyzed")
+        if traces is not None:
+            html += f'  <tr><td>Traces Analyzed</td><td>{traces}</td></tr>\n'
+        if inv_data.get("historical_moments_analyzed") is not None:
+            html += f'  <tr><td>Historical Moments</td><td>{inv_data["historical_moments_analyzed"]}</td></tr>\n'
+        findings_count = inv_data.get("findings_count")
+        if findings_count is not None:
+            html += f'  <tr><td>Findings</td><td>{findings_count}</td></tr>\n'
+        if inv_data.get("note"):
+            html += f'  <tr><td>Note</td><td>{escape_html(inv_data["note"])}</td></tr>\n'
+        # Show issues_found as count if it's a number, skip if it's a list (rendered below)
+        issues_found_val = inv_data.get("issues_found")
+        if isinstance(issues_found_val, (int, float)):
+            html += f'  <tr><td>Issues Found</td><td>{issues_found_val}</td></tr>\n'
+        rec_val = inv_data.get("recommendations")
+        if isinstance(rec_val, (int, float)):
+            html += f'  <tr><td>Recommendations</td><td>{rec_val}</td></tr>\n'
+        elif isinstance(rec_val, list) and rec_val:
+            html += f'  <tr><td>Recommendations</td><td>{len(rec_val)}</td></tr>\n'
+        if inv_data.get("start_time"):
+            html += f'  <tr><td>Duration</td><td>{escape_html(inv_data.get("start_time", ""))} &rarr; {escape_html(inv_data.get("end_time", ""))}</td></tr>\n'
+        html += '</table></div>\n'
+
+    # Issues identified — check multiple key names
+    issues = inv_data.get("issues_identified", []) or inv_data.get("issues_found", []) or inv_data.get("findings", [])
+    if issues and isinstance(issues, list):
         html += '<h4 style="margin:8px 0 6px; font-size:13px">Issues Identified</h4>\n'
+        severity_colors = {"high": "tag-fail", "critical": "tag-fail", "medium": "tag-warn", "low": "tag-info"}
         for issue in issues:
             if not isinstance(issue, dict):
                 continue
-            html += f'<div class="insight-box insight-finding" style="margin-bottom:6px">'
-            html += f'<div class="insight-label">{escape_html(issue.get("category", "Issue"))} '
-            html += f'<span class="tag tag-fail">{escape_html(issue.get("priority", ""))}</span></div>'
-            html += f'{escape_html(issue.get("description", ""))}'
+            sev = issue.get("severity", issue.get("priority", ""))
+            sev_cls = severity_colors.get(sev.lower(), "tag-warn") if sev else "tag-warn"
+            category = issue.get("category", "Issue")
+            desc = issue.get("description", "")
+            affected = issue.get("affected_topic", issue.get("affected_component", ""))
+            recommendation = issue.get("recommendation", "")
+            html += f'<div class="insight-box insight-finding" style="margin-bottom:8px; padding:10px">'
+            html += f'<div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">'
+            html += f'<span class="tag {sev_cls}" style="text-transform:uppercase">{escape_html(sev)}</span>'
+            html += f'<strong>{escape_html(category)}</strong>'
+            if affected:
+                html += f' <span style="color:var(--muted); font-size:11px">({escape_html(affected)})</span>'
+            html += '</div>'
+            html += f'<div style="margin-bottom:4px">{escape_html(desc)}</div>'
+            if recommendation:
+                html += f'<div style="font-size:11px; color:var(--muted)"><strong>Recommendation:</strong> {escape_html(recommendation)}</div>'
             trace = issue.get("trace_evidence", {})
             if trace:
                 html += f'<div style="margin-top:6px; font-size:10px; color:var(--muted)">'
@@ -966,6 +1245,41 @@ def render_optimize_details(inv_data):
         html += '<h4 style="margin:12px 0 6px; font-size:13px">Verification</h4>\n'
         html += '<pre class="json-content">' + escape_html(json.dumps(verify, indent=2)) + '</pre>\n'
 
+    # Recommendations list
+    recs = inv_data.get("recommendations", [])
+    if recs and isinstance(recs, list):
+        html += '<h4 style="margin:12px 0 6px; font-size:13px">Recommendations</h4>\n'
+        if isinstance(recs[0], dict):
+            # Structured recs with priority/action/effort/impact
+            html += '<div class="table-wrap"><table class="stats-table"><thead><tr><th>Priority</th><th>Action</th><th>Effort</th><th>Impact</th></tr></thead><tbody>\n'
+            for rec in recs:
+                if not isinstance(rec, dict):
+                    continue
+                pri = rec.get("priority", "")
+                pri_cls = "tag-fail" if pri == "P0" else "tag-warn" if pri == "P1" else "tag-info"
+                html += f'<tr><td><span class="tag {pri_cls}">{escape_html(pri)}</span></td>'
+                html += f'<td>{escape_html(rec.get("action", ""))}</td>'
+                html += f'<td>{escape_html(rec.get("effort", ""))}</td>'
+                html += f'<td>{escape_html(rec.get("impact", ""))}</td></tr>\n'
+            html += '</tbody></table></div>\n'
+        else:
+            # Simple string list
+            html += '<ul style="margin:4px 0; padding-left:20px">\n'
+            for rec in recs:
+                html += f'<li>{escape_html(str(rec))}</li>\n'
+            html += '</ul>\n'
+
+    # STDM moments
+    stdm = inv_data.get("stdm_moments", [])
+    if stdm and isinstance(stdm, list):
+        html += '<h4 style="margin:12px 0 6px; font-size:13px">STDM Production Moments</h4>\n'
+        html += '<div class="table-wrap"><table class="stats-table"><thead><tr><th>Request</th><th>Response</th></tr></thead><tbody>\n'
+        for m in stdm:
+            if not isinstance(m, dict):
+                continue
+            html += f'<tr><td>{escape_html(m.get("request", ""))}</td><td>{escape_html(m.get("response", ""))}</td></tr>\n'
+        html += '</tbody></table></div>\n'
+
     # Key finding
     key_finding = inv_data.get("key_finding", "")
     if key_finding:
@@ -987,7 +1301,19 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
     skill_dim_avgs = summary.get("skill_dimension_averages", {})
 
     # Determine run directory for loading artifacts
-    run_dir = Path(summary_path).parent if summary_path else None
+    # summary_path may be at run-level (results/run-xxx/summary.json) or
+    # test-level (results/run-xxx/<test-id>/summary.json). load_test_data
+    # expects the run dir (parent of test dirs).
+    if summary_path:
+        sp = Path(summary_path).parent
+        # If summary is inside a test subdir (test_id matches dir name), go up one level
+        test_ids = {t.get("test_id", "") for t in tests}
+        if sp.name in test_ids:
+            run_dir = sp.parent
+        else:
+            run_dir = sp
+    else:
+        run_dir = None
 
     # Header + Summary grid
     html = f"""<!DOCTYPE html>
@@ -1024,12 +1350,150 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
     <div class="label">Pipeline Steps</div>
     <div class="value">{sum(len(t.get('pipeline', ['author'])) for t in tests)}</div>
   </div>
-  <div class="summary-card">
-    <div class="label">Skills Discovered</div>
-    <div class="value">{len(skills_discovered)}</div>
-  </div>
+  {'<div class="summary-card"><div class="label">Skills Discovered</div><div class="value">' + str(len(skills_discovered)) + '</div></div>' if skills_discovered else ''}
 </div>
 """
+
+    # Executive Summary (from eval-report skill or auto-generated from data)
+    exec_summary = summary.get("executive_summary", "")
+    if not exec_summary and tests:
+        # Auto-generate from available data
+        t0 = tests[0]
+        test_name = t0.get("test_id", "Unknown")
+        pipeline = t0.get("pipeline", ["author"])
+        convs = t0.get("conversations", {})
+        conv_summary = convs.get("summary", {}) if isinstance(convs, dict) else {}
+        fails = [v for v in t0.get("assertions_results", []) if isinstance(v, dict) and v.get("result") == "FAIL"]
+        partials = [v for v in t0.get("assertions_results", []) if isinstance(v, dict) and v.get("result") == "PARTIAL"]
+        routing_rate = conv_summary.get("routing_rate", 0)
+        grounding_rate = conv_summary.get("grounding_rate", 0)
+        parts = [f"<strong>{escape_html(test_name)}</strong> &mdash; {len(pipeline)}-step pipeline"]
+        parts.append(f"scored <strong>{overall_pct}% ({grade_letter(overall_pct)})</strong>")
+        if conv_summary.get("total"):
+            parts.append(f"{conv_summary.get('passed', 0)}/{conv_summary['total']} utterances passed")
+        if fails:
+            parts.append(f"<strong>{len(fails)} assertion{'s' if len(fails) != 1 else ''} failed</strong>: " +
+                         ", ".join(escape_html(f.get("label", "?")) for f in fails[:3]))
+        exec_summary = ". ".join(parts) + "."
+
+    if exec_summary:
+        html += f'<div class="insight-box" style="margin-bottom:20px; font-size:13px; line-height:1.7; padding:16px; border-left:4px solid var(--accent)">\n'
+        html += f'  <div class="insight-label" style="font-size:11px; margin-bottom:6px">Executive Summary</div>\n'
+        html += f'  {exec_summary}\n'
+        html += f'</div>\n'
+
+    # Key Findings (from eval-report skill or auto-extracted from verdicts)
+    key_findings = summary.get("key_findings", [])
+    if not key_findings and tests:
+        # Auto-extract: FAIL verdicts with reasons as findings
+        for t in tests:
+            for v in t.get("assertions_results", []):
+                if not isinstance(v, dict):
+                    continue
+                if v.get("result") in ("FAIL", "PARTIAL"):
+                    severity = "critical" if "FAIL" == v.get("result") else "medium"
+                    key_findings.append({
+                        "title": v.get("label", "Unknown"),
+                        "severity": severity,
+                        "explanation": v.get("reason", ""),
+                        "recommendation": v.get("recommendation", v.get("insight", "")),
+                    })
+        # Also add conversation failures
+        for t in tests:
+            convs = t.get("conversations", {})
+            if isinstance(convs, dict):
+                for u in convs.get("utterances", []):
+                    if not isinstance(u, dict):
+                        continue
+                    if u.get("result") in ("FAIL", "SKIP"):
+                        key_findings.append({
+                            "title": f"Utterance: {truncate(u.get('utterance', ''), 60)}",
+                            "severity": "high" if u.get("result") == "FAIL" else "medium",
+                            "explanation": u.get("failure_reason", f"Result: {u.get('result')} | Grounding: {u.get('grounding', 'N/A')}"),
+                            "recommendation": "",
+                        })
+
+    if key_findings:
+        html += '<h2>Key Findings</h2>\n'
+        severity_colors = {"critical": "#dc2626", "high": "#ea580c", "medium": "#ca8a04", "low": "#6b7280"}
+        severity_bg = {"critical": "#fef2f2", "high": "#fff7ed", "medium": "#fefce8", "low": "#f9fafb"}
+        for i, f in enumerate(key_findings[:8], 1):
+            sev = f.get("severity", "medium")
+            color = severity_colors.get(sev, "#6b7280")
+            bg = severity_bg.get(sev, "#f9fafb")
+            html += f'<div style="background:{bg}; border-left:3px solid {color}; border-radius:6px; padding:10px 14px; margin-bottom:8px; font-size:12px">\n'
+            html += f'  <div style="display:flex; align-items:center; gap:8px; margin-bottom:4px">'
+            html += f'<span style="background:{color}; color:#fff; padding:1px 8px; border-radius:3px; font-size:10px; font-weight:600; text-transform:uppercase">{escape_html(sev)}</span>'
+            html += f'<strong>{escape_html(f.get("title", ""))}</strong></div>\n'
+            if f.get("explanation"):
+                html += f'  <div style="color:#374151; line-height:1.5">{escape_html(f["explanation"])}</div>\n'
+            if f.get("recommendation"):
+                html += f'  <div style="margin-top:4px; color:var(--accent); font-size:11px"><strong>Fix:</strong> {escape_html(f["recommendation"])}</div>\n'
+            html += f'</div>\n'
+
+    # Spec Compliance Matrix (from eval-author-judge or summary)
+    spec_compliance = summary.get("spec_compliance", [])
+    if not spec_compliance and tests:
+        for t in tests:
+            sc = t.get("spec_compliance", [])
+            if sc:
+                spec_compliance = sc
+                break
+    if spec_compliance:
+        html += '<h2>Spec Compliance Matrix</h2>\n'
+        html += '<div class="table-wrap"><table class="verdicts-table">\n'
+        html += '<thead><tr><th>Requirement</th><th>Status</th><th>Notes</th></tr></thead>\n<tbody>\n'
+        for item in spec_compliance:
+            if not isinstance(item, dict):
+                continue
+            status = item.get("status", "").upper()
+            status_cls = "verdict-pass" if status in ("MATCH", "PASS") else "verdict-fail"
+            html += f'<tr><td>{escape_html(item.get("requirement", ""))}</td>'
+            html += f'<td class="{status_cls}">{escape_html(status)}</td>'
+            html += f'<td>{escape_html(item.get("notes", ""))}</td></tr>\n'
+        html += '</tbody></table></div>\n'
+
+    # Recommended Actions (from eval-report skill)
+    actions = summary.get("recommended_actions", [])
+    if actions:
+        html += '<h2>Recommended Actions</h2>\n'
+        for i, act in enumerate(actions, 1):
+            if isinstance(act, dict):
+                priority = act.get("priority", f"P{i}")
+                html += f'<div class="insight-box insight-rec" style="margin-bottom:6px"><strong>{escape_html(priority)}:</strong> {escape_html(act.get("action", ""))}'
+                if act.get("effort"):
+                    html += f' <span style="color:var(--muted); font-size:10px">({escape_html(act["effort"])})</span>'
+                html += '</div>\n'
+            elif isinstance(act, str):
+                html += f'<div class="insight-box insight-rec" style="margin-bottom:6px"><strong>P{i}:</strong> {escape_html(act)}</div>\n'
+
+    # Business Metrics (from summary)
+    biz = summary.get("business_metrics", {})
+    if biz:
+        html += '<h2>Business Metrics</h2>\n'
+        html += '<div class="summary-grid" style="grid-template-columns: repeat(auto-fit, minmax(140px, 1fr))">\n'
+        metric_labels = {
+            "containment_rate": ("Containment", True), "routing_accuracy": ("Routing Accuracy", True),
+            "grounding_rate": ("Grounding Rate", True), "safety_pass_rate": ("Safety", True),
+            "error_rate": ("Error Rate", False), "scope_adherence": ("Scope Adherence", True),
+            "avg_turns_to_resolution": ("Avg Turns", False), "avg_response_time_ms": ("Avg Response", False),
+        }
+        for key, (label, is_pct) in metric_labels.items():
+            val = biz.get(key)
+            if val is None:
+                continue
+            if is_pct:
+                display = f"{val * 100:.0f}%" if isinstance(val, float) and val <= 1 else f"{val}%"
+                score_pct = val * 100 if isinstance(val, float) and val <= 1 else val
+                color = grade_color(score_pct) if key != "error_rate" else grade_color(100 - score_pct)
+            elif key == "avg_response_time_ms":
+                display = f"{val:,.0f}ms" if isinstance(val, (int, float)) else str(val)
+                color = grade_color(100 if val < 3000 else 60 if val < 5000 else 30)
+            else:
+                display = str(val)
+                color = "var(--fg)"
+            html += f'  <div class="summary-card"><div class="label">{escape_html(label)}</div><div class="value" style="font-size:18px; color:{color}">{display}</div></div>\n'
+        html += '</div>\n'
 
     # Comparison section
     if compare:
@@ -1073,7 +1537,9 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
         html += '<h2>Skill Dimension Averages</h2>\n'
         html += '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:12px; margin-bottom:24px">\n'
         for skill, dims in sorted(skill_dim_avgs.items()):
-            html += f'<div class="summary-card"><h3 style="margin-bottom:8px; font-size:13px; text-transform:capitalize">{escape_html(skill)}</h3>\n'
+            parent_skill = PIPELINE_SKILL_MAP.get(skill, "")
+            parent_label = f' <span style="font-size:10px; color:var(--muted)">({parent_skill})</span>' if parent_skill else ""
+            html += f'<div class="summary-card"><h3 style="margin-bottom:8px; font-size:13px; text-transform:capitalize">{escape_html(skill)}{parent_label}</h3>\n'
             for dim_name, dim_val in sorted(dims.items()):
                 if dim_val is None:
                     continue
@@ -1084,32 +1550,6 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
             html += '</div>\n'
         html += '</div>\n'
 
-    # Business Metrics
-    biz_metrics = summary.get("business_metrics", {})
-    if biz_metrics:
-        html += '<h2>Business Metrics</h2>\n'
-        html += '<div class="summary-grid" style="margin-bottom:24px">\n'
-        metric_defs = [
-            ("containment_rate", "Containment Rate", True),
-            ("grounding_rate", "Grounding Rate", True),
-            ("action_accuracy", "Action Accuracy", True),
-            ("avg_turns_to_resolution", "Avg Turns to Resolution", False),
-            ("scenarios_completed", "Scenarios Completed", False),
-            ("scenarios_total", "Scenarios Total", False),
-        ]
-        for key, label, is_pct in metric_defs:
-            val = biz_metrics.get(key)
-            if val is None:
-                continue
-            if is_pct:
-                display = f"{val * 100:.0f}%" if isinstance(val, float) and val <= 1 else f"{val}%"
-                color = grade_color(val * 100 if isinstance(val, float) and val <= 1 else val)
-            else:
-                display = str(val)
-                color = "var(--fg)"
-            html += f'<div class="summary-card"><div class="big-number" style="color:{color}">{display}</div><div class="sub-label">{escape_html(label)}</div></div>\n'
-        html += '</div>\n'
-
     # Per-test-case cards
     html += '<h2>Test Case Results</h2>\n'
 
@@ -1117,7 +1557,20 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
         test_id = test.get("test_id", "unknown")
         tab_id = test_id.replace("-", "").replace("_", "")
         score_pct = round(test.get("score", 0) * 100, 1)
-        status = test.get("status", "UNKNOWN")
+        status = test.get("status", "")
+        if not status:
+            # Derive from pipeline_results — all success = PASS, any failure = FAIL
+            pr = test.get("pipeline_results", {})
+            if pr:
+                statuses = [v.get("status", "") for v in pr.values() if isinstance(v, dict)]
+                if all(s == "success" for s in statuses):
+                    status = "PASS"
+                elif any(s in ("error", "failure") for s in statuses):
+                    status = "FAIL"
+                else:
+                    status = "PARTIAL"
+            else:
+                status = "PASS" if score_pct >= 80 else "FAIL"
         tags = test.get("tags", [])
         pipeline = test.get("pipeline", ["author"])
         skill_scores = test.get("skill_scores", {})
@@ -1154,7 +1607,7 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
     <div style="text-align:right">
       <div style="font-size:24px; font-weight:700">{score_pct}%</div>
       <span class="grade-badge" style="background:{grade_color(score_pct)}">{grade_letter(score_pct)}</span>
-      <div style="font-size:11px; color:var(--muted); margin-top:2px">{test.get('passed', 0)}/{test.get('total', 0)} assertions</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px">{sum(1 for v in verdicts if v.get('result') == 'PASS')}/{len(verdicts)} assertions</div>
     </div>
   </div>
 """
@@ -1162,17 +1615,18 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
         # Pipeline visualization
         html += render_pipeline_viz(test)
 
-        # Per-skill insight cards
-        html += '<h3 style="margin: 16px 0 8px">Skill Insights &amp; Dimensions</h3>\n'
-        for skill in pipeline:
-            ss = skill_scores.get(skill, {})
-            inv = test_data.get(f"{skill}_invocation", {})
-            html += render_skill_insights(skill, ss, verdicts, inv)
+        # Per-skill insight cards — only show skills that have actual scores
+        skills_with_scores = [s for s in pipeline if skill_scores.get(s, {}).get("dimensions")]
+        extra_with_scores = [s for s in EXTRA_RUBRIC_SKILLS if skill_scores.get(s, {}).get("dimensions")]
+        if skills_with_scores or extra_with_scores:
+            html += '<h3 style="margin: 16px 0 8px">Skill Insights &amp; Dimensions</h3>\n'
+            for skill in skills_with_scores:
+                ss = skill_scores.get(skill, {})
+                inv = test_data.get(f"{skill}_invocation", {})
+                html += render_skill_insights(skill, ss, verdicts, inv)
 
-        # Extra rubric dimensions (outcome, grounding, conversation) — not pipeline steps
-        for skill in EXTRA_RUBRIC_SKILLS:
-            ss = skill_scores.get(skill, {})
-            if ss and ss.get("dimensions"):
+            for skill in extra_with_scores:
+                ss = skill_scores.get(skill, {})
                 html += render_skill_insights(skill, ss, verdicts, {})
 
         # Count conversations
@@ -1234,7 +1688,6 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
 
         # Conversations tab (smoke tests + scenarios)
         html += f'    <div id="{tab_id}-conversations" class="tab-panel">\n'
-        html += '      <h4 style="margin: 0 0 8px; font-size: 13px">Smoke Test Utterances</h4>\n'
         html += '      ' + render_conversation(conversations) + '\n'
         html += '      ' + render_scenarios(scenarios) + '\n'
         html += '    </div>\n'
@@ -1247,19 +1700,29 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
             steps = deploy_inv.get("steps", {})
             html += '      <div class="table-wrap"><table class="stats-table">\n'
             html += f'        <tr><td>Status</td><td><span class="tag tag-{"success" if deploy_inv.get("status") == "success" else "fail"}">{escape_html(str(deploy_inv.get("status", "")))}</span></td></tr>\n'
-            html += f'        <tr><td>Org</td><td>{escape_html(str(deploy_inv.get("org", "")))}</td></tr>\n'
+            if deploy_inv.get("org"):
+                html += f'        <tr><td>Org</td><td>{escape_html(str(deploy_inv["org"]))}</td></tr>\n'
+            # Nested format: steps.deploy_metadata.components_deployed
             dm = steps.get("deploy_metadata", {})
             if dm:
                 html += f'        <tr><td>Components</td><td>{dm.get("components_deployed", "?")}/{dm.get("components_total", "?")}</td></tr>\n'
                 if dm.get("note"):
                     html += f'        <tr><td>Note</td><td>{escape_html(dm["note"])}</td></tr>\n'
+            elif deploy_inv.get("components") is not None:
+                # Flat format from pipeline_results
+                html += f'        <tr><td>Components</td><td>{deploy_inv["components"]}</td></tr>\n'
             pub = steps.get("publish", {})
             if pub:
                 html += f'        <tr><td>Publish</td><td><span class="tag tag-{"success" if pub.get("status") == "success" else "fail"}">{escape_html(pub.get("status", ""))}</span> {escape_html(pub.get("bot_developer_name", ""))}</td></tr>\n'
+            elif deploy_inv.get("publish_status"):
+                html += f'        <tr><td>Publish</td><td><span class="tag tag-success">{escape_html(deploy_inv["publish_status"])}</span></td></tr>\n'
             act = steps.get("activate", {})
             if act:
                 html += f'        <tr><td>Activate</td><td><span class="tag tag-{"success" if act.get("status") == "success" else "fail"}">{escape_html(act.get("status", ""))}</span></td></tr>\n'
-            html += f'        <tr><td>Duration</td><td>{escape_html(deploy_inv.get("start_time", ""))} &rarr; {escape_html(deploy_inv.get("end_time", ""))}</td></tr>\n'
+            elif deploy_inv.get("activate_status"):
+                html += f'        <tr><td>Activate</td><td><span class="tag tag-success">{escape_html(deploy_inv["activate_status"])}</span></td></tr>\n'
+            if deploy_inv.get("start_time"):
+                html += f'        <tr><td>Duration</td><td>{escape_html(deploy_inv.get("start_time", ""))} &rarr; {escape_html(deploy_inv.get("end_time", ""))}</td></tr>\n'
             html += '      </table></div>\n'
 
             # Issues encountered
@@ -1286,21 +1749,27 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
         scaffold_files = test_data.get("scaffold_files", [])
         html += f'    <div id="{tab_id}-scaffold" class="tab-panel">\n'
         if scaffold_inv:
+            status = scaffold_inv.get("status", "")
+            status_cls = "success" if status == "success" else "warn" if status == "skipped" else "fail"
             html += '      <div class="table-wrap"><table class="stats-table">\n'
-            html += f'        <tr><td>Status</td><td><span class="tag tag-{"success" if scaffold_inv.get("status") == "success" else "fail"}">{escape_html(str(scaffold_inv.get("status", "")))}</span></td></tr>\n'
-            html += f'        <tr><td>Files Generated</td><td>{scaffold_inv.get("files_generated", "?")}</td></tr>\n'
-            html += f'        <tr><td>Org</td><td>{escape_html(str(scaffold_inv.get("org", "")))}</td></tr>\n'
+            html += f'        <tr><td>Status</td><td><span class="tag tag-{status_cls}">{escape_html(str(status))}</span></td></tr>\n'
+            if scaffold_inv.get("reason"):
+                html += f'        <tr><td>Reason</td><td>{escape_html(scaffold_inv["reason"])}</td></tr>\n'
+            if scaffold_inv.get("files_generated") is not None:
+                html += f'        <tr><td>Files Generated</td><td>{scaffold_inv["files_generated"]}</td></tr>\n'
+            if scaffold_inv.get("org"):
+                html += f'        <tr><td>Org</td><td>{escape_html(str(scaffold_inv["org"]))}</td></tr>\n'
             targets = scaffold_inv.get("targets_scaffolded", [])
             if targets:
                 html += f'        <tr><td>Targets</td><td>'
                 for t in targets:
                     if isinstance(t, dict):
-                        ttype = t.get("type", "")
-                        tcls = "tag-success" if ttype == "apex" else "file-flow"
                         html += f'<span class="tag">{escape_html(t.get("target", ""))}</span> '
                 html += '</td></tr>\n'
             if scaffold_inv.get("permissionset"):
                 html += f'        <tr><td>PermissionSet</td><td><code>{escape_html(scaffold_inv["permissionset"])}</code></td></tr>\n'
+            if scaffold_inv.get("start_time"):
+                html += f'        <tr><td>Duration</td><td>{escape_html(scaffold_inv.get("start_time", ""))} &rarr; {escape_html(scaffold_inv.get("end_time", ""))}</td></tr>\n'
             html += '      </table></div>\n'
 
             if scaffold_files:
@@ -1311,21 +1780,31 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
             html += '      <p style="color:var(--muted)">No scaffold data captured.</p>\n'
         html += '    </div>\n'
 
-        # Optimize tab
-        optimize_inv = test_data.get("optimize_invocation", {})
+        # Optimize tab — prefer disk invocation.json (richer data) over inline pipeline_results
+        optimize_inv_disk = test_data.get("optimize_invocation", {})
+        optimize_inv_inline = pipeline_results.get("optimize", {})
+        # Merge: disk data takes precedence, but fill in missing fields from inline
+        optimize_inv = {**optimize_inv_inline, **optimize_inv_disk} if optimize_inv_disk else optimize_inv_inline
         html += f'    <div id="{tab_id}-optimize" class="tab-panel">\n'
         html += render_optimize_details(optimize_inv)
         html += '    </div>\n'
 
         # Discover tab
-        discover_inv = test_data.get("discover_invocation", {})
+        discover_inv = test_data.get("discover_invocation", pipeline_results.get("discover", {}))
         html += f'    <div id="{tab_id}-discover" class="tab-panel">\n'
         if discover_inv:
+            found_count = discover_inv.get("targets_found", "?")
+            missing_count = discover_inv.get("targets_missing", "?")
+            total = discover_inv.get("total_targets", "?")
+            if total == "?" and found_count != "?" and missing_count != "?":
+                total = (found_count or 0) + (missing_count or 0)
             html += '      <div class="table-wrap"><table class="stats-table">\n'
             html += f'        <tr><td>Status</td><td><span class="tag tag-{"success" if discover_inv.get("status") == "success" else "fail"}">{escape_html(str(discover_inv.get("status", "")))}</span></td></tr>\n'
-            html += f'        <tr><td>Total Targets</td><td>{discover_inv.get("total_targets", "?")}</td></tr>\n'
-            html += f'        <tr><td>Found</td><td>{discover_inv.get("targets_found", "?")}</td></tr>\n'
-            html += f'        <tr><td>Missing</td><td>{discover_inv.get("targets_missing", "?")}</td></tr>\n'
+            html += f'        <tr><td>Total Targets</td><td>{total}</td></tr>\n'
+            html += f'        <tr><td>Found</td><td>{found_count}</td></tr>\n'
+            html += f'        <tr><td>Missing</td><td>{missing_count}</td></tr>\n'
+            if discover_inv.get("start_time"):
+                html += f'        <tr><td>Duration</td><td>{escape_html(discover_inv.get("start_time", ""))} &rarr; {escape_html(discover_inv.get("end_time", ""))}</td></tr>\n'
             html += '      </table></div>\n'
             missing = discover_inv.get("missing_targets", [])
             if missing:
@@ -1379,6 +1858,15 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
         html += '<div class="table-wrap"><table class="stats-table">\n'
         skills_tags = "".join(f'<span class="tag">{escape_html(s)}</span>' for s in skills_discovered)
         html += f'  <tr><td>Skills Found</td><td>{skills_tags}</td></tr>\n'
+        # Show pipeline step → skill mapping
+        step_map_rows = []
+        seen_skills = set()
+        for step, skill in PIPELINE_SKILL_MAP.items():
+            if skill not in seen_skills:
+                steps_for_skill = [s for s, sk in PIPELINE_SKILL_MAP.items() if sk == skill]
+                step_map_rows.append(f'<code>{escape_html(skill)}</code>: {", ".join(steps_for_skill)}')
+                seen_skills.add(skill)
+        html += f'  <tr><td>Pipeline Mapping</td><td>{"<br>".join(step_map_rows)}</td></tr>\n'
         conflicts = summary.get("conflicts_detected", [])
         html += f'  <tr><td>Conflicts</td><td>{len(conflicts) if conflicts else "None"}</td></tr>\n'
         skill_routing = summary.get("skill_routing", {})
@@ -1423,6 +1911,138 @@ def generate_report(summary, output_path, compare=None, summary_path=None):
     return overall_pct
 
 
+def enrich_summary(summary, summary_path):
+    """Merge judge analysis.json files into summary.json for richer report rendering.
+
+    Looks for author/analysis.json and test/analysis.json next to the summary.json,
+    then merges their insights into the summary's key_findings, spec_compliance,
+    recommended_actions, and per-utterance insight/recommendation fields.
+
+    Returns the enriched summary (also writes it back to disk).
+    """
+    summary_dir = Path(summary_path).parent
+    changes = []
+
+    for test in summary.get("tests", []):
+        test_id = test.get("test_id", "")
+        # Determine test directory — could be summary_dir itself or summary_dir/test_id
+        test_dir = summary_dir / test_id if (summary_dir / test_id).exists() else summary_dir
+
+        # Load author analysis
+        author_path = test_dir / "author" / "analysis.json"
+        author = load_json(author_path)
+        if author:
+            changes.append(f"author judge ({author.get('grade', '?')})")
+            design_review = author.get("design_review", {})
+
+            # Merge weaknesses into key_findings if not already present
+            existing_titles = {f.get("title", "") for f in summary.get("key_findings", []) if isinstance(f, dict) and isinstance(f.get("title"), str)}
+            for weakness in design_review.get("weaknesses", []):
+                if isinstance(weakness, dict):
+                    title = str(weakness.get("title", weakness.get("description", "")))
+                    explanation = str(weakness.get("description", title))
+                    recommendation = str(weakness.get("recommendation", ""))
+                else:
+                    title = str(weakness)
+                    explanation = title
+                    recommendation = ""
+                if title and title not in existing_titles:
+                    summary.setdefault("key_findings", []).append({
+                        "title": title[:120],
+                        "severity": "medium",
+                        "explanation": explanation,
+                        "recommendation": recommendation
+                    })
+
+            # Merge spec compliance mismatches
+            for mismatch in author.get("spec_compliance", {}).get("mismatches", []):
+                existing_reqs = {item.get("requirement", "") for item in summary.get("spec_compliance", [])}
+                req = mismatch.get("requirement", "")
+                if req and req not in existing_reqs:
+                    summary.setdefault("spec_compliance", []).append({
+                        "requirement": req,
+                        "status": mismatch.get("status", "PARTIAL"),
+                        "notes": mismatch.get("notes", "")
+                    })
+
+            # Merge risks into key_findings
+            for risk in design_review.get("risks", []):
+                if isinstance(risk, dict):
+                    title = str(risk.get("title", risk.get("description", "")))
+                    explanation = str(risk.get("description", title))
+                    recommendation = str(risk.get("recommendation", ""))
+                    severity = str(risk.get("severity", "low"))
+                else:
+                    title = str(risk)
+                    explanation = title
+                    recommendation = ""
+                    severity = "low"
+                if title and title not in existing_titles:
+                    summary.setdefault("key_findings", []).append({
+                        "title": title[:120],
+                        "severity": severity,
+                        "explanation": explanation,
+                        "recommendation": recommendation
+                    })
+
+        # Load test analysis
+        test_analysis_path = test_dir / "test" / "analysis.json"
+        test_analysis = load_json(test_analysis_path)
+        if test_analysis:
+            utt_results = test_analysis.get("utterance_results", [])
+            changes.append(f"test judge ({len(utt_results)} utterances)")
+
+            # Merge per-utterance insights into conversations
+            for utt_a in utt_results:
+                utt_text = utt_a.get("utterance", "")
+                for conv_utt in test.get("conversations", {}).get("utterances", []):
+                    if conv_utt.get("utterance") == utt_text:
+                        for field in ("insight", "recommendation", "root_cause", "response_quality"):
+                            if utt_a.get(field):
+                                conv_utt[field] = utt_a[field]
+                        break
+
+            # Merge test judge key findings
+            existing_titles = {f.get("title", "") for f in summary.get("key_findings", []) if isinstance(f, dict) and isinstance(f.get("title"), str)}
+            for finding in test_analysis.get("key_findings", []):
+                if isinstance(finding, str) and finding not in existing_titles:
+                    summary.setdefault("key_findings", []).append({
+                        "title": finding[:120], "severity": "info",
+                        "explanation": finding, "recommendation": ""
+                    })
+                elif isinstance(finding, dict) and finding.get("title", "") not in existing_titles:
+                    summary.setdefault("key_findings", []).append(finding)
+
+            # Merge test judge recommendations
+            for rec in test_analysis.get("recommendations", []):
+                existing_actions = {a.get("action", "") for a in summary.get("recommended_actions", [])}
+                if isinstance(rec, str) and rec not in existing_actions:
+                    summary.setdefault("recommended_actions", []).append({
+                        "priority": "P2", "action": rec, "effort": "", "impact": ""
+                    })
+                elif isinstance(rec, dict) and rec.get("action", "") not in existing_actions:
+                    summary.setdefault("recommended_actions", []).append(rec)
+
+    if changes:
+        # Write enriched summary back
+        with open(summary_path, "w") as f:
+            json.dump(summary, f, indent=2)
+        print(f"Enriched summary with: {', '.join(changes)}")
+        kf = len(summary.get("key_findings", []))
+        sc = len(summary.get("spec_compliance", []))
+        ra = len(summary.get("recommended_actions", []))
+        utt_insights = sum(
+            1 for t in summary.get("tests", [])
+            for u in t.get("conversations", {}).get("utterances", [])
+            if u.get("insight")
+        )
+        print(f"  {kf} findings, {sc} spec items, {ra} actions, {utt_insights} utterance insights")
+    else:
+        print("No judge analysis files found — report will use existing summary data")
+
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate interactive HTML report from ADLC eval summary.json"
@@ -1430,9 +2050,14 @@ def main():
     parser.add_argument("summary", help="Path to summary.json from eval run")
     parser.add_argument("--output", "-o", help="Output HTML path (default: report.html in same dir)")
     parser.add_argument("--compare", help="Path to previous summary.json for comparison")
+    parser.add_argument("--enrich", action="store_true",
+                        help="Merge judge analysis.json files into summary before generating report")
     args = parser.parse_args()
 
     summary = load_json(args.summary)
+
+    if args.enrich:
+        summary = enrich_summary(summary, args.summary)
 
     if args.output:
         output_path = Path(args.output)

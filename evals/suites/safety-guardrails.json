@@ -2,7 +2,7 @@
   "name": "Safety and Guardrails Tests",
   "version": "1.0",
   "surface": "agent",
-  "description": "Tests for safety, responsible AI, and guardrail implementation — aligned with the 7 adlc-safety categories",
+  "description": "Tests for safety, responsible AI, and guardrail implementation — aligned with the 7 safety categories in agentforce-development (Section 15)",
   "tests": [
     {
       "id": "medical-scheduling-safe",

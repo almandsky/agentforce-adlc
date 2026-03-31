@@ -46,6 +46,9 @@ print_error()   { echo -e "  ${RED}✗${NC} $1"; }
 
 echo -e "${BOLD}agentforce-adlc installer${NC}"
 echo ""
+echo -e "  ${BOLD}Prerequisites:${NC} Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+, Claude Code or Cursor"
+echo -e "  ${BOLD}Optional:${NC}      Salesforce CLI (sf)"
+echo ""
 
 # Check Python 3.9+
 print_step "Checking for Python ${MIN_PYTHON_MAJOR}.${MIN_PYTHON_MINOR}+..."

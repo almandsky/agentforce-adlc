@@ -340,7 +340,7 @@ Both can be installed side-by-side without conflicts.
 
 ## Acknowledgments
 
-- **[sf-skills](https://github.com/Jaganpro/sf-skills)** by [Jagan Kaliachetti](https://github.com/Jaganpro) — The Salesforce Claude Code skills that inspired and complement this project. Several ADLC skills (deploy, scaffold, test) build on patterns pioneered in sf-skills.
+- **[sf-skills](https://github.com/Jaganpro/sf-skills)** by [Jag Valaiyapathy](https://github.com/Jaganpro) — The Salesforce Claude Code skills that inspired and complement this project. Several ADLC skills (deploy, scaffold, test) build on patterns pioneered in sf-skills.
 
 ## License
 

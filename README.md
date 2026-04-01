@@ -14,44 +14,44 @@ using Claude Code skills and Agent Script DSL.
 - **Safety built-in** — LLM-driven safety review across the entire lifecycle (authoring, deploy, test, optimize)
 - **Deterministic agents** — Agent Script DSL enforces code-level guarantees (conditionals, guards, transitions)
 - **Session trace analysis** — Extract STDM data from Data Cloud for data-driven optimization
-- **Skill-based** — Each lifecycle phase is a standalone Claude Code skill, usable independently
+- **3 consolidated skills** — Development, testing, and observability, following the [agentskills.io](https://agentskills.io) standard
 
 ## Pipeline
 
 ```
 User prompt
-  │  /adlc-author
-  ▼
-┌─────────────────────────┐
-│  Safety Review (Phase 0)│◀── /adlc-safety (LLM-driven, 7 categories)
-│  .agent file generated  │
-└────────┬────────────────┘
-         │  /adlc-discover
-         ▼
-┌─────────────────────────┐
-│  Check org for targets  │──missing──▶ /adlc-scaffold
-└────────┬────────────────┘
-         │  /adlc-deploy
-         ▼
-┌─────────────────────────┐
-│  Safety Gate → Validate │◀── /adlc-safety (pre-publish check)
-│  → Publish → Activate   │
-└────────┬────────────────┘
-         │  /adlc-test
-         ▼
-┌─────────────────────────┐
-│  Preview + Batch tests  │◀── Safety probe utterances (adversarial)
-│  + Safety probes        │
-└────────┬────────────────┘
-         │  /adlc-optimize
-         ▼
-┌─────────────────────────┐
-│  STDM session analysis  │◀── Safety issue detection in traces
-│  → Reproduce → Improve  │
-└─────────────────────────┘
+  |  /agentforce-development
+  v
++--------------------------+
+| Safety Review (Phase 0)  |<-- LLM-driven, 7 categories
+| .agent file generated    |
++--------+-----------------+
+         |  /agentforce-development (discover)
+         v
++--------------------------+
+| Check org for targets    |--missing--> scaffold stubs
++--------+-----------------+
+         |  /agentforce-development (deploy)
+         v
++--------------------------+
+| Safety Gate -> Validate  |<-- Pre-publish check
+| -> Publish -> Activate   |
++--------+-----------------+
+         |  /agentforce-test
+         v
++--------------------------+
+| Preview + Batch tests    |<-- Safety probe utterances (adversarial)
+| + Action execution       |
++--------+-----------------+
+         |  /agentforce-observability
+         v
++--------------------------+
+| STDM session analysis    |<-- Safety issue detection in traces
+| -> Reproduce -> Improve  |
++--------------------------+
 ```
 
-Each skill can be invoked independently. Run `/adlc-test` on an existing agent without touching the author/deploy steps. Run `/adlc-optimize` on production session data without redeploying. Run `/adlc-safety` on any `.agent` file for a standalone safety review.
+Each skill can be invoked independently. Run `/agentforce-test` on an existing agent without touching the development steps. Run `/agentforce-observability` on production session data without redeploying.
 
 ## Installation
 
@@ -104,7 +104,7 @@ After install, restart your IDE. Skills are available in any project.
 
 | Component | Claude Code (`~/.claude/`) | Cursor (`~/.cursor/`) |
 |-----------|---------------------------|----------------------|
-| Skills (8 SKILL.md) | `skills/adlc-*/` | `skills/adlc-*/` |
+| Skills (3 SKILL.md) | `skills/agentforce-*/` | `skills/agentforce-*/` |
 | Agents (.md) | `agents/adlc-*.md` | N/A (not supported) |
 | Hooks | `hooks/scripts/adlc-*.py` | N/A (not supported) |
 | Repo copy | `adlc/` | `adlc/` |
@@ -122,52 +122,30 @@ Skills are 100% portable — the same SKILL.md files work in both IDEs. Agents a
 
 ## Quick start
 
-### 1. Author an agent
+### 1. Build and deploy (`/agentforce-development`)
+
+This single skill handles the full development workflow — authoring, discovery, scaffolding, and deployment:
 
 ```
-/adlc-author
+/agentforce-development
 
 Build a service agent that helps customers check order status,
 request returns, and track shipments. It should verify identity
-before showing order details.
+before showing order details. Deploy to my-org.
 ```
 
-Claude generates a `.agent` file with topics, actions, variables, and deterministic logic.
+The skill will:
+1. **Author** — Generate a `.agent` file with topics, actions, variables, and deterministic logic
+2. **Discover** — Check which Flow/Apex/Retriever targets exist in the org
+3. **Scaffold** — Generate stubs for missing targets (Flow XML, Apex classes, test classes, PermSets)
+4. **Deploy** — Validate, publish the authoring bundle, and activate the agent
 
-### 2. Check what exists in the org
+Each phase can also be triggered individually (e.g., "just discover targets for OrderService.agent").
 
-```
-/adlc-discover
-
-Check what targets exist for OrderService.agent against my-org.
-```
-
-Reports which Flow/Apex/Retriever targets already exist and which need creation.
-
-### 3. Scaffold missing targets
+### 2. Test the agent (`/agentforce-test`)
 
 ```
-/adlc-scaffold
-
-Generate Flow and Apex stubs for the missing targets.
-```
-
-Creates metadata XML for Flows and `@InvocableMethod` Apex classes matching the agent's action signatures.
-
-### 4. Deploy to the org
-
-```
-/adlc-deploy
-
-Deploy OrderService to my-org.
-```
-
-Validates the bundle, deploys prerequisites, publishes the authoring bundle, and activates the agent.
-
-### 5. Test the agent
-
-```
-/adlc-test
+/agentforce-test
 
 Smoke test OrderService against my-org with these utterances:
 - "Where is my order #12345?"
@@ -175,12 +153,12 @@ Smoke test OrderService against my-org with these utterances:
 - "What's the shipping status?"
 ```
 
-Runs preview sessions, analyzes traces, and reports topic routing accuracy and action success rates.
+Runs preview sessions, analyzes traces, and reports topic routing accuracy and action success rates. Also supports batch testing via Testing Center and individual action execution.
 
-### 6. Optimize from production data
+### 3. Optimize from production data (`/agentforce-observability`)
 
 ```
-/adlc-optimize
+/agentforce-observability
 
 Analyze the last 50 sessions for OrderService on my-org.
 Find routing failures and suggest improvements.
@@ -188,15 +166,31 @@ Find routing failures and suggest improvements.
 
 Extracts STDM session traces from Data Cloud, identifies patterns (wrong topic, missing actions, ungrounded responses), reproduces issues with live preview, and applies fixes directly to the `.agent` file.
 
-### 7. Safety review
+## Skills reference
 
-```
-/adlc-safety
+### 3 consolidated skills (v0.2.0+)
 
-Review OrderService.agent for safety and responsible AI compliance.
-```
+| Skill | Description | Covers |
+|-------|-------------|--------|
+| `/agentforce-development` | Build, review, discover, scaffold, deploy, and ensure safety of Agentforce agents | Author, discover, scaffold, deploy, safety review, feedback |
+| `/agentforce-test` | Test Agentforce agents via preview, batch testing, and individual action execution | Preview, batch test, action execution |
+| `/agentforce-observability` | Analyze session traces from Data Cloud, reproduce issues, and improve the .agent file | STDM analysis, reproduce, fix loop |
 
-Evaluates the agent against 7 safety categories using LLM reasoning — catches semantic risks that keyword matching cannot detect (euphemisms, dark patterns, proxy discrimination, subtle manipulation).
+### Backward compatibility
+
+Old skill names still work as aliases:
+
+| Old Command | Maps To |
+|---|---|
+| `/adlc-author` | `/agentforce-development` |
+| `/adlc-discover` | `/agentforce-development` |
+| `/adlc-scaffold` | `/agentforce-development` |
+| `/adlc-deploy` | `/agentforce-development` |
+| `/adlc-safety` | `/agentforce-development` |
+| `/adlc-feedback` | `/agentforce-development` |
+| `/adlc-test` | `/agentforce-test` |
+| `/adlc-run` | `/agentforce-test` |
+| `/adlc-optimize` | `/agentforce-observability` |
 
 ## Safety & Responsible AI
 
@@ -204,7 +198,7 @@ Safety is integrated across the full ADLC lifecycle, not bolted on as an afterth
 
 ### How it works
 
-The `/adlc-safety` skill uses Claude's reasoning to evaluate agents against 7 categories:
+The safety review (Section 15 of `/agentforce-development`) uses Claude's reasoning to evaluate agents against 7 categories:
 
 | Category | What it catches |
 |----------|----------------|
@@ -220,11 +214,11 @@ The `/adlc-safety` skill uses Claude's reasoning to evaluate agents against 7 ca
 
 | Lifecycle phase | Integration point |
 |-----------------|-------------------|
-| **Author** (`/adlc-author`) | Phase 0: pre-authoring safety gate. Phase 5: safety scoring (15 of 100 points) |
-| **Deploy** (`/adlc-deploy`) | Phase 0: safety gate before publishing to any org |
-| **Test** (`/adlc-test`) | Auto-generates adversarial safety probe utterances for every test run |
-| **Optimize** (`/adlc-optimize`) | Flags unsafe agent behavior in session traces (prompt leakage, injection compliance, etc.) |
-| **Every `.agent` write** | PostToolUse hook prompts for `/adlc-safety` review |
+| **Author** (`/agentforce-development`) | Phase 0: pre-authoring safety gate. Phase 5: safety scoring (15 of 100 points) |
+| **Deploy** (`/agentforce-development`) | Phase 0: safety gate before publishing to any org |
+| **Test** (`/agentforce-test`) | Auto-generates adversarial safety probe utterances for every test run |
+| **Optimize** (`/agentforce-observability`) | Flags unsafe agent behavior in session traces (prompt leakage, injection compliance, etc.) |
+| **Every `.agent` write** | PostToolUse hook prompts for safety review |
 
 ### Why LLM-driven, not regex
 
@@ -241,26 +235,26 @@ Regex catches exact keyword patterns but misses intent. These 8 harmful agents a
 
 Claude's reasoning catches all of these because it understands *intent*, not just keywords.
 
-## Skills reference
+## Eval framework
 
-| Skill | Description | Trigger phrases |
-|-------|-------------|-----------------|
-| `/adlc-author` | Generate `.agent` files from requirements | "build agent", "create agent", "write .agent" |
-| `/adlc-discover` | Check org for Flow/Apex/Retriever targets | "discover", "check org", "what targets exist" |
-| `/adlc-scaffold` | Generate Flow XML / Apex stubs for missing targets | "scaffold", "generate stubs", "create flow" |
-| `/adlc-deploy` | Validate, publish, and activate agent bundles | "deploy", "publish", "activate" |
-| `/adlc-run` | Execute individual actions against a live org | "run action", "execute", "test action" |
-| `/adlc-test` | Agent preview + Testing Center batch tests | "test agent", "preview", "smoke test" |
-| `/adlc-optimize` | STDM session trace analysis + improvement loop | "optimize", "analyze sessions", "STDM" |
-| `/adlc-safety` | LLM-driven safety & responsible AI review | "safety review", "security check", "is this agent safe" |
+The `evals/` directory contains a project-scoped evaluation framework for measuring agent quality across the full pipeline.
 
-## Companion tools
+```bash
+# Run evals (from the evals/ directory)
+cd evals && claude
 
-`agentforce-adlc` works well alongside this related project:
+# Run a specific test case
+run suite enterprise-use-cases --test-id jpmorgan-case-intelligence --org epson
 
-- **[sf-skills](https://github.com/Jaganpro/sf-skills)** — General Salesforce Claude Code skills (Apex, LWC, Flow, deploy, etc.). Complements the ADLC agent-specific skills.
+# Generate HTML report from results
+python3 generate-report.py --enrich results/run-xxx/summary.json
+```
 
-Both can be installed side-by-side without conflicts.
+The eval pipeline runs: **author -> discover -> scaffold -> deploy -> test -> optimize -> judge -> report**
+
+Each step is scored against a rubric with weighted dimensions (FSM architecture, action quality, safety compliance, instruction quality, etc.) and produces an interactive HTML report with executive summary, key findings, and recommendations.
+
+See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ## Project structure
 
@@ -271,15 +265,15 @@ agentforce-adlc/
 │   ├── adlc-author.md         # Agent Script authoring specialist
 │   ├── adlc-engineer.md       # Platform engineer (discover/scaffold/deploy)
 │   └── adlc-qa.md             # Testing and optimization specialist
-├── skills/              # Claude Code skills (SKILL.md-driven)
-│   ├── adlc-author/     # Generate .agent from requirements
-│   ├── adlc-discover/   # Check org for action targets
-│   ├── adlc-scaffold/   # Generate Flow/Apex stubs
-│   ├── adlc-deploy/     # Deploy + publish + activate
-│   ├── adlc-run/        # Execute individual actions
-│   ├── adlc-test/       # Agent preview + batch testing
-│   ├── adlc-optimize/   # STDM trace analysis + fix loop
-│   └── adlc-safety/     # LLM-driven safety & responsible AI review
+├── skills/              # Claude Code skills (3 consolidated, agentskills.io standard)
+│   ├── agentforce-development/  # Author + discover + scaffold + deploy + safety + feedback
+│   ├── agentforce-test/         # Preview testing + batch testing + action execution
+│   └── agentforce-observability/ # STDM trace analysis + fix loop
+├── evals/               # Eval framework (project-scoped)
+│   ├── .claude/         # Eval-specific skills and settings
+│   ├── suites/          # Test suite JSON definitions
+│   ├── specs/           # Agent spec templates
+│   └── templates/       # Report templates
 ├── shared/              # Cross-skill shared code
 │   ├── hooks/           # PreToolUse/PostToolUse hook scripts
 │   │   ├── scripts/     # guardrails.py, agent-validator.py, session-init.py
@@ -293,56 +287,8 @@ agentforce-adlc/
 ├── tools/               # Installer
 │   ├── install.py       # Python installer (local + remote)
 │   └── install.sh       # Bash bootstrap for curl | bash
-├── tests/               # pytest test suite
+├── tests/               # pytest test suite (88 tests)
 └── force-app/           # Example Salesforce DX output
-```
-
-### Post-install layout
-
-**Claude Code (`~/.claude/`)** — full installation:
-```
-~/.claude/
-├── skills/
-│   ├── adlc-author/SKILL.md
-│   ├── adlc-discover/SKILL.md
-│   ├── adlc-scaffold/SKILL.md
-│   ├── adlc-deploy/SKILL.md
-│   ├── adlc-run/SKILL.md
-│   ├── adlc-test/SKILL.md
-│   ├── adlc-optimize/SKILL.md
-│   └── adlc-safety/SKILL.md
-├── agents/
-│   ├── adlc-orchestrator.md
-│   ├── adlc-author.md
-│   ├── adlc-engineer.md
-│   └── adlc-qa.md
-├── hooks/
-│   ├── scripts/
-│   │   ├── adlc-guardrails.py
-│   │   ├── adlc-agent-validator.py
-│   │   ├── adlc-session-init.py
-│   │   └── stdin_utils.py
-│   └── skills-registry.json
-├── adlc/                    # Full repo copy
-├── adlc-install.py          # Self-updater
-└── .adlc.json               # Install metadata
-```
-
-**Cursor (`~/.cursor/`)** — skills only:
-```
-~/.cursor/
-├── skills/
-│   ├── adlc-author/SKILL.md
-│   ├── adlc-discover/SKILL.md
-│   ├── adlc-scaffold/SKILL.md
-│   ├── adlc-deploy/SKILL.md
-│   ├── adlc-run/SKILL.md
-│   ├── adlc-test/SKILL.md
-│   ├── adlc-optimize/SKILL.md
-│   └── adlc-safety/SKILL.md
-├── adlc/                    # Full repo copy
-├── adlc-install.py          # Self-updater
-└── .adlc.json               # Install metadata
 ```
 
 ## Agent Script conventions
@@ -383,6 +329,14 @@ python3 scripts/scaffold.py --agent-file path/to/Agent.agent -o OrgAlias --outpu
 # Describe SObject fields (for smart scaffold)
 python3 scripts/org_describe.py --sobject Account -o OrgAlias
 ```
+
+## Companion tools
+
+`agentforce-adlc` works well alongside this related project:
+
+- **[sf-skills](https://github.com/Jaganpro/sf-skills)** — General Salesforce Claude Code skills (Apex, LWC, Flow, deploy, etc.). Complements the ADLC agent-specific skills.
+
+Both can be installed side-by-side without conflicts.
 
 ## Acknowledgments
 

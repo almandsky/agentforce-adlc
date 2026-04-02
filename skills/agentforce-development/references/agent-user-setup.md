@@ -34,11 +34,13 @@ sf data query \
 
 # Step 2: Create Einstein Agent User (2 minutes)
 # Get Profile ID
-PROFILE_ID=$(sf data query \
+# Get Profile ID (read result.records[0].Id from JSON response)
+sf data query \
   --query "SELECT Id FROM Profile WHERE Name = 'Einstein Agent User'" \
-  -o TARGET_ORG --json | jq -r '.result.records[0].Id')
+  -o TARGET_ORG --json
 
 # For Production/Sandbox (non-scratch org):
+# Use the ProfileId from the query above
 sf data create record --sobject User --values \
   "Username=<agent_name>_user@<orgId>.ext \
    LastName=<AgentName> \
@@ -47,7 +49,7 @@ sf data create record --sobject User --values \
    TimeZoneSidKey=America/Los_Angeles \
    LocaleSidKey=en_US \
    EmailEncodingKey=UTF-8 \
-   ProfileId=${PROFILE_ID} \
+   ProfileId=<PROFILE_ID> \
    LanguageLocaleKey=en_US" \
   -o TARGET_ORG --json
 
@@ -118,7 +120,8 @@ Service agents need a dedicated service account with consistent permissions.
 
 **Get Org ID first** (needed for username format):
 ```bash
-sf org display -o TARGET_ORG --json | jq -r '.result.id'
+sf org display -o TARGET_ORG --json
+# Read result.id from the JSON response
 ```
 
 **Query existing Einstein Agent Users** (skip creation if one exists):
@@ -161,13 +164,14 @@ sf data query --query "SELECT Id, Username, IsActive FROM User WHERE Profile.Nam
    **Option B: Production/Sandbox (Direct Record Creation)**
    ```bash
    # Get Profile ID first
-   PROFILE_ID=$(sf data query \
+   # Get Profile ID (read result.records[0].Id from JSON response)
+   sf data query \
      --query "SELECT Id FROM Profile WHERE Name = 'Einstein Agent User'" \
-     -o TARGET_ORG --json | jq -r '.result.records[0].Id')
+     -o TARGET_ORG --json
 
-   # Create user directly
+   # Create user directly (use ProfileId from query above)
    sf data create record --sobject User --values \
-     "Username='{agent_name}_agent@{orgId}.ext' LastName='{AgentName} Agent' Email='placeholder@example.com' Alias='agntuser' ProfileId='${PROFILE_ID}' TimeZoneSidKey='America/Los_Angeles' LocaleSidKey='en_US' EmailEncodingKey='UTF-8' LanguageLocaleKey='en_US'" \
+     "Username='{agent_name}_agent@{orgId}.ext' LastName='{AgentName} Agent' Email='placeholder@example.com' Alias='agntuser' ProfileId='<PROFILE_ID>' TimeZoneSidKey='America/Los_Angeles' LocaleSidKey='en_US' EmailEncodingKey='UTF-8' LanguageLocaleKey='en_US'" \
      -o TARGET_ORG --json
    ```
 

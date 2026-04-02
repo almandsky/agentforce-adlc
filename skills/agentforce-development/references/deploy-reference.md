@@ -45,8 +45,10 @@ sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
 
 ### Phase 4: Activate Agent
 ```bash
-sf agent activate --api-name MyAgent -o <org-alias>
+sf agent activate --api-name MyAgent -o <org-alias> --json
 ```
+Note: `sf agent activate` may not support `--json` in all CLI versions. If it returns plain text, check for "successfully activated" in the output.
+
 Publishing creates an **inactive** version. Without activation, preview fails with "No valid version available".
 
 ## Deploy vs Publish
@@ -120,9 +122,10 @@ jobs:
 ## Post-Deployment Testing
 
 ```bash
-SESSION_ID=$(sf agent preview start --authoring-bundle MyAgent -o <org> --json | jq -r '.result.sessionId')
-sf agent preview send --session-id "$SESSION_ID" --authoring-bundle MyAgent --utterance "Hello, I need help" -o <org> --json
-sf agent preview end --session-id "$SESSION_ID" --authoring-bundle MyAgent -o <org> --json
+sf agent preview start --json --use-live-actions --authoring-bundle MyAgent -o <org>
+# Read sessionId from the JSON response, then:
+sf agent preview send --json --authoring-bundle MyAgent --session-id <SESSION_ID> -u "Hello, I need help" -o <org>
+sf agent preview end --json --authoring-bundle MyAgent --session-id <SESSION_ID> -o <org>
 ```
 
 ## Exit Codes

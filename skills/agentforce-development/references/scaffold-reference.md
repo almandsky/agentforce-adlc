@@ -107,6 +107,19 @@ Recommended order: `apiVersion` -> `description` -> `label` -> `variables` -> `a
 3. Update test classes with meaningful assertions
 4. Add error handling and FLS/CRUD checks
 
+## Backing Logic Selection Criteria
+
+| Criteria | Choose Flow | Choose Apex |
+|----------|-------------|-------------|
+| Data operations | Simple CRUD, record lookups | Complex queries, bulk ops, cross-object logic |
+| External callouts | No callouts needed | REST/SOAP callouts, Named Credentials |
+| Business logic | Simple branching, assignments | Complex algorithms, string manipulation |
+| Existing assets | Flow already exists | Apex class already exists |
+| Maintenance | Admins maintain | Developers maintain |
+| Testing | Flow test coverage built-in | Requires Apex test class (75%+ coverage) |
+
+**Rule of thumb:** If the action does a single record lookup or update with no callouts, use Flow. If it involves callouts, complex logic, or bulk operations, use Apex. When in doubt, prefer Apex — it's more debuggable and less constrained.
+
 ## Integration Workflow
 
 ```bash
@@ -116,11 +129,11 @@ python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
 python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
 # 3. Edit stubs with business logic
 # 4. Deploy to org
-sf project deploy start --source-dir force-app/main/default -o myorg
+sf project deploy start --json --source-dir force-app/main/default -o myorg
 # 5. Verify
 python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
 # 6. Publish agent
-sf agent publish authoring-bundle --api-name MyAgent -o myorg
+sf agent publish authoring-bundle --json --api-name MyAgent -o myorg
 ```
 
 ## Exit Codes

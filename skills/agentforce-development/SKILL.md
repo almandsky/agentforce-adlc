@@ -113,6 +113,12 @@ Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command
    access permissions, visibility troubleshooting
 9. [Known Issues](references/known-issues.md) — only load when errors
    persist after code fixes
+10. [Architecture Patterns](references/architecture-patterns.md) — hub-and-spoke, verification gate, post-action loop
+11. [Complex Data Types](references/complex-data-types.md) — type mapping decision tree
+12. [Safety Review](references/safety-review-reference.md) — 7-category safety review
+13. [Discover Reference](references/discover-reference.md) — target discovery CLI
+14. [Scaffold Reference](references/scaffold-reference.md) — stub generation CLI
+15. [Deploy Reference](references/deploy-reference.md) — deployment lifecycle, error recovery
 
 ### Comprehend an Existing Agent
 
@@ -425,3 +431,77 @@ Planner validates ALL actions across ALL topics at startup. One missing permissi
 
 **Apex action returns empty results in live preview but works in simulated:**
 `WITH USER_MODE` + missing object permissions = silent failure (0 rows, no error). See [Agent User Setup & Permissions](references/agent-user-setup.md), Section 6.2.
+
+## Syntax Quick Reference
+
+- Block order: `config:` → `variables:` → `system:` → `connection messaging:` → `knowledge:` → `language:` → `start_agent topic_selector:` → `topic:` blocks
+- Indentation: **Tabs only** (spaces rejected by compiler)
+- Booleans: `True`/`False` (capitalized)
+- Strings: always double-quoted
+- Numeric action I/O: use `object` + `complex_data_type_name` (not bare `number`)
+- `after_reasoning:` has NO `instructions:` wrapper
+- No `else if` — use compound `if x and y:` or sequential flat ifs
+- Reserved names: `description`, `label`, `language`, `escalate` — cannot be used as variable/field names
+
+See [Complex Data Types](references/complex-data-types.md) for the full Lightning type mapping decision tree. See [Instruction Resolution](references/instruction-resolution.md) for the 3-phase runtime model.
+
+## Architecture Patterns
+
+Three primary FSM patterns. Full details with code in [Architecture Patterns](references/architecture-patterns.md).
+
+- **Hub-and-Spoke** (most common): `start_agent` routes to specialized topics. Each topic has "back to hub" transition. Do NOT create a separate routing topic.
+- **Verification Gate**: Identity verification before protected topics. `available when` guards on protected transitions.
+- **Post-Action Loop**: Post-action checks at TOP of `instructions: ->` trigger on re-resolution after action completes.
+
+## Scoring Rubric
+
+Score every generated agent on 100 points across 7 categories: Structure (15), Safety (15), Deterministic Logic (20), Instruction Resolution (20), FSM Architecture (10), Action Configuration (10), Deployment Readiness (10).
+
+See [Scoring Rubric](references/scoring-rubric.md) for the complete rubric.
+
+## Review Mode
+
+When user provides an existing `.agent` file (e.g., `review path/to/file.agent`):
+
+1. Read the file
+2. Score against the 100-point rubric
+3. List every issue grouped by category
+4. Provide corrected code snippets
+5. Offer to apply fixes
+
+## Safety Review
+
+7-category LLM-driven safety review for `.agent` files. Integrated into Phase 0 of authoring and deployment. Categories: Identity & Transparency, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope & Boundaries.
+
+See [Safety Review](references/safety-review-reference.md) for the complete framework, severity levels, false positive guidance, and adversarial test prompts.
+
+## Discover & Scaffold
+
+Validate action targets exist in org and generate stubs for missing ones:
+
+```bash
+python3 scripts/discover.py -o <org-alias> --agent-file <path>
+python3 scripts/scaffold.py --agent-file <path> -o <org-alias> --output-dir force-app/main/default
+```
+
+**CRITICAL:** Stubs must return realistic data, not `'TODO'`. Placeholder responses cause SMALL_TALK grounding because the LLM falls back to training data.
+
+See [Discover Reference](references/discover-reference.md) and [Scaffold Reference](references/scaffold-reference.md).
+
+## Deploy Lifecycle
+
+Validate → deploy metadata → publish bundle → activate. See [Deploy Reference](references/deploy-reference.md) for phases, error recovery, CI/CD, and rollback.
+
+## Template Assets
+
+Ready-to-use `.agent` templates in `assets/agents/` (hello-world, simple-qa, multi-topic, production-faq, order-service, verification-gate). See also `assets/patterns/` for 11+ reusable design patterns and [Examples](references/examples.md) for inline walkthroughs.
+
+## Additional References
+
+| Topic | File |
+|-------|------|
+| Architecture patterns | [architecture-patterns.md](references/architecture-patterns.md) |
+| Type mapping decision tree | [complex-data-types.md](references/complex-data-types.md) |
+| Feature validity by context | [feature-validity.md](references/feature-validity.md) |
+| Instruction resolution model | [instruction-resolution.md](references/instruction-resolution.md) |
+| Complete agent examples | [examples.md](references/examples.md) |

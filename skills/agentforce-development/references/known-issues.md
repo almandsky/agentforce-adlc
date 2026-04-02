@@ -1,361 +1,353 @@
-<!-- Parent: adlc-author/SKILL.md -->
-# Known Issues
+# Known Issues Tracker
 
-> Tracked issues, workarounds, and status for Agent Script and Agentforce platform.
+Unresolved platform bugs, limitations, and edge cases that affect Agent Script development. Unlike the "Common Issues & Fixes" table in SKILL.md (which covers resolved troubleshooting), this file tracks **open platform issues** where the root cause is in Salesforce, not in user code.
 
 ---
 
 ## Issue Template
 
-Each issue follows this format:
-
-```
-### Issue N: <Title>
-- **Status**: Open / Fixed in TDD-XXX / Workaround available
-- **Symptom**: What the user or developer observes
-- **Root Cause**: Why it happens
-- **Workaround**: How to avoid or mitigate
-- **Affects**: Which agent types, CLI versions, or org editions
+```markdown
+## Issue N: [Title]
+- **Status**: OPEN | RESOLVED | WORKAROUND
+- **Date Discovered**: YYYY-MM-DD
+- **Affects**: [Component/workflow affected]
+- **Symptom**: What the user sees
+- **Root Cause**: Why it happens (if known)
+- **Workaround**: How to get around it
+- **Open Questions**: What we still don't know
+- **References**: Links to related docs, issues, or discussions
 ```
 
 ---
 
-## Active Issues
+## Open Issues
 
-### Issue 1: `require_user_confirmation` Compiles but Is a Runtime No-Op
-
-- **Status**: Open
-- **Symptom**: Setting `require_user_confirmation: True` on an action definition compiles and publishes without error, but the agent never prompts the user for confirmation before executing the action.
-- **Root Cause**: The confirmation UX is not yet implemented in the runtime for AiAuthoringBundle-path agents. The compiler accepts the property because it's part of the schema, but the runtime ignores it.
-- **Workaround**: Implement confirmation manually in the Agent Script using a two-step pattern:
-  ```
-  # Step 1: Collect intent and confirm
-  reasoning:
-     instructions: ->
-        if @variables.pending_action == "refund" and @variables.confirmed == False:
-           | I'll process a refund of {!@variables.amount}. Please confirm by saying "yes".
-
-  # Step 2: Execute only after confirmation
-     actions:
-        process_refund: @actions.issue_refund
-           description: "Process the refund"
-           available when @variables.confirmed == True
-           with amount = @variables.amount
-  ```
-- **Affects**: All agent types using AiAuthoringBundle path
-
-### Issue 2: Canvas View Changes Supervision to Handoff
-
-- **Status**: Open
-- **Symptom**: After adding ANY new action in the Agent Builder Canvas view, existing `@topic.X` (supervision) references are silently converted to `@utils.transition to @topic.X` (handoff) transitions.
-- **Root Cause**: The Canvas view serializer does not distinguish between supervision delegation and handoff transitions. When it re-serializes the agent, all topic references are normalized to transitions.
-- **Workaround**: Do not mix Agent Script editing with Canvas view editing. If you must use Canvas, re-verify all `@topic.X` supervision references after saving and manually revert any that were changed to `@utils.transition`.
-- **Affects**: All agent types when using Canvas view alongside Agent Script
-
-### Issue 3: Chained Actions with Prompt Templates Fail Input Mapping
-
-- **Status**: Open
-- **Symptom**: When chaining a Prompt Template action after another action using `run @actions.prompt_action`, the Prompt Template doesn't receive inputs correctly. The `Input:Query` format used internally doesn't map to the chained context.
-- **Root Cause**: Prompt Template actions use a different input mapping mechanism (`Input:Query`) that is not compatible with the standard `with` binding used in action chaining.
-- **Workaround**: Do not chain Prompt Template actions. Instead, use a separate (non-chained) action invocation:
-  ```
-  # WRONG -- chained prompt template
-  process: @actions.get_data
-     run @actions.summarize_prompt_template
-     with query = @outputs.data
-
-  # CORRECT -- separate invocations
-  fetch_data: @actions.get_data
-     set @variables.raw_data = @outputs.data
-
-  summarize: @actions.summarize_prompt_template
-     with query = @variables.raw_data
-  ```
-- **Affects**: Prompt Template targets only
-
-### Issue 4: `else if` Not Supported
-
-- **Status**: By design (not a bug)
-- **Symptom**: `else if` causes a compiler error. Nested `if` inside `else:` also fails.
-- **Root Cause**: Agent Script's grammar does not include `else if` as a construct. The language supports only `if`, `else:`, and compound conditions.
-- **Workaround**: Use compound conditions or sequential flat `if` statements:
-  ```
-  # WRONG
-  if @variables.tier == "gold":
-     | Gold treatment
-  else if @variables.tier == "silver":
-     | Silver treatment
-
-  # CORRECT -- sequential flat ifs
-  if @variables.tier == "gold":
-     | Gold treatment
-  if @variables.tier == "silver":
-     | Silver treatment
-  if @variables.tier != "gold" and @variables.tier != "silver":
-     | Standard treatment
-  ```
-- **Affects**: All agents
-
-### Issue 5: Linked Variables Empty in Preview
-
-- **Status**: By design (preview limitation)
-- **Symptom**: Linked variables (`source: @MessagingSession.*`, `source: @MessagingEndUser.*`) are always empty/null when testing with `sf agent preview`.
-- **Root Cause**: The preview API creates an isolated session without a messaging channel context. Linked variables require a live messaging session to resolve their `source:` bindings.
-- **Workaround**: Use mutable test variables with hardcoded defaults for preview testing. See `preview-test-loop.md` for the full workaround pattern. For full context-variable testing, use the Runtime API instead of preview.
-- **Affects**: All service agents using linked variables
-
-### Issue 6: `output_instructions` Property Status Unknown
-
-- **Status**: Untested
-- **Symptom**: The `output_instructions:` property compiles on action definitions but its runtime behavior has not been verified.
-- **Root Cause**: Property exists in the schema but may not be processed by the current runtime.
-- **Workaround**: Do not rely on `output_instructions:` for critical behavior. Instead, put output formatting guidance in the topic's `reasoning: instructions:` block.
-- **Affects**: All agent types
-
-### Issue 7: `always_expect_input` Not Implemented
-
-- **Status**: Open (not implemented)
-- **Symptom**: The `always_expect_input:` property is referenced in some documentation but is not recognized by the Agent Script compiler.
-- **Root Cause**: The property was planned but not implemented in the current compiler version.
-- **Workaround**: No workaround needed -- just don't use this property. If you need the agent to always wait for user input, add explicit instructions: "Always wait for the customer to respond before taking action."
-- **Affects**: All agents
-
-### Issue 8: `run` in `after_reasoning` Has Inconsistent Behavior
-
-- **Status**: Open
-- **Symptom**: Using `run @actions.X` inside `after_reasoning:` works in some bundle types but silently fails in others. The action may not execute or may execute with stale variable values.
-- **Root Cause**: The `after_reasoning:` runtime processor handles `set`, `if`/`else`, and `transition to` reliably, but `run` invokes the action runtime which has inconsistent support in the post-reasoning phase.
-- **Workaround**: Move `run` calls to `reasoning: instructions: ->` (as a deterministic pre-LLM action) or use `reasoning: actions:` (as an LLM-driven action). Keep `after_reasoning:` for `set`, `if`/`else`, and `transition to` only.
-  ```
-  # RISKY -- run in after_reasoning
-  after_reasoning:
-     run @actions.create_record
-        with data = @variables.collected_data
-        set @variables.record_id = @outputs.id
-
-  # SAFER -- Use after_reasoning only for transition
-  after_reasoning:
-     if @variables.all_fields_collected == True:
-        transition to @topic.create_and_confirm
-  ```
-- **Affects**: Varies by bundle type; most common with AiAuthoringBundle
-
-### Issue 9: VS Code Source Tracking Unsupported for AiAuthoringBundle
-
-- **Status**: Open
-- **Symptom**: `sf project retrieve start` and `sf project deploy start` with source tracking fail with: `UnsupportedBundleTypeError: Unsupported Bundle Type: AiAuthoringBundle`
-- **Root Cause**: The Salesforce VS Code extension's source tracking feature doesn't recognize AiAuthoringBundle as a supported metadata type.
-- **Workaround**: Use explicit CLI commands instead of source tracking:
+### Issue 1: Agent test files block `force-app` deployment
+- **Status**: WORKAROUND
+- **Date Discovered**: 2026-01-20
+- **Affects**: `sf project deploy start --source-dir force-app`
+- **Symptom**: Deployment hangs for 2+ minutes or times out when `AiEvaluationDefinition` metadata files exist under `force-app/`. The deploy may eventually succeed but with excessive wait times.
+- **Root Cause**: `AiEvaluationDefinition` metadata type triggers server-side processing that blocks the deployment pipeline. The metadata type is not well-suited for source-dir deploys.
+- **Workaround**: Move test definitions to a separate directory outside the main deploy path, or use `--metadata` flag to deploy specific types instead of `--source-dir`.
   ```bash
-  # Retrieve
-  sf project retrieve start -m AiAuthoringBundle:MyAgent -o TargetOrg
+  # Instead of:
+  sf project deploy start --source-dir force-app -o TARGET_ORG
 
-  # Deploy (use publish, not deploy)
-  sf agent publish authoring-bundle --api-name MyAgent -o TargetOrg
+  # Use targeted deployment:
+  sf project deploy start --metadata AiAuthoringBundle:MyAgent -o TARGET_ORG
   ```
-- **Affects**: All developers using VS Code with Salesforce Extensions
+- **Open Questions**: Will Salesforce optimize `AiEvaluationDefinition` deploy performance in a future release?
 
-### Issue 10: Hebrew and Indonesian Appear Twice in Language Dropdown
+---
 
-- **Status**: Open
-- **Symptom**: In the Setup UI language configuration, Hebrew and Indonesian each appear twice in the dropdown list.
-- **Root Cause**: Duplicate entries in the locale metadata.
-- **Workaround**: Always select from the FIRST occurrence. Selecting the second occurrence causes save errors.
-- **Affects**: Agents with multi-language configuration
+### Issue 2: `sf agent publish` fails with namespace prefix on `apex://` targets
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-01
+- **Affects**: Namespaced orgs using `apex://` action targets
+- **Symptom**: `sf agent publish authoring-bundle` fails with "invocable action does not exist" error, despite the Apex class being deployed and confirmed via SOQL query.
+- **Root Cause**: Unknown. Unclear whether `apex://ClassName` or `apex://ns__ClassName` is the correct format in namespaced orgs. The publish step may not resolve namespace prefixes the same way as standard metadata deployment.
+- **Workaround**: None confirmed. Potential approaches to try:
+  1. Use `apex://ns__ClassName` format
+  2. Use unmanaged classes (no namespace)
+  3. Wrap Apex in a Flow and use `flow://` target instead
+- **Open Questions**:
+  - Does `apex://ns__ClassName` work?
+  - Is this a bug or by-design limitation?
+  - Does the same issue affect `flow://` targets with namespaced Flows?
 
-### Issue 11: bundle-meta.xml Extra Fields Cause Deploy Errors
+---
 
-- **Status**: By design
-- **Symptom**: Adding fields like `<developerName>`, `<masterLabel>`, `<description>`, or `<target>` to `bundle-meta.xml` causes "Required fields are missing: [BundleType]" errors on deploy.
-- **Root Cause**: The Metadata API deploy step fails when unexpected fields are present in the bundle metadata. The `sf agent publish authoring-bundle` command manages these fields automatically.
-- **Workaround**: Keep `bundle-meta.xml` minimal -- only `<bundleType>AGENT</bundleType>`:
+### Issue 3: Agent packaging workflow unclear
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-05
+- **Affects**: ISV partners, AppExchange distribution
+- **Symptom**: No documented way to package Agent Script agents for distribution. The `AiAuthoringBundle` metadata type has no known packaging equivalent to `BotTemplate`.
+- **Root Cause**: Agent Script is newer than the packaging system. Salesforce has not published ISV packaging guidance for `.agent` files.
+- **Workaround**: None. Current options:
+  1. Distribute as source code (customer deploys manually)
+  2. Use unlocked packages (may include `.agent` files but subscriber customization is untested)
+  3. Convert to Agent Builder UI (GenAiPlannerBundle) for packaging — loses Agent Script benefits
+- **Open Questions**:
+  - Will `AiAuthoringBundle` be supported in 2GP managed packages?
+  - Can subscribers modify `.agent` files post-install?
+  - Is there a roadmap item for Agent Script packaging?
+
+---
+
+### Issue 4: Legacy `sf bot` CLI commands incompatible with Agent Script
+- **Status**: OPEN
+- **Date Discovered**: 2026-01-25
+- **Affects**: Users migrating from Einstein Bots to Agent Script
+- **Symptom**: Old `sf bot` and `sf bot version` commands were removed in sf CLI v2 — these commands no longer exist, not just "don't recognize Agent Script". Running any `sf bot` command returns "Command not found".
+- **Root Cause**: The `sf bot` command family was deprecated and removed in sf CLI v2. It targeted `BotDefinition`/`BotVersion` metadata types. Agent Script uses `AiAuthoringBundle`, a completely separate metadata structure.
+- **Workaround**: Use `sf agent` commands exclusively for Agent Script:
+  ```bash
+  # ❌ Old commands (don't work with Agent Script):
+  sf bot list
+  sf bot version list
+
+  # ✅ New commands (for Agent Script):
+  sf project retrieve start --metadata Agent:MyAgent
+  sf agent validate authoring-bundle --api-name MyAgent
+  sf agent publish authoring-bundle --api-name MyAgent
+  ```
+- **Open Questions**: Will Salesforce unify the `sf bot` and `sf agent` command families?
+
+---
+
+### Issue 5: Agent tests cannot be deployed/retrieved for source control
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-06
+- **Affects**: CI/CD pipelines, test version control
+- **Symptom**: Tests created in the Agent Testing Center UI cannot be retrieved via `sf project retrieve start`. Old test XML format references `bot`/`version` fields that don't exist in Agent Script. No metadata type or CLI command exists for new-style agent tests.
+- **Root Cause**: The Agent Testing Center was originally built for Einstein Bots. The test metadata schema hasn't been updated for Agent Script's `AiAuthoringBundle` structure. The `AiEvaluationDefinition` type exists but doesn't correspond to the Testing Center's UI-created tests.
+- **Workaround**:
+  1. Use YAML test spec files managed in source control (see `/sf-ai-agentforce-testing` skill)
+  2. Treat UI-created tests as ephemeral / org-specific
+  3. Use the Connect API directly to run tests programmatically
+- **Open Questions**:
+  - Will a new metadata type be introduced for Agent Script tests?
+  - Can `AiEvaluationDefinition` be used with Agent Script agents?
+  - Is there a roadmap for test portability?
+- **References**: See `references/custom-eval-investigation.md` in `sf-ai-agentforce-testing` for related findings on custom evaluation data structure issues.
+
+---
+
+### Issue 6: `require_user_confirmation` does not trigger confirmation dialog
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Date Updated**: 2026-02-17 (TDD v2.2.0 — confirmed compiles on target-backed actions)
+- **Affects**: Actions with `require_user_confirmation: True`
+- **Symptom**: Setting `require_user_confirmation: True` on an action definition does not produce a user-facing confirmation dialog before execution. The action executes immediately without user confirmation.
+- **Root Cause**: The property is parsed and saved without error, but the runtime does not implement the confirmation UX for Agent Script actions. It may only work for GenAiPlannerBundle actions in the Agent Builder UI.
+- **TDD Update (v2.2.0)**: Property compiles and publishes successfully on action definitions with `target:` (both `flow://` and `apex://`). Val_Action_Meta_Props confirms compilation. The issue is purely runtime — the confirmation dialog never appears. Property is NOT valid on `@utils.transition` actions (Val_Action_Properties, v1.3.0).
+- **Workaround**: Implement confirmation logic manually using a two-step pattern: (1) LLM asks user to confirm, (2) action has `available when @variables.user_confirmed == True` guard.
+- **Open Questions**: Will this be implemented for AiAuthoringBundle in a future release?
+
+---
+
+### Issue 7: OOTB Asset Library actions may ship without proper quote wrapping
+- **Status**: WORKAROUND
+- **Date Discovered**: 2026-02-14
+- **Affects**: Out-of-the-box (OOTB) actions from the Agentforce Asset Library
+- **Symptom**: Some pre-built actions from the Asset Library have input parameters that are not properly quote-wrapped, causing parse errors when referenced in Agent Script.
+- **Root Cause**: Asset Library actions were designed for the Agent Builder UI path, which handles quoting differently than Agent Script's text-based syntax.
+- **Workaround**: When importing Asset Library actions, manually verify all input parameter names in the action definition. If a parameter name contains special characters or colons (e.g., `Input:query`), wrap it in quotes: `with "Input:query" = ...`
+- **Open Questions**: Will Salesforce update Asset Library actions for Agent Script compatibility?
+
+---
+
+### Issue 8: Lightning UI components do not render on new planner
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: Agents using Lightning Web Components for rich UI rendering
+- **Symptom**: Custom Lightning UI components referenced in agent actions do not render in the chat interface when using the newer planner engine. Components that worked with the legacy planner appear as plain text or are silently dropped.
+- **Root Cause**: The newer planner (Atlas/Daisy) does not support the same Lightning component rendering pipeline as the legacy Java planner.
+- **Workaround**: None for rich UI. Fall back to text-based responses or use the legacy planner if Lightning component rendering is critical.
+- **Open Questions**: Is Lightning UI rendering on the roadmap for the new planner?
+
+---
+
+### Issue 9: Large action responses cause data loss from state
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: Actions returning large payloads (>50KB response data)
+- **Symptom**: When an action returns a large response payload, subsequent variable access may return null or incomplete data. State appears to lose previously stored values.
+- **Root Cause**: Action output data accumulates in conversation context without compaction. Very large responses may push earlier state data beyond the context window boundary.
+- **Workaround**: Design Flow/Apex actions to return minimal, summarized data. Use `filter_from_agent: True` on outputs the LLM doesn't need. Avoid `SELECT *` patterns in data retrieval.
+- **Open Questions**: Will automatic context compaction be added for action outputs?
+
+---
+
+### Issue 10: Agent fails if user lacks permission for ANY action
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: Agents with actions targeting secured resources
+- **Symptom**: If the running user (Einstein Agent User or session user) lacks permission to execute ANY action defined in the agent — even actions in other topics — the entire agent may fail with a permission error rather than gracefully skipping the unauthorized action.
+- **Root Cause**: The planner appears to validate permissions for all registered actions at startup, not lazily per-topic.
+- **Workaround**: For **Service Agents**: Ensure the Einstein Agent User has both the `AgentforceServiceAgentUser` system PS AND a custom `{AgentName}_Access` PS with `<classAccesses>` for ALL Apex classes across all topics. Do NOT rely on the auto-generated `NextGen_{AgentName}_Permissions` — it is often incomplete (ORM1 testing: 3/4 classes, missing `ShipmentTracker`). For **Employee Agents**: Ensure each employee user has the custom PS assigned. See [agent-user-setup.md](agent-user-setup.md) for the full provisioning workflow and permission set XML template. Alternatively, split agents by permission boundary.
+- **Open Questions**: Will the planner support lazy permission checking in a future release?
+
+---
+
+### Issue 11: Dynamic welcome messages broken (`{!userName}` not resolved)
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: `system.messages.welcome` with variable interpolation
+- **Symptom**: Variable references like `{!@variables.customer_name}` or `{!userName}` in the welcome message display as literal text instead of resolved values.
+- **Root Cause**: Welcome messages are rendered before the agent runtime initializes variables. Mutable variables have not been set yet, and linked variables may not be resolved at welcome-message time.
+- **Workaround**: Use static welcome messages. Personalize greetings in the first topic's instructions instead.
+- **Open Questions**: Will welcome message variable resolution be supported in a future release?
+
+---
+
+### Issue 12: Welcome message line breaks stripped
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: `system.messages.welcome` with multi-line content
+- **Symptom**: Line breaks (`\n`) in welcome messages are stripped, causing multi-line messages to render as a single line.
+- **Root Cause**: The welcome message renderer does not preserve newline characters from the Agent Script source.
+- **Workaround**: Keep welcome messages as a single line. Use the first topic's instructions with pipe syntax (`|`) for multi-line greetings.
+- **Open Questions**: Is this by design or a bug?
+
+---
+
+### Issue 13: Related agent nodes fail in SOMA configuration
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: Multi-agent configurations using `related_agent` references
+- **Symptom**: SOMA (Same Org Multi-Agent) configurations that reference related agents via node declarations fail with "Node does not have corresponding topic" error at runtime.
+- **Root Cause**: The planner resolves agent references at compile time but may not correctly map cross-agent topic references when agents are deployed independently.
+- **Workaround**: Use `@topic.X` delegation within the same agent instead of cross-agent references. For true multi-agent scenarios, use the `@utils.escalate` or connection-based handoff patterns.
+- **Open Questions**: Will SOMA node resolution be fixed in a future planner update?
+
+---
+
+### Issue 14: Previously valid OpenAPI schemas now fail validation
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-14
+- **Affects**: External Service actions using OpenAPI 3.0 schemas
+- **Symptom**: OpenAPI schemas that previously passed validation and worked with `externalService://` targets now fail with schema validation errors after org upgrades. No changes were made to the schema files.
+- **Root Cause**: Salesforce tightened OpenAPI schema validation rules in recent releases. Schemas that were previously accepted with minor deviations (e.g., missing `info.version`, non-standard extensions) are now rejected.
+- **Workaround**: Re-validate schemas against strict OpenAPI 3.0 spec. Common fixes: ensure `info.version` is present, remove non-standard `x-` extensions, verify all `$ref` paths resolve correctly.
+- **Open Questions**: Will Salesforce publish the exact validation rules that changed?
+
+---
+
+### Issue 15: Action definitions without `outputs:` block cause "Internal Error" on publish
+- **Status**: WORKAROUND
+- **Date Discovered**: 2026-02-16
+- **Date Updated**: 2026-02-17 (TDD v2.1.0 — clarified outputs specifically required)
+- **Affects**: `sf agent publish authoring-bundle` with topic-level action definitions
+- **Symptom**: `sf agent publish` returns "Internal Error, try again later" when topic-level action definitions have `target:` but no `outputs:` block. Also triggered when using `inputs:` without `outputs:`. LSP + CLI validation both PASS — error is server-side compilation only.
+- **Root Cause**: The server-side compiler needs output type contracts to resolve `flow://` and `apex://` action targets. Without an `outputs:` block, the compiler cannot generate return bindings. The `inputs:` block alone is NOT sufficient — `outputs:` is specifically required.
+- **Workaround**: Always include an `outputs:` block in action definitions. The `inputs:` block can be omitted if the target has no required inputs (the LLM will still slot-fill via `with param=...`), but `outputs:` must always be present.
+- **TDD Validation**: `Val_No_Outputs` (v2.1.0) confirms inputs-only action definition → "Internal Error". `Val_Partial_Output` confirms declaring a subset of outputs IS valid. `Val_Apex_Bare_Output` confirms bare `@InvocableMethod` without wrapper classes also triggers this error.
+- **Open Questions**: Will the compiler be updated to infer I/O schemas from the target's metadata?
+
+---
+
+### Issue 17: `EinsteinAgentApiChannel` surfaceType not available on all orgs
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-16
+- **Affects**: Agent Runtime API channel enablement via `plannerSurfaces` metadata
+- **Symptom**: Adding `plannerSurfaces` with `surfaceType: EinsteinAgentApiChannel` causes deployment errors on some orgs. Valid surfaceType values on tested orgs: `Messaging`, `CustomerWebClient`, `Telephony`, `NextGenChat`.
+- **Root Cause**: The `EinsteinAgentApiChannel` surfaceType may require specific org features or licenses that are not universally available.
+- **Workaround**: Use `CustomerWebClient` for Agent Runtime API / CLI testing. This surfaceType is available on all tested orgs and enables API access.
+- **Open Questions**: Is `EinsteinAgentApiChannel` limited to specific editions or feature flags?
+
+---
+
+### Issue 18: `connection messaging:` only generates `Messaging` plannerSurface — `CustomerWebClient` dropped on every publish
+- **Status**: OPEN
+- **Date Discovered**: 2026-02-17
+- **Affects**: Agent Builder Preview, Agent Runtime API testing, CLI testing (`sf agent test`, `sf agent preview`)
+- **Symptom**: After `sf agent publish authoring-bundle`, the compiled GenAiPlannerBundle only contains a `Messaging` plannerSurface. `CustomerWebClient` is never auto-generated. Agent Builder Preview shows "Something went wrong. Refresh and try again." because it requires `CustomerWebClient`.
+- **Root Cause**: The `connection messaging:` DSL block only generates a `Messaging` plannerSurface during compilation. There is no `connection customerwebclient:` DSL syntax — attempting it causes `ERROR_HTTP_404` on publish. The compiler has no mechanism to auto-generate `CustomerWebClient`.
+- **Impact**: Every publish overwrites the GenAiPlannerBundle, dropping any manually-added `CustomerWebClient` surface. This requires a post-publish patch after EVERY publish.
+- **Workaround — 6-Step Post-Publish Patch Workflow:**
+  1. `sf agent publish authoring-bundle --api-name AgentName -o TARGET_ORG --json` → creates new version (e.g., v22)
+  2. `sf project retrieve start --metadata "GenAiPlannerBundle:AgentName_vNN" -o TARGET_ORG --json` → retrieve compiled bundle
+  3. Manually add second `<plannerSurfaces>` block to the XML with `<surfaceType>CustomerWebClient</surfaceType>` (copy the existing `Messaging` block, change surfaceType and surface fields)
+  4. `sf agent deactivate --api-name AgentName -o TARGET_ORG` → deactivate agent (deploy fails while active)
+  5. `sf project deploy start --metadata "GenAiPlannerBundle:AgentName_vNN" -o TARGET_ORG --json` → deploy patched bundle
+  6. `sf agent activate --api-name AgentName -o TARGET_ORG` → reactivate agent
+- **Patch XML Example:**
   ```xml
-  <?xml version="1.0" encoding="UTF-8"?>
-  <AiAuthoringBundle xmlns="http://soap.sforce.com/2006/04/metadata">
-    <bundleType>AGENT</bundleType>
-  </AiAuthoringBundle>
+  <!-- Add this AFTER the existing Messaging plannerSurfaces block -->
+  <plannerSurfaces>
+      <adaptiveResponseAllowed>false</adaptiveResponseAllowed>
+      <callRecordingAllowed>false</callRecordingAllowed>
+      <outboundRouteConfigs>
+          <escalationMessage>One moment while I connect you with a support specialist.</escalationMessage>
+          <outboundRouteName>Route_from_Your_Agent</outboundRouteName>
+          <outboundRouteType>OmniChannelFlow</outboundRouteType>
+      </outboundRouteConfigs>
+      <surface>SurfaceAction__CustomerWebClient</surface>
+      <surfaceType>CustomerWebClient</surfaceType>
+  </plannerSurfaces>
   ```
-- **Affects**: All agents using AiAuthoringBundle path
+- **Note**: The `outboundRouteConfigs` should mirror the Messaging surface config. If no routing is configured, omit `outboundRouteConfigs`.
+- **Validated on**: YourOrg (Your_Agent_Name v22), 2026-02-17
 
-### Issue 12: Publish Does Not Activate
+---
 
-- **Status**: By design
-- **Symptom**: After `sf agent publish authoring-bundle` succeeds, the agent is not automatically activated. Preview and runtime calls fail with "No valid version available."
-- **Root Cause**: Publishing creates a new version but does not make it the active version. Activation is a separate step.
-- **Workaround**: Always run activation after publish:
+### Issue 19: Comments inside `if` blocks treated as empty body
+- **Status**: OPEN
+- **Date Discovered**: 2026-03-04
+- **Affects**: `if`/`else` blocks in `instructions: ->`
+- **Symptom**: An `if` block containing only comments (e.g., `# TODO`) compiles but produces an empty body at runtime. The parser strips comments during tokenization, and the resulting `INDENT → DEDENT` with no executable statements creates a no-op branch that silently swallows the conditional path.
+- **Root Cause**: Comments are not executable statements in Agent Script. The parser treats a comment-only block identically to an empty block.
+- **Workaround**: Always include at least one executable statement (`| text`, `run`, `set`, or `transition`) in every `if`/`else` block. Never use comment-only blocks as placeholders.
+  ```yaml
+  # ❌ WRONG — empty body after comment stripping
+  if @variables.premium == True:
+    # TODO: add premium greeting
+
+  # ✅ CORRECT — executable statement present
+  if @variables.premium == True:
+    | Welcome back, valued premium member!
+  ```
+- **Open Questions**: Will the compiler emit a warning for empty `if` bodies?
+
+---
+
+### Issue 20: GenAiPlannerBundle / AiAuthoringBundle / GenAiFunction NOT SOQL-queryable
+- **Status**: WORKAROUND (by design — metadata types, not sObjects)
+- **Date Discovered**: 2026-03-04
+- **Affects**: Any workflow that attempts SOQL queries on agent metadata types
+- **Symptom**: `SELECT ... FROM GenAiPlannerBundle` returns `INVALID_TYPE: GenAiPlannerBundle`. Same for `AiAuthoringBundle` and `GenAiFunction`. These types do not appear in `EntityDefinition` SOQL queries.
+- **Root Cause**: These are **Metadata API types**, not sObjects. They exist in the metadata layer and are only accessible via `sf project retrieve start --metadata` or the Metadata API. This is by design, not a bug.
+- **Workaround**: Use `sf project retrieve start --metadata "TypeName:ApiName"` instead of SOQL. For querying agent status/versions via SOQL, use `BotDefinition` and `BotVersion` sObjects.
   ```bash
-  sf agent publish authoring-bundle --api-name MyAgent -o Org --json
-  sf agent activate --api-name MyAgent -o Org
+  # ❌ WRONG — these are NOT sObjects
+  sf data query --query "SELECT Id FROM GenAiPlannerBundle" -o ORG --json
+  sf data query --query "SELECT Id FROM AiAuthoringBundle" -o ORG --json
+
+  # ✅ CORRECT — use Metadata API
+  sf project retrieve start --metadata "GenAiPlannerBundle:MyAgent_v1" -o ORG --json
+  sf project retrieve start --metadata "AiAuthoringBundle:MyAgent" -o ORG --json
+
+  # ✅ CORRECT — query sObjects for agent info
+  sf data query --query "SELECT Id, DeveloperName FROM BotDefinition WHERE DeveloperName = 'MyAgent'" -o ORG --json
+  sf data query --query "SELECT Id, VersionNumber, Status FROM BotVersion WHERE BotDefinition.DeveloperName = 'MyAgent'" -o ORG --json
   ```
-- **Affects**: All agents
+- **Open Questions**: None — this is by design.
 
-### Issue 13: `duplicate value found: GenAiPluginDefinition` on Publish
+---
 
-- **Status**: Root cause identified
-- **Symptom**: `sf agent publish authoring-bundle` fails with `duplicate value found: GenAiPluginDefinition duplicates value on record with id: <topic_name>_<planner_id>`.
-- **Root Cause**: Two known causes:
-  1. **`start_agent` and `topic` share the same name.** Both create `GenAiPluginDefinition` records. If `start_agent: entry` and `topic entry:` coexist, publish tries to create two records named `entry` and fails. Each failed attempt leaves an orphaned record, compounding the problem.
-  2. **Orphaned records from previous failed publishes.** Even after fixing the name collision, prior orphans still exist. They cannot be deleted (DML not allowed, REST returns dependency errors).
-- **Fix** (preventive): Give `start_agent` and all `topic` blocks unique names:
-  ```
-  # WRONG — causes duplicate GenAiPluginDefinition
-  start_agent: entry
-  topic entry:
+## Resolved Issues
 
-  # CORRECT — different names
-  start_agent router:
-  topic welcome:
-  ```
-- **Workaround** (if orphans already exist): Rename the colliding topic to a name that has no orphaned records:
-  ```bash
-  # 1. Check how many orphans exist
-  sf data query --query "SELECT Id, DeveloperName FROM GenAiPluginDefinition WHERE MasterLabel = 'Entry'" -o Org --json
-  # 2. Rename the topic in the .agent file (e.g., entry -> welcome)
-  # 3. Re-publish with the new name
-  sf agent publish authoring-bundle --api-name MyAgent -o Org --json
-  ```
-  Note: `sf project deploy start` does NOT clean up orphans. Only renaming avoids the collision.
-- **Affects**: All agents where `start_agent` name matches a `topic` name
-
-### Issue 14: `@inputs` Not Valid in `set` Clauses
-
-- **Status**: By design
-- **Symptom**: Using `set @variables.X = @inputs.Y` in a Level 2 invocation causes a compiler error.
-- **Root Cause**: The `@inputs` namespace refers to the action's input parameters, which are only available for reading in the context of the action execution. The `set` clause captures outputs, so only `@outputs.Y` is valid.
-- **Workaround**: Use `@outputs.Y` in `set` clauses. If you need to capture an input value, have the action echo it as an output:
-  ```
-  # WRONG
-  set @variables.x = @inputs.order_id
-
-  # CORRECT
-  set @variables.x = @outputs.order_id
-  ```
-- **Affects**: All agents
-
-### Issue 15: Comment-Only If Bodies Cause Compiler Error
-
-- **Status**: By design
-- **Symptom**: An `if` block containing only a comment (e.g., `# TODO: implement`) causes a compiler error.
-- **Root Cause**: The compiler requires at least one executable statement in every `if` body.
-- **Workaround**: Add a no-op executable statement:
-  ```
-  # WRONG
-  if @variables.debug == True:
-     # TODO: add debug logging
-
-  # CORRECT
-  if @variables.debug == True:
-     | Debug mode enabled.
-  ```
-- **Affects**: All agents
-
-### Issue 16: Topic Selector Re-Entry After User Provides Missing Input
-
-- **Status**: Open
-- **Symptom**: After the topic selector asks for clarification and the user provides the missing input, the topic selector doesn't properly re-evaluate and route to the correct topic. Instead, it stays in the selector or routes to the wrong topic.
-- **Root Cause**: The topic selector's re-resolution logic doesn't always incorporate the new user input into its routing decision.
-- **Workaround**: Use the latch variable pattern to force re-entry to the correct topic:
-  ```
-  variables:
-     pending_topic: mutable string = ""
-
-  topic topic_selector:
-     reasoning:
-        instructions: ->
-           if @variables.pending_topic == "orders":
-              transition to @topic.order_support
-           | How can I help you?
-        actions:
-           to_orders: @actions.set_pending_topic
-              description: "Route to orders"
-              with topic = "orders"
-              set @variables.pending_topic = @outputs.topic
-  ```
-- **Affects**: All agents with topic selector routing
-
-### Issue 17: Loop Protection Guardrail Limits Iterations
-
-- **Status**: By design
-- **Symptom**: After 3-4 iterations of the post-action loop (Phase 1 re-resolution), the agent breaks out of the current topic and returns to the topic selector.
-- **Root Cause**: Built-in guardrail to prevent infinite loops. The limit is approximately 3-4 iterations per topic entry.
-- **Workaround**: Design data collection flows to collect all needed fields in a single action call (using slot-filling with `...`) rather than collecting fields one at a time in a loop. If you need more iterations, use multiple topics with transitions between them.
-- **Affects**: All agents
-
-### Issue 18: Multiplication and Division Not Supported in Expressions
-
-- **Status**: By design
-- **Symptom**: Using `*`, `/`, or `%` operators in `if` conditions or `set` statements causes compiler errors.
-- **Root Cause**: Agent Script's expression evaluator only supports `+`, `-` for arithmetic. More complex math must be done in Flow or Apex.
-- **Workaround**: Move calculations to a Flow or Apex action and return the result as an output:
-  ```
-  # WRONG
-  set @variables.total = @variables.price * @variables.quantity
-
-  # CORRECT -- Use a Flow/Apex action
-  calculate: @actions.calculate_total
-     with price = @variables.price
-     with quantity = @variables.quantity
-     set @variables.total = @outputs.total
-  ```
-- **Affects**: All agents
-
-### Issue 19: `set` and Post-Action Operations Only Work on `@actions.X`
-
-- **Status**: By design
-- **Symptom**: Adding `set @variables.X = @outputs.Y` on `@utils.transition` or `@utils.escalate` invocations causes a compiler error or is silently ignored.
-- **Root Cause**: Framework utility actions (`@utils.*`) do not produce outputs. The `set` clause only works on user-defined actions that have `outputs:` blocks.
-- **Workaround**: If you need to set a variable before transitioning, use a separate `set` statement or a `@utils.setVariables` action:
-  ```
-  # WRONG
-  go_next: @utils.transition to @topic.next
-     set @variables.route = "next"
-
-  # CORRECT -- set before transition
-  after_reasoning:
-     set @variables.route = "next"
-     transition to @topic.next
-  ```
-- **Affects**: All agents
-
-### Issue 20: Tooling API PATCH Required for Instruction Updates When Publish Fails
-
-- **Status**: Open (workaround documented)
-- **Symptom**: After editing the `.agent` file and running `sf agent publish authoring-bundle`, the live `GenAiPluginInstructionDef` records are not updated. The agent continues to use old instructions.
-- **Root Cause**: The publish process sometimes fails to propagate instruction changes to the `GenAiPluginInstructionDef` records, especially after previous failed publishes or when orphaned drafts exist.
-- **Workaround**: Use the Tooling API to directly PATCH the instruction records:
-  ```bash
-  # Get the InstructionDef ID
-  sf data query \
-    --query "SELECT Id, Description FROM GenAiPluginInstructionDef WHERE GenAiPluginDefinitionId = '<topic_id>'" \
-    -o Org --json
-
-  # Patch the instruction text
-  sf api request rest \
-    "/services/data/v63.0/tooling/sobjects/GenAiPluginInstructionDef/<id>" \
-    --method PATCH \
-    --body '{"Description": "New instruction text here"}' \
-    -o Org
-  ```
-  A successful PATCH returns HTTP 204 No Content. The Tooling API field name is `Description` (the SOQL field name on the same object is `Instruction`).
-- **Affects**: All agents (more common after failed publishes)
+### Issue 16: `connections:` (plural) wrapper block not valid — use `connection messaging:` (singular)
+- **Status**: RESOLVED
+- **Date Discovered**: 2026-02-16
+- **Date Resolved**: 2026-02-16
+- **Affects**: Agent Script escalation routing configuration
+- **Symptom**: CLI validation rejects `connections:` (plural wrapper) block with `SyntaxError: Invalid syntax after conditional statement`.
+- **Root Cause**: The correct syntax is `connection messaging:` (singular, standalone top-level block) — NOT the `connections:` plural wrapper shown in some docs and `future_recipes/`. The `connection <channel>:` block is a Beta Feature available on production orgs.
+- **Resolution**: Use `connection messaging:` as a standalone block (no wrapper). Both minimal form (`adaptive_response_allowed` only) and full form (with `outbound_route_type`, `outbound_route_name`, `escalation_message`) are validated.
+- **CRITICAL**: `outbound_route_name` requires `flow://` prefix — bare API name causes `ERROR_HTTP_404` on publish. Correct format: `"flow://My_Flow_Name"`.
+- **All-or-nothing rule**: When `outbound_route_type` is present, all three route properties are required.
+- **Validated on**: YourOrg (Your_Agent_Name), 2026-02-16
 
 ---
 
 ## Contributing
 
-When you encounter a new issue with Agent Script or the Agentforce platform:
+When you discover a new platform issue during an Agent Script session:
 
-1. **Check this list first** -- the issue may already be documented with a workaround.
-2. **If new**, add it using the Issue Template format above.
-3. **Include**:
-   - Exact error message or unexpected behavior
-   - Minimal reproduction steps
-   - sf CLI version (`sf --version`)
-   - Agent type (`AgentforceServiceAgent` or `AgentforceEmployeeAgent`)
-   - Whether it's AiAuthoringBundle or GenAiPlannerBundle path
-4. **Classify status**:
-   - `Open` -- confirmed issue with no platform fix
-   - `By design` -- intentional limitation
-   - `Workaround available` -- has a reliable mitigation
-   - `Fixed in TDD-XXX` -- resolved in a specific release
-5. **Update existing issues** when new information is found (e.g., a workaround is discovered or the issue is fixed).
+1. Add it to the **Open Issues** section using the template above
+2. Assign the next sequential issue number
+3. Set status to `OPEN` or `WORKAROUND`
+4. Include the date discovered
+5. Be specific about the symptom and any error messages
+6. Note what you've tried so far under "Workaround"
+
+When an issue is resolved:
+1. Update the status to `RESOLVED`
+2. Add the resolution date and what fixed it (e.g., "Fixed in Spring '26 release")
+3. Move the issue to the **Resolved Issues** section
+
+---
+
+*Last updated: 2026-03-04*

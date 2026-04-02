@@ -1,100 +1,104 @@
 # Hub-and-Spoke Architecture Template
 # ====================================
 #
-# Central start_agent routes to specialized spoke topics.
-# Each spoke has a "back to hub" transition.
+# This template demonstrates the Hub-and-Spoke pattern where a central
+# topic_selector (hub) routes conversations to specialized topics (spokes).
 #
-# Pattern: Multi-purpose agents handling distinct request types.
-# IMPORTANT: start_agent IS the router — do NOT create a separate routing topic.
-
-config:
-	developer_name: "HubAndSpokeAgent"
-	agent_label: "Customer Service Agent"
-	description: "Multi-purpose agent with hub-and-spoke routing for orders, returns, and support"
-	default_agent_user: "einsteinagent@00dxx000001234.ext"
-
-variables:
-	EndUserId: linked string
-		source: @MessagingSession.MessagingEndUserId
-		description: "Messaging End User ID"
-		visibility: "External"
-	RoutableId: linked string
-		source: @MessagingSession.Id
-		description: "Messaging Session ID"
-		visibility: "External"
-	ContactId: linked string
-		source: @MessagingEndUser.ContactId
-		description: "Contact ID"
-		visibility: "External"
+# Pattern: Multi-purpose agents handling distinct request types
+# Use when: Users may have different intents (orders, support, returns)
 
 system:
-	instructions: |
-		You are an AI customer service agent for an e-commerce company.
-		Be professional, concise, and helpful.
-	messages:
-		welcome: "Welcome! I can help with orders, returns, or general support."
-		error: "I apologize, something went wrong. Let me try again."
+   messages:
+      welcome: "Welcome! I can help with orders, returns, or general support."
+      error: "I apologize, something went wrong. Let me try again."
+   instructions: "You are a customer service agent for an e-commerce company."
 
-language:
-	default_locale: "en_US"
-	additional_locales: ""
-	all_additional_locales: False
+config:
+   agent_name: "HubAndSpokeAgent"
+   agent_label: "Customer Service Agent"
+   description: "Multi-purpose agent with hub-and-spoke architecture"
+   default_agent_user: "agent@yourorg.com"  # REQUIRED: Change to valid Einstein Agent User
+
+variables:
+   customer_id: linked string
+      source: @session.customerId
+      description: "Customer ID from session"
+   order_id: mutable string = ""
+      description: "Current order being discussed"
+   issue_resolved: mutable boolean = False
+      description: "Whether the issue has been resolved"
+
+# ============================================================
+# HUB: Central Router
+# ============================================================
 
 start_agent topic_selector:
-	description: "Route user requests to the appropriate topic"
-	reasoning:
-		instructions: |
-			You are a router only. Do NOT answer questions or provide help directly.
-			Always use a transition action to route to the correct topic immediately.
-			- Order questions -> use to_orders
-			- Return or refund requests -> use to_returns
-			- General questions -> use to_general
-			Never attempt to help the customer yourself. Always route.
-		actions:
-			to_orders: @utils.transition to @topic.order_support
-				description: "Order status and tracking questions"
-			to_returns: @utils.transition to @topic.return_support
-				description: "Return or refund requests"
-			to_general: @utils.transition to @topic.general_support
-				description: "General questions and support"
+   description: "Route to appropriate topic based on user intent"
+   reasoning:
+      instructions: |
+         Determine what the customer needs and route accordingly:
+         - Order questions → orders topic
+         - Return/refund requests → returns topic
+         - General questions → support topic
+      actions:
+         check_order: @utils.transition to @topic.orders
+            description: "Customer wants to check order status"
+         process_return: @utils.transition to @topic.returns
+            description: "Customer wants to return or refund"
+         general_help: @utils.transition to @topic.support
+            description: "General support questions"
 
-topic order_support:
-	label: "Order Support"
-	description: "Handle order status and tracking inquiries"
-	reasoning:
-		instructions: |
-			Help the customer check their order status.
-			Ask for their order number if not provided.
-			Do not fabricate order details — always use the action result.
-		actions:
-			back: @utils.transition to @topic.topic_selector
-				description: "Route to a different topic"
-			escalate_now: @utils.escalate
-				description: "Transfer to human agent"
+# ============================================================
+# SPOKE: Orders Topic
+# ============================================================
 
-topic return_support:
-	label: "Return Support"
-	description: "Handle returns and refund requests"
-	reasoning:
-		instructions: |
-			Help the customer with their return or refund request.
-			Ask for the order number and reason for return.
-			Do not fabricate return details — always use the action result.
-		actions:
-			back: @utils.transition to @topic.topic_selector
-				description: "Route to a different topic"
-			escalate_now: @utils.escalate
-				description: "Transfer to human agent"
+topic orders:
+   description: "Handle order status and tracking inquiries"
+   reasoning:
+      instructions: ->
+         | Help the customer with their order inquiry.
 
-topic general_support:
-	label: "General Support"
-	description: "Handle general support questions"
-	reasoning:
-		instructions: |
-			Help the customer with general questions.
-			If the question is about orders or returns, route appropriately.
-		actions:
-			back: @utils.transition to @topic.topic_selector
-				description: "Route to a different topic"
-			escalate_now: @utils.escalate
-				description: "Transfer to human agent"
+         if @variables.order_id != "":
+            | Current order: {!@variables.order_id}
+
+      actions:
+         lookup_order: @actions.get_order_status
+            description: "Look up order details"
+            with order_id = @variables.order_id
+         back_to_hub: @utils.transition to @topic.topic_selector
+            description: "Return to main menu"
+
+# ============================================================
+# SPOKE: Returns Topic
+# ============================================================
+
+topic returns:
+   description: "Handle return and refund requests"
+   reasoning:
+      instructions: ->
+         | Help the customer with their return or refund request.
+         | Verify the order details before processing.
+
+      actions:
+         start_return: @actions.initiate_return
+            description: "Start a return process"
+         process_refund: @actions.process_refund
+            description: "Process a refund"
+         back_to_hub: @utils.transition to @topic.topic_selector
+            description: "Return to main menu"
+
+# ============================================================
+# SPOKE: Support Topic
+# ============================================================
+
+topic support:
+   description: "Handle general support questions"
+   reasoning:
+      instructions: |
+         Help the customer with general questions.
+         If the question requires specialized help, route appropriately.
+      actions:
+         escalate: @utils.escalate
+            description: "Transfer to human agent"
+         back_to_hub: @utils.transition to @topic.topic_selector
+            description: "Return to main menu"

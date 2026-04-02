@@ -1,8 +1,10 @@
-# Production Gotchas: Billing, Determinism & Performance
-Credit consumption, lifecycle hooks, determinism patterns, and performance guardrails in Agentforce.
----
+<!-- Parent: adlc-author/SKILL.md -->
+
+# PRODUCTION GOTCHAS: Billing, Determinism & Performance
 
 ## Credit Consumption Table
+
+> **Key insight**: Framework operations are FREE. Only actions that invoke external services consume credits.
 
 | Operation | Credits | Notes |
 |-----------|---------|-------|
@@ -18,13 +20,11 @@ Credit consumption, lifecycle hooks, determinism patterns, and performance guard
 | Apex actions | 20 | Per action execution |
 | Any other action | 20 | Per action execution |
 
-The `before_reasoning:` and `after_reasoning:` lifecycle hooks are validated. Content goes **directly** under the block (no `instructions:` wrapper). See "Lifecycle Hooks" section below for correct syntax.
+> **✅ Lifecycle Hooks**: The `before_reasoning:` and `after_reasoning:` lifecycle hooks are validated. Content goes **directly** under the block (no `instructions:` wrapper). See "Lifecycle Hooks" section below for correct syntax.
 
-### Cost Optimization Pattern
+**Cost Optimization Pattern**: Fetch data once in `before_reasoning:`, cache in variables, reuse across topics.
 
-Fetch data once in `before_reasoning:`, cache in variables, reuse across topics.
-
-## Lifecycle Hooks
+## Lifecycle Hooks: `before_reasoning:` and `after_reasoning:`
 
 ```yaml
 topic main:
@@ -70,7 +70,7 @@ before_reasoning:
    set @variables.x = True   # ✅ Direct content under the block
 ```
 
-## Supervision vs Handoff
+## Supervision vs Handoff (Clarified Terminology)
 
 | Term | Syntax | Behavior | Use When |
 |------|--------|----------|----------|
@@ -93,7 +93,7 @@ get_advice: @topic.product_expert
 
 ## Action Output Flags for Zero-Hallucination Routing
 
-Control what the LLM can see and say.
+> **Key Pattern for Determinism**: Control what the LLM can see and say.
 
 When defining actions in Agentforce Assets, use these output flags:
 
@@ -125,7 +125,7 @@ topic intent_router:
 
 ## Action I/O Metadata Properties
 
-Complete reference for all metadata properties available on action definitions, inputs, and outputs.
+> **Complete reference** for all metadata properties available on action definitions, inputs, and outputs.
 
 **Action-Level Properties:**
 
@@ -159,11 +159,9 @@ Complete reference for all metadata properties available on action definitions, 
 | `developer_name` | String | Overrides the parameter's developer name |
 | `complex_data_type_name` | String | Lightning type mapping |
 
-`filter_from_agent: True` is the GA standard name. `is_displayable: False` is a compile-valid alias.
+> **Cross-reference**: `filter_from_agent: True` is the GA standard name. `is_displayable: False` is a compile-valid alias.
 
-### User Input Pattern
-
-With `is_user_input: True`:
+**User Input Pattern** (`is_user_input: True`):
 ```yaml
 inputs:
    customer_name: string
@@ -174,7 +172,7 @@ inputs:
 
 ## Action Chaining with `run` Keyword
 
-Parent action may complain about inputs needed by chained action - this is expected.
+> **Known quirk**: Parent action may complain about inputs needed by chained action - this is expected.
 
 ```yaml
 process_order: @actions.create_order
@@ -183,13 +181,13 @@ process_order: @actions.create_order
    set @variables.order_id = @outputs.id
 ```
 
-KNOWN BUG: Chained actions with Prompt Templates don't properly map inputs using `Input:Query` format.
-
-For prompt template action definitions, input binding syntax, and grounded data patterns, see [Action Prompt Templates](action-prompt-templates.md).
+**KNOWN BUG**: Chained actions with Prompt Templates don't properly map inputs using `Input:Query` format.
 
 ## Latch Variable Pattern for Topic Re-entry
 
-Topic selector doesn't properly re-evaluate after user provides missing input. Use a "latch" variable to force re-entry:
+> **Problem**: Topic selector doesn't properly re-evaluate after user provides missing input.
+
+**Solution**: Use a "latch" variable to force re-entry:
 
 ```yaml
 variables:
@@ -219,7 +217,7 @@ topic verification:
 
 ## Loop Protection Guardrail
 
-Agent Scripts have a built-in guardrail that limits iterations to approximately **3-4 loops** before breaking out and returning to the Topic Selector.
+> Agent Scripts have a built-in guardrail that limits iterations to approximately **3-4 loops** before breaking out and returning to the Topic Selector.
 
 **Best Practice**: Map out your execution paths and test for unintended circular references between topics.
 
@@ -253,24 +251,6 @@ Failed to retrieve components using source tracking:
 sf project retrieve start -m AiAuthoringBundle:MyAgent
 sf agent publish authoring-bundle --api-name MyAgent -o TARGET_ORG
 ```
-
-## Reserved `@InvocableVariable` Keywords
-
-Certain common words cannot be used as `@InvocableVariable` names in Apex classes called by Agent Script. Using them causes "SyntaxError: Unexpected '{keyword}'" during agent script compilation. (Validated March 2026)
-
-**Reserved names (cannot use as `@InvocableVariable`):**
-
-| Reserved Name | Workaround | Example |
-|---------------|------------|---------|
-| `model` | `vehicle_model`, `data_model`, `model_name` | `@InvocableVariable public String vehicle_model;` |
-| `description` | `issue_description`, `desc_text`, `description_field` | `@InvocableVariable public String issue_description;` |
-| `label` | `label_text`, `display_label`, `label_field` | `@InvocableVariable public String label_text;` |
-
-**How it manifests:**
-- Apex compiles and deploys successfully (these are valid Apex identifiers)
-- Error only appears when the Agent Script compiler processes the action's I/O schema
-- Error message: `SyntaxError: Unexpected 'model'` (or `description`, `label`)
-- Fix: Rename the `@InvocableVariable` in Apex, redeploy, then republish the agent
 
 ## Language Block Quirks
 

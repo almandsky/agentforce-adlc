@@ -434,14 +434,14 @@ Planner validates ALL actions across ALL topics at startup. One missing permissi
 
 ## Syntax Quick Reference
 
-- Block order: `config:` → `variables:` → `system:` → `connection messaging:` → `knowledge:` → `language:` → `start_agent topic_selector:` → `topic:` blocks
-- Indentation: **Tabs only** (spaces rejected by compiler)
+- Block order: `system:` → `config:` → `variables:` → `connection:` → `knowledge:` → `language:` → `start_agent topic_selector:` → `topic:` blocks
+- Indentation: **4 spaces** per indent level. Never use tabs. Mixing spaces and tabs breaks the parser.
 - Booleans: `True`/`False` (capitalized)
 - Strings: always double-quoted
-- Numeric action I/O: use `object` + `complex_data_type_name` (not bare `number`)
+- Numeric action I/O: bare `number` works for variables but **fails at publish** in action I/O. Use `object` + `complex_data_type_name` for numeric action parameters. See [Complex Data Types](references/complex-data-types.md) for the full decision tree.
 - `after_reasoning:` has NO `instructions:` wrapper
 - No `else if` — use compound `if x and y:` or sequential flat ifs
-- Reserved names: `description`, `label`, `language`, `escalate` — cannot be used as variable/field names
+- Reserved `@InvocableVariable` names: `model`, `description`, `label` — cannot be used as Apex parameter names
 
 See [Complex Data Types](references/complex-data-types.md) for the full Lightning type mapping decision tree. See [Instruction Resolution](references/instruction-resolution.md) for the 3-phase runtime model.
 

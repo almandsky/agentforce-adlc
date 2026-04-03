@@ -32,9 +32,9 @@ Identify user intent from task descriptions. ALWAYS read indicated reference fil
 
 ## Rules That Always Apply
 
-1. **Always `--json`.** Every `sf` CLI command MUST include `--json`. Never pipe through `jq` or `2>/dev/null` — read JSON directly.
+1. **Always `--json`.** ALWAYS include `--json` on EVERY `sf` CLI command. Do NOT pipe CLI output through `jq` or `2>/dev/null`. Read the full JSON response directly — LLMs parse JSON natively.
 
-2. **Verify target org.** Before any org interaction, run `sf config get target-org --json`. If none set, ask the user to run `sf config set target-org <alias>`.
+2. **Verify target org.** Before any org interaction, run `sf config get target-org --json` to confirm a target org is set. If none configured, ask the user to set one with `sf config set target-org <alias>`.
 
 3. **Diagnose before you fix.** When validating/debugging agent behavior,
    ALWAYS `--use-live-actions` to preview authoring bundles. Send utterances
@@ -59,10 +59,10 @@ User wants to build new agent from scratch. ALWAYS use Agent Script. Work with U
 
 Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command syntax.
 
-1. **Design** — Read [Design & Agent Spec](references/agent-design-and-spec-creation.md) to draft an Agent Spec. Always ask if you should scan for existing backing logic. Unless instructed otherwise, scan by reading `sfdx-project.json` to identify package directories, then search each for `@InvocableMethod` in `classes/`, `AutoLaunchedFlow` in `flows/`, and template metadata in `promptTemplates/`. Mark matches `EXISTS`; unmatched actions `NEEDS STUB`. Also scan `objects/` for `.object-meta.xml` — related objects often contain data the agent should expose even when not in the prompt. **Always save Agent Spec as file.**
+1. **Design** — Read [Design & Agent Spec](references/agent-design-and-spec-creation.md) to draft an Agent Spec. Always ask if you should scan for existing backing logic. Unless instructed otherwise, scan by reading `sfdx-project.json` to identify package directories, then search each for `@InvocableMethod` in `classes/`, `AutoLaunchedFlow` in `flows/`, and template metadata in `promptTemplates/`. Mark matches `EXISTS`; unmatched actions `NEEDS STUB`. Also scan `objects/` for `.object-meta.xml` to discover custom objects — related objects often contain data the agent should expose even when not mentioned in the prompt. **Always save Agent Spec as file.**
 2. **STOP for user approval of Agent Spec.** Present to user. Ask for approval or feedback. **Do not proceed** without approval. Once approved, proceed without stopping unless a step fails.
 3. **Validate environment prerequisites** — Read [Design & Agent Spec](references/agent-design-and-spec-creation.md), Section 3 (Environment Prerequisites). Based on agent type from design, validate org environment:
-   - **Employee agent**: Must NOT have `default_agent_user`, `connection messaging:`, or MessagingSession linked vars. Remove if present. See [Examples](references/examples.md).
+   - **Employee agent**: Confirm config block does NOT include `default_agent_user`, `connection messaging:`, or MessagingSession linked variables. Remove if present. See [Examples](references/examples.md) for a complete employee agent example.
    - **Service agent**: Query org for Einstein Agent User. If one exists, confirm username with user. If none, guide user through creation. See [CLI for Agents](references/salesforce-cli-for-agents.md), Section 12 for creation steps and [Agent User Setup](references/agent-user-setup.md) for required permissions.
    **Do not proceed to code generation until environment is validated.**
 4. **Generate authoring bundle** —
@@ -83,11 +83,11 @@ Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command
    Send test utterances with:
    `sf agent preview send --json --authoring-bundle <Developer_Name> --session-id <ID> -u "<message>"`
    Confirm topic routing, gating, and action invocations match Agent Spec. If behavior diverges, switch to **Diagnose Behavioral Issues** workflow. Return AFTER correcting issues.
-   **CHECKPOINT — Do NOT Publish unless ALL true:**
+   **CHECKPOINT — Do NOT proceed to Publish unless ALL are true:**
    - `validate authoring-bundle` passes with zero errors
-   - Live preview (`--use-live-actions`) tested per topic
-   - Traces confirm correct routing and action invocation
-   - User explicitly approves
+   - Live preview (`--use-live-actions`) tested with representative utterances per topic
+   - Traces confirm correct topic routing and action invocation
+   - User explicitly approves deployment
 9. **Publish** — Publish validates metadata structure, not agent behavior. Every publish creates permanent version number.
    `sf agent publish authoring-bundle --json --api-name <Developer_Name>`
    If publish fails, follow troubleshooting checklist in [Metadata & Lifecycle](references/agent-metadata-and-lifecycle.md), Section 5 before retrying.
@@ -181,11 +181,11 @@ Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command
    Send test utterances with:
    `sf agent preview send --json --authoring-bundle <Developer_Name> --session-id <ID> -u "<message>"`
    Test changed paths first, then adjacent paths to catch regressions in existing behavior.
-   **CHECKPOINT — Do NOT Publish unless ALL true:**
+   **CHECKPOINT — Do NOT proceed to Publish unless ALL are true:**
    - `validate authoring-bundle` passes with zero errors
-   - Live preview (`--use-live-actions`) tested per topic
-   - Traces confirm correct routing and action invocation
-   - User explicitly approves
+   - Live preview (`--use-live-actions`) tested with representative utterances per topic
+   - Traces confirm correct topic routing and action invocation
+   - User explicitly approves deployment
 8. **Publish** — Publish validates metadata structure, not agent behavior. Every publish creates permanent version number.
    `sf agent publish authoring-bundle --json --api-name <Developer_Name>`
    If publish fails, follow troubleshooting checklist in [Metadata & Lifecycle](references/agent-metadata-and-lifecycle.md), Section 5 before retrying.
@@ -289,11 +289,11 @@ Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command
    then send test utterances with:
    `sf agent preview send --json --authoring-bundle <Developer_Name> --session-id <ID> -u "<message>"`
    Test key conversation paths to validate agent behavior when backed by live actions.
-   **CHECKPOINT — Do NOT Publish unless ALL true:**
+   **CHECKPOINT — Do NOT proceed to Publish unless ALL are true:**
    - `validate authoring-bundle` passes with zero errors
-   - Live preview (`--use-live-actions`) tested per topic
-   - Traces confirm correct routing and action invocation
-   - User explicitly approves
+   - Live preview (`--use-live-actions`) tested with representative utterances per topic
+   - Traces confirm correct topic routing and action invocation
+   - User explicitly approves deployment
 4. **Publish** — Publish validates metadata structure, not agent behavior. DO NOT publish as part of a dev/test inner loop. ONLY publish as the FINAL step prior to activating the agent and surfacing it to end users.
    `sf agent publish authoring-bundle --json --api-name <Developer_Name>`
    If publish fails, follow *Troubleshooting Publish Failures* in [Metadata & Lifecycle](references/agent-metadata-and-lifecycle.md) before retrying.

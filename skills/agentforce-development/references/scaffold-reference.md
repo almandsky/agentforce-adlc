@@ -118,7 +118,7 @@ Recommended order: `apiVersion` -> `description` -> `label` -> `variables` -> `a
 | Maintenance | Admins maintain | Developers maintain |
 | Testing | Flow test coverage built-in | Requires Apex test class (75%+ coverage) |
 
-**Rule of thumb:** Single record lookup/update without callouts → Flow. Callouts, complex logic, or bulk ops → Apex. When in doubt, prefer Apex.
+**Rule of thumb:** If the action does a single record lookup or update with no callouts, use Flow. If it involves callouts, complex logic, or bulk operations, use Apex. When in doubt, prefer Apex — it's more debuggable and less constrained.
 
 ## Integration Workflow
 

@@ -186,7 +186,7 @@ ALWAYS use `--json` when calling from a script or AI assistant (not interactive 
 sf agent preview start --authoring-bundle <BUNDLE_NAME> --use-live-actions --json
 ```
 
-This command returns a session ID. Capture it immediately — you need it for every subsequent command. Use `--use-live-actions` to execute real backing logic (recommended). Omit it only when backing logic doesn't exist yet and you want simulated preview.
+Returns a session ID needed for all subsequent commands. `--use-live-actions` executes real backing logic (recommended). Omit only when backing logic doesn't exist yet.
 
 Example:
 
@@ -236,11 +236,11 @@ Use live preview mode when:
 - Backing code is deployed and a default agent user is configured
 - Your test depends on real action output values (grounding validation, variable-driven branching, output formatting)
 
-Live preview mode is required for reliable grounding testing. The grounding checker runs in both modes, but simulated preview mode generates fake action outputs via LLM, and those outputs can trigger false grounding failures because they don't match real data patterns. If you see grounding failures in simulated preview mode, switch to live preview mode before diagnosing — the failure may be an artifact of simulation, not a real problem.
+Live preview is required for reliable grounding testing. Simulated preview generates fake action outputs that can trigger false grounding failures. If grounding fails in simulated mode, switch to live preview before diagnosing.
 
-CRITICAL: `--use-live-actions` is ONLY valid with `--authoring-bundle`. Published agents (`--api-name`) always execute real actions — do NOT pass `--use-live-actions` with `--api-name`.
+CRITICAL: `--use-live-actions` is ONLY valid with `--authoring-bundle`. Published agents (`--api-name`) always use real actions.
 
-CRITICAL: `--use-live-actions` is a flag on `preview start` ONLY. Do NOT pass it to `preview send` or `preview end` — those commands do not accept it and will error.
+CRITICAL: `--use-live-actions` applies to `preview start` ONLY. `preview send` and `preview end` do not accept it.
 
 ### Agent Identification
 

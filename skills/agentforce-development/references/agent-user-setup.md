@@ -34,13 +34,13 @@ sf data query \
 
 # Step 2: Create Einstein Agent User (2 minutes)
 # Get Profile ID
-# Get Profile ID (read result.records[0].Id from JSON response)
+# Get Profile ID (read result.records[0].Id from response)
 sf data query \
   --query "SELECT Id FROM Profile WHERE Name = 'Einstein Agent User'" \
   -o TARGET_ORG --json
 
 # For Production/Sandbox (non-scratch org):
-# Use the ProfileId from the query above
+# Use ProfileId from above
 sf data create record --sobject User --values \
   "Username=<agent_name>_user@<orgId>.ext \
    LastName=<AgentName> \
@@ -118,10 +118,10 @@ Critical notes:
 
 Service agents need a dedicated service account with consistent permissions.
 
-**Get Org ID first** (needed for username format):
+**Get Org ID** (needed for username format):
 ```bash
 sf org display -o TARGET_ORG --json
-# Read result.id from the JSON response
+# Read result.id from response
 ```
 
 **Query existing Einstein Agent Users** (skip creation if one exists):
@@ -163,8 +163,7 @@ sf data query --query "SELECT Id, Username, IsActive FROM User WHERE Profile.Nam
 
    **Option B: Production/Sandbox (Direct Record Creation)**
    ```bash
-   # Get Profile ID first
-   # Get Profile ID (read result.records[0].Id from JSON response)
+   # Get Profile ID (read result.records[0].Id from response)
    sf data query \
      --query "SELECT Id FROM Profile WHERE Name = 'Einstein Agent User'" \
      -o TARGET_ORG --json

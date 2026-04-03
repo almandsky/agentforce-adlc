@@ -47,7 +47,7 @@ sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
 ```bash
 sf agent activate --api-name MyAgent -o <org-alias> --json
 ```
-Note: `sf agent activate` may not support `--json` in all CLI versions. If it returns plain text, check for "successfully activated" in the output.
+Note: `sf agent activate` may not support `--json` in all CLI versions. If plain text, check for "successfully activated".
 
 Publishing creates an **inactive** version. Without activation, preview fails with "No valid version available".
 

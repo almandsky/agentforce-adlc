@@ -494,7 +494,7 @@ public class WrappedAction {
 
 The `connection` block enables escalation to human agents via Omni-Channel. Always use `connection messaging:` (singular).
 
-> **Service agents only.** The `connection messaging:` block and `@utils.escalate` are only valid for `AgentforceServiceAgent`. Employee agents (`AgentforceEmployeeAgent`) MUST NOT include a `connection` block or `@utils.escalate` actions — including them causes silent failures or "unknown error" at publish time. For employee agents, use `@utils.transition` to a help topic or an action that creates a support case instead.
+> **Service agents only.** `connection messaging:` and `@utils.escalate` are invalid for `AgentforceEmployeeAgent` — causes silent failure or "unknown error" at publish. Employee agents: use `@utils.transition` to a help topic or a case-creation action instead.
 
 ### Basic Syntax
 

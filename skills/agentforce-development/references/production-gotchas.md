@@ -256,7 +256,7 @@ sf agent publish authoring-bundle --api-name MyAgent -o TARGET_ORG
 
 ## `@inputs` Scope Lifecycle (Silent Failure)
 
-`@inputs` is only available inside `with` directives during action invocation. Using `@inputs` in a `set` directive after action execution causes **silent runtime failure** — the action executes but the `set` assignment silently fails, leaving the target variable unchanged. No error is raised in the trace; the FunctionStep simply shows no output capture.
+`@inputs` is only available in `with` directives during action invocation. Using `@inputs` in a post-action `set` causes **silent runtime failure** — the action executes but the `set` silently drops, leaving the variable unchanged. No trace error; the FunctionStep shows no output capture.
 
 ```agentscript
 # WRONG — silent failure, @inputs out of scope after action executes
@@ -271,7 +271,7 @@ run @actions.get_station_status
     set @variables.status = @outputs.status           # @outputs is valid here
 ```
 
-**How to diagnose:** In session traces, a FunctionStep that completes but produces no output capture (set directives silently dropped) indicates an `@inputs` scope violation. The action itself succeeds — only the variable assignment fails.
+**Diagnosis:** A FunctionStep that completes with no output capture (set directives dropped) indicates an `@inputs` scope violation. The action succeeds — only the assignment fails.
 
 Similarly, `@outputs` is only available in `set` and `if` directives immediately following the action invocation — not in instructions, pipe lines, or later actions.
 

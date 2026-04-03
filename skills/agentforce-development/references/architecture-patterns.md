@@ -2,6 +2,17 @@
 
 > Extracted from SKILL.md Section 8. This file is loaded on demand when architecture pattern guidance is needed.
 
+> All architecture patterns below work for both `AgentforceServiceAgent` and `AgentforceEmployeeAgent`. The only difference is that employee agents cannot use `@utils.escalate` or `connection messaging:` — replace escalation with a `@utils.transition` to a help topic or an action that creates a case/ticket.
+
+## When to Use Each Pattern
+
+| Pattern | Use When |
+|---------|----------|
+| Hub-and-Spoke | Agent has 2+ distinct topics with different intents (most common) |
+| Verification Gate | Sensitive data, payments, or PII require identity verification first |
+| Post-Action Loop | Actions produce state that drives follow-up logic (e.g., risk scoring) |
+| Single Topic | Agent serves one focused purpose with no routing needed |
+
 ## Hub-and-Spoke (Most Common)
 
 A central `topic_selector` routes to specialized spoke topics. Each spoke has a "back to hub" transition. Use when users may have multiple distinct intents.
@@ -102,6 +113,22 @@ reasoning:
 		else:
 			| STANDARD - Follow normal process.
 ```
+
+## Migrating to Hub-and-Spoke
+
+When refactoring a flat agent (all logic in one topic) into hub-and-spoke:
+
+1. **Identify distinct intents** — each becomes a spoke topic
+2. **Move instructions and actions** from the monolithic topic into spoke topics. Each spoke needs BOTH its Level 1 action definitions (under `topic > actions`) AND Level 2 action invocations (under `topic > reasoning > actions`).
+3. **Create `start_agent topic_selector:`** with transition actions pointing to each spoke
+4. **Add "back to hub" transitions** in each spoke: `@utils.transition to @topic.topic_selector`
+5. **Re-preview immediately** — verify topic routing works before making further changes
+
+**Common migration mistakes:**
+- Creating a separate `main_menu` topic instead of using `start_agent topic_selector:` as the hub — adds an unnecessary LLM hop
+- Leaving action definitions in `start_agent` instead of moving them to spoke topics — all actions visible in all topics, confusing the planner
+- Forgetting to add "back to hub" transitions — users get stuck in a spoke topic
+- If trace shows `topic: "DefaultTopic"`, check that topic descriptions contain keywords matching test utterances
 
 ## Multi-Intent Handling
 

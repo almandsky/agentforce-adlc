@@ -1,485 +1,612 @@
-<!-- Parent: adlc-author/SKILL.md -->
 # Actions Reference
 
-> Complete reference for action definitions, invocations, targets, and I/O binding in Agent Script.
+Complete guide to Agent Actions in Agentforce: Flow, Apex, API actions, and escalation routing.
 
 ---
 
-## 1. Action Properties Reference
+## Action Properties Reference
 
-### Level 1: Action Definitions (inside `topic > actions:`)
+All actions in Agent Script support these properties:
 
-Action definitions declare WHAT an action is -- its target, inputs, and outputs.
+### Action Definition Properties
 
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `target` | String | Yes | Executable target (see Action Target Types below) |
+| `description` | String | Yes | Explains behavior for LLM decision-making |
+| `label` | String | No | Display name in UI; auto-generated from action name if omitted |
+| `inputs` | Object | No | Input parameters and requirements |
+| `outputs` | Object | No | Return parameters |
+| `available_when` | Expression | No | Conditional availability for the LLM |
+| `require_user_confirmation` | Boolean | No | Ask user to confirm before execution; defaults to `False` |
+| `include_in_progress_indicator` | Boolean | No | Show progress indicator during execution; defaults to `False` |
+| `progress_indicator_message` | String | No | Custom message shown during execution (e.g., "Processing your request...") |
+
+> **Note**: `label`, `require_user_confirmation`, `include_in_progress_indicator`, and `progress_indicator_message` are valid on action definitions with `target:` but NOT on `@utils.transition` utility actions.
+
+### Input Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `description` | String | Explains the input parameter to LLM; auto-generated from field name if omitted |
+| `label` | String | Display name in UI; auto-generated from field name if omitted |
+| `is_required` | Boolean | Marks input as mandatory for the LLM; defaults to `False` |
+| `is_user_input` | Boolean | LLM extracts value from conversation context; defaults to `False` |
+| `complex_data_type_name` | String | Lightning data type mapping (required for complex types) |
+
+### Output Properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `description` | String | Explains the output parameter to LLM; auto-generated from field name if omitted |
+| `label` | String | Display name in UI; auto-generated from field name if omitted |
+| `filter_from_agent` | Boolean | `True` = exclude output from agent context; defaults to `False` |
+| `is_used_by_planner` | Boolean | `True` = LLM can reason about this value for routing decisions; defaults to `False` |
+| `complex_data_type_name` | String | Lightning data type mapping (required for complex types) |
+| `is_displayable` | Boolean | `False` = hide from user display (compile-valid alias for `filter_from_agent: True`) |
+
+> **Note**: `filter_from_agent: True` is the GA standard. `is_displayable: False` is a compile-valid alias with the same effect.
+
+> **Safety**: For service agents (customer-facing), internal business metrics (risk scores, retention tiers, churn probability, internal classification codes) should be `filter_from_agent: True` so the LLM can use them for reasoning but they don't appear in customer-facing responses.
+
+### Zero-Hallucination Intent Classification Pattern
+
+Use `filter_from_agent: True` + `is_used_by_planner: True` to let the LLM route based on action outputs without being able to show them to the user:
+
+```agentscript
+outputs:
+   intent_classification: string
+      filter_from_agent: True     # LLM cannot show this to user
+      is_used_by_planner: True    # LLM can use for routing decisions
 ```
-topic my_topic:
+
+This prevents the LLM from fabricating classification results — it must invoke the action to get the value, then can only use it for routing decisions.
+
+### Example with All Properties
+
+```agentscript
+actions:
+   process_payment:
+      description: "Processes payment for the order"
+      require_user_confirmation: True    # Ask user before executing
+      include_in_progress_indicator: True
+      inputs:
+         amount: number
+            description: "Payment amount"
+         card_token: string
+            description: "Tokenized card number"
+      outputs:
+         transaction_id: string
+            description: "Transaction reference"
+         card_last_four: string
+            description: "Last 4 digits of card"
+            filter_from_agent: True     # Hide from LLM context
+      target: "flow://Process_Payment"
+      available_when: @variables.cart_total > 0
+```
+
+---
+
+## Action Target Types (Complete Reference)
+
+AgentScript supports the following action types. Use the correct protocol for your integration.
+
+| Short Name | Long Name | Description | Use Case |
+|------------|-----------|-------------|----------|
+| `apex` | `apex` | Apex Class | Custom business logic; requires `@InvocableMethod` |
+| `prompt` | `generatePromptResponse` | Prompt Template | AI-generated responses |
+| `flow` | `flow` | Salesforce Flow | Custom business logic; Must be Autolaunched |
+| `standardInvocableAction` | `standardInvocableAction` | Built-in Salesforce actions | Send email, create task, etc. |
+| `externalService` | `externalService` | External API via OpenAPI schema | External system calls |
+| `quickAction` | `quickAction` | Object-specific quick actions | Log call, create related record |
+| `api` | `api` | REST API calls | Direct API invocation |
+| `apexRest` | `apexRest` | Custom REST endpoints | Custom @RestResource classes |
+| `serviceCatalog` | `createCatalogItemRequest` | Service Catalog | Service catalog requests |
+| `integrationProcedureAction` | `executeIntegrationProcedure` | OmniStudio Integration | Industry Cloud procedures |
+| `expressionSet` | `runExpressionSet` | Expression calculations | Decision matrix, calculations |
+| `cdpMlPrediction` | `cdpMlPrediction` | CDP ML predictions | Data Cloud predictions |
+| `externalConnector` | `externalConnector` | External system connector | Pre-built connectors |
+| `slack` | `slack` | Slack integration | Slack messaging |
+| `namedQuery` | `namedQuery` | Predefined queries | Saved SOQL queries |
+| `auraEnabled` | `auraEnabled` | Lightning component methods | @AuraEnabled Apex methods |
+| `mcpTool` | `mcpTool` | Model Context Protocol | MCP tool integrations |
+| `retriever` | `retriever` | Knowledge retrieval | RAG/knowledge base queries |
+
+**Target Format**: `<type>://<DeveloperName>` (e.g., `apex://GetAccountInfo`, `prompt://Send_Email`)
+
+**Common Examples:**
+```agentscript
+# Apex action
+target: "apex://CustomerServiceController"
+
+# Flow action
+target: "flow://Get_Customer_Orders"
+
+# Prompt template
+target: "generatePromptResponse://Email_Draft_Template"
+
+# Standard invocable action (built-in Salesforce)
+target: "standardInvocableAction://sendEmail"
+
+# External service (API call)
+target: "externalService://Stripe_Payment_API"
+```
+
+---
+
+## Action Invocation Methods
+
+Agent Script provides two ways to invoke actions:
+
+- **Actions Block** (`actions:` in `reasoning:`) — LLM chooses which to execute
+- **Deterministic** (`run @actions.name`) — always executes when code path is reached
+
+### Invoking Actions with `actions` Blocks
+
+The LLM automatically selects appropriate actions from those defined in the `reasoning.actions` block:
+
+```agentscript
+topic order_management:
+   description: "Handles order inquiries"
+
+   reasoning:
+      instructions: ->
+         | Help the customer with their order.
+         | When they ask about an order, look it up.
+      actions:
+         # LLM automatically selects this when appropriate
+         lookup: @actions.get_order
+            with order_id=...
+            set @variables.order_status = @outputs.status
+
    actions:
-      my_action:
-         label: "My Action"
-         description: "What this action does"
-         target: "flow://My_Flow_Api_Name"
-         require_user_confirmation: True
-         include_in_progress_indicator: True
-         progress_indicator_message: "Working on it..."
+      get_order:
+         description: "Retrieves order information"
          inputs:
             order_id: string
-               label: "Order ID"
-               description: "The order identifier"
-               is_required: True
-               is_user_input: False
+               description: "The order ID"
          outputs:
             status: string
-               label: "Order Status"
-               description: "Current order status"
-               is_displayable: True
-               is_used_by_planner: True
-               filter_from_agent: False
+               description: "Order status"
+         target: "flow://Get_Order_Details"
 ```
 
-**Action-Level Properties:**
+You can also reference action definitions inside `instructions:` using `{!@actions.name}` interpolation. This gives the LLM richer context about available actions.
 
-| Property | Type | Required | Effect |
-|---|---|---|---|
-| `description` | String | Yes | LLM reads this to decide when to invoke the action |
-| `label` | String | No | Display name in UI |
-| `target` | String | Yes | Protocol + API name of the action target |
-| `require_user_confirmation` | Boolean | No | Compile-valid; runtime behavior may be a no-op (known issue) |
-| `include_in_progress_indicator` | Boolean | No | Shows a spinner during execution |
-| `progress_indicator_message` | String | No | Custom text for the spinner |
-
-**Input Properties:**
-
-| Property | Type | Default | Effect |
-|---|---|---|---|
-| (inline type) | -- | Required | Data type: `string`, `number`, `boolean`, `date`, `id`, `list`, `object`, `currency`, `datetime` |
-| `description` | String | -- | Explains the parameter to the LLM |
-| `label` | String | -- | Display name in UI |
-| `is_required` | Boolean | `False` | Marks input as mandatory |
-| `is_user_input` | Boolean | `False` | LLM extracts value from conversation context |
-| `complex_data_type_name` | String | -- | Lightning type mapping (see `complex-data-types.md`) |
-
-**Output Properties:**
-
-| Property | Type | Default | Effect |
-|---|---|---|---|
-| (inline type) | -- | Required | Data type (same options as input) |
-| `description` | String | -- | Explains the output to the LLM |
-| `label` | String | -- | Display name in UI |
-| `is_displayable` | Boolean | `True` | `False` hides from user display |
-| `is_used_by_planner` | Boolean | `False` | `True` lets the LLM reason about the value |
-| `filter_from_agent` | Boolean | `False` | `True` hides from user display (GA standard name) |
-| `developer_name` | String | -- | Overrides the parameter's API name |
-| `complex_data_type_name` | String | -- | Lightning type mapping |
-
-> **Note**: `filter_from_agent: True` and `is_displayable: False` are equivalent. `filter_from_agent` is the GA standard. See `production-gotchas.md` for the zero-hallucination routing pattern.
-
-### Level 2: Action Invocations (inside `topic > reasoning > actions:`)
-
-Action invocations declare HOW to call a Level 1 action -- parameter bindings, output capture, and visibility guards.
-
-```
-reasoning:
-   actions:
-      run_lookup: @actions.my_action
-         description: "Look up order details"
-         with order_id = @variables.order_id
-         with tracking_num = ...
-         set @variables.order_status = @outputs.status
-         available when @variables.order_id != ""
-```
-
-**Invocation Properties:**
-
-| Property | Required | Effect |
-|---|---|---|
-| `@actions.X` reference | Yes | Links to the Level 1 definition |
-| `description` | Yes | LLM reads this to decide when to invoke |
-| `with param = value` | No | Input binding. Value can be `@variables.X`, a literal, or `...` (slot-filling) |
-| `set @variables.X = @outputs.Y` | No | Output capture into a mutable variable |
-| `available when condition` | No | Guards when the action is visible to the LLM |
-
-**CRITICAL rules for Level 2:**
-- Use `with`/`set` syntax, NOT `inputs:`/`outputs:` blocks
-- The `...` token means "LLM extracts from conversation" (slot-filling)
-- Only `@actions.X` references support `set` clauses (not `@utils.X`)
-- Multiple `available when` clauses on the same action are AND-ed together
-
----
-
-## 2. Action Target Types
-
-| # | Target Protocol | Format | Example | Notes |
-|---|---|---|---|---|
-| 1 | Autolaunched Flow | `flow://Flow_Api_Name` | `flow://Get_Order_Status` | Most common. Flow must be Autolaunched (not Screen Flow). |
-| 2 | Apex InvocableMethod | `apex://ClassName` | `apex://OrderProcessor` | Uses `@InvocableMethod` annotation. No GenAiFunction registration needed when using AiAuthoringBundle path. |
-| 3 | External Service | `externalService://ServiceName.operationName` | `externalService://StripeAPI.createCharge` | Requires Named Credential + External Service registration in Setup. |
-| 4 | Prompt Template | `generatePromptResponse://TemplateName` | `generatePromptResponse://Summarize_Case` | Invokes a Prompt Template. Costs 2-16 credits depending on complexity. |
-| 5 | Retriever (Knowledge) | `retriever://RetrieverName` | `retriever://SearchKnowledgeBase` | Searches a DataKnowledgeSpace. |
-| 6 | MuleSoft API | `externalService://MuleSoft_Service.operation` | `externalService://Inventory_API.checkStock` | Via External Service + MuleSoft Anypoint connector. |
-| 7 | Heroku Function | `flow://Invoke_Heroku_Function` | `flow://Call_ML_Model` | Wrapped in a Flow that calls the Heroku endpoint. |
-| 8 | Platform Event | `flow://Publish_Platform_Event` | `flow://Publish_OrderUpdated` | Flow publishes the event; agent doesn't wait for response. |
-| 9 | Custom Notification | `flow://Send_Custom_Notification` | `flow://Notify_Manager` | Flow sends a custom notification via `CustomNotificationType`. |
-| 10 | Screen Flow (Indirect) | `flow://Wrapper_Flow` | -- | Screen Flows cannot be called directly. Wrap in an Autolaunched Flow. |
-| 11 | Record-Triggered Flow | Not directly callable | -- | Use `flow://` to call an Autolaunched Flow that performs the same DML to trigger it. |
-| 12 | Salesforce Connect (OData) | `externalService://` | -- | Via External Service + Salesforce Connect registration. |
-| 13 | Einstein OCR | `flow://OCR_Flow` | `flow://Extract_Invoice_Data` | Flow wraps the Einstein OCR API. |
-| 14 | Einstein Sentiment | `flow://Sentiment_Flow` | `flow://Analyze_Sentiment` | Flow wraps the Einstein Sentiment API. |
-| 15 | Data Cloud Query | `apex://DataCloudQueryService` | -- | Apex class runs ANSI SQL against Data Cloud DMOs. |
-| 16 | SOQL Query | `apex://SOQLQueryService` or `flow://` | -- | Apex or Flow that performs SOQL and returns results. |
-| 17 | REST Callout | `apex://RestCalloutService` | -- | Apex class makes HTTP callout via Named Credential. |
-| 18 | SOAP Callout | `apex://SoapCalloutService` | -- | Apex class makes SOAP callout. |
-| 19 | Einstein Copilot Action | Varies by action type | -- | Built-in actions (e.g., `QueryRecords`) use the legacy GenAiPlannerBundle path. |
-| 20 | Commerce Cloud API | `externalService://` | -- | Via External Service + Commerce Cloud connector. |
-| 21 | Slack Action | `flow://Post_Slack_Message` | -- | Flow wraps the Slack Conversations API. |
-| 22 | Email Action | `flow://Send_Email_Alert` | -- | Flow uses an Email Alert or Messaging action. |
-
-> **Target protocol prefix must be lowercase**: `flow://`, `apex://`, `externalService://`, `generatePromptResponse://`, `retriever://`. Uppercase protocol prefixes cause compile errors.
-
----
-
-## 3. Action Invocation Methods
-
-### Method 1: LLM-Driven (reasoning.actions block)
-
-The LLM decides when to call the action based on the action's `description` and the current conversation context.
-
-```
-reasoning:
-   actions:
-      lookup_order: @actions.get_order_status
-         description: "Look up order status when customer asks about their order"
-         with order_id = ...
-         set @variables.status = @outputs.status
-```
-
-**When to use**: Most actions. The LLM matches the user's intent to the action description.
-
-### Method 2: Deterministic (instructions: -> with `run`)
-
-The action runs unconditionally (or conditionally via `if`) during instruction resolution, before or after the LLM reasoning step.
-
-```
+```agentscript
 reasoning:
    instructions: ->
-      # Pre-LLM: Load data deterministically
-      run @actions.load_customer_data
-         with customer_id = @variables.customer_id
-         set @variables.risk_score = @outputs.risk_score
-
-      # Dynamic instructions based on loaded data
-      | Customer risk score: {!@variables.risk_score}
+      | To look up an order, use {!@actions.get_order}.
+      | To check shipping status, use {!@actions.track_shipment}.
 ```
 
-**When to use**: Data loading, pre-computation, post-action routing. Use when the action MUST run regardless of what the user said.
+> See [action-patterns.md](action-patterns.md#2-instruction-action-references) for detailed usage patterns and examples.
 
-### Method 3: Deterministic (after_reasoning)
+### Invoking Actions Deterministically with `run`
 
-The action runs deterministically after the LLM has produced its response.
+The `run` keyword is only supported in `reasoning.actions:` post-action blocks and `instructions: ->` blocks.
 
+```agentscript
+# ❌ DOES NOT WORK — run in before_reasoning (no LLM context)
+before_reasoning:
+   run @actions.log_turn    # May not execute as expected
+
+# ✅ WORKS — run in reasoning.actions post-action block
+create: @actions.create_order
+   with customer_id = @variables.customer_id
+   run @actions.send_confirmation
+   set @variables.order_id = @outputs.id
+
+# ✅ WORKS — run in instructions: -> block
+reasoning:
+   instructions: ->
+      run @actions.load_customer
+         with id = @variables.customer_id
+         set @variables.name = @outputs.name
 ```
-after_reasoning:
-   if @variables.case_subject != "" and @variables.case_description != "":
-      run @actions.create_case
-         with subject = @variables.case_subject
-         with description = @variables.case_description
-         set @variables.case_id = @outputs.case_id
-   if @variables.case_id != "":
-      transition to @topic.confirmation
-```
-
-**When to use**: Record creation after the LLM has collected all required fields. Post-action routing. Audit logging.
 
 ---
 
-## 4. Flow Actions Implementation
+## Action Type 1: Flow Actions
 
-Flow is the most common action target type. Requirements for a Flow to work as an agent action:
+### When to Use
+
+- Standard Salesforce data operations (CRUD)
+- Business logic that can be expressed in Flow
+- Screen flows for guided user experiences
+- Approval processes
+
+### Implementation
+
+```yaml
+actions:
+  create_case:
+    description: "Creates a new support case for the customer"
+    inputs:
+      subject:
+        type: string
+        description: "Case subject line"
+      description:
+        type: string
+        description: "Detailed case description"
+      priority:
+        type: string
+        description: "Case priority (Low, Medium, High, Urgent)"
+    outputs:
+      caseNumber:
+        type: string
+        description: "Created case number"
+      caseId:
+        type: string
+        description: "Case record ID"
+    target: "flow://Create_Support_Case"
+```
 
 ### Flow Requirements
 
-| Requirement | Details |
-|---|---|
-| Type | Must be **Autolaunched Flow** (not Screen Flow, not Record-Triggered) |
-| Active | Flow must be active in the target org |
-| API Name | Referenced by `flow://Api_Name` in the target |
-| Input Variables | Must match the `inputs:` block in the action definition (name and type) |
-| Output Variables | Must match the `outputs:` block in the action definition |
-| Available for Agents | Enable "Make Available for Agents" in Flow Builder settings |
+For an action to work with agents, the Flow must:
 
-### Input/Output Name Matching
+1. **Be Autolaunched** — `processType: AutoLaunchedFlow`
+2. **Have Input Variables** — Marked as `isInput: true`
+3. **Have Output Variables** — Marked as `isOutput: true`
+4. **Be Active** — `status: Active`
 
-Flow variable names MUST match the action definition I/O names exactly (case-sensitive):
-
-```
-# Agent Script action definition:
-inputs:
-   order_id: string
-      description: "Order ID"
-
-# Flow must have an input variable named exactly: order_id (type: Text)
+**Flow Variable Example:**
+```xml
+<variables>
+    <name>subject</name>
+    <dataType>String</dataType>
+    <isCollection>false</isCollection>
+    <isInput>true</isInput>
+    <isOutput>false</isOutput>
+</variables>
 ```
 
-If names don't match, the action will compile but fail at runtime with empty inputs or missing outputs.
+### Best Practices
 
-### Flow Variable Type Mapping
-
-| Agent Script Type | Flow Variable Type |
-|---|---|
-| `string` | Text |
-| `number` | Number |
-| `boolean` | Boolean |
-| `date` | Date |
-| `datetime` | Date/Time |
-| `id` | Text (Salesforce IDs are passed as text) |
-| `currency` | Currency |
-| `list[string]` | Text Collection |
-| `object` | Record (SObject) |
+| Practice | Description |
+|----------|-------------|
+| Descriptive names | Use clear Flow API names that describe the action |
+| Error handling | Include fault paths in your Flow |
+| Bulkification | Design Flows to handle multiple records |
+| Governor limits | Avoid SOQL/DML in loops |
 
 ---
 
-## 5. Apex Actions
+## Action Type 2: Apex Actions
 
-Apex classes can be used as action targets via the `@InvocableMethod` annotation.
+### When to Use
 
-### Path A: AiAuthoringBundle (Recommended)
+- Complex calculations or algorithms
+- Custom integrations requiring Apex
+- Operations not possible in Flow
+- Bulk data processing
+- When you need full control over execution
 
-When using the AiAuthoringBundle path (Agent Script `.agent` files), Apex actions **do not need GenAiFunction registration**. The action definition in the `.agent` file provides all the metadata the planner needs.
+#### Step 1: Create Apex Class with @InvocableMethod
 
-```java
-public class OrderProcessor {
-    @InvocableMethod(label='Process Order' description='Process a customer order')
-    public static List<OrderResult> processOrder(List<OrderRequest> requests) {
-        // Implementation
+> ⚠️ **An Apex class can only have ONE `@InvocableMethod`.** If you need multiple actions, create separate classes — one per action.
+
+```apex
+public with sharing class CalculateDiscountAction {
+
+    // ─── REQUEST WRAPPER ──────────────────────────────────────────
+    // Each @InvocableVariable field name becomes an action input
+    // name in the .agent file. Must match character-for-character.
+
+    public class DiscountRequest {
+        @InvocableVariable(
+            label='Order Amount'
+            description='Total order amount before discount'
+            required=true
+        )
+        public Decimal orderAmount;
+
+        @InvocableVariable(
+            label='Customer Tier'
+            description='Customer membership tier (Bronze, Silver, Gold, Platinum)'
+            required=true
+        )
+        public String customerTier;
     }
 
-    public class OrderRequest {
-        @InvocableVariable(label='Order ID' required=true)
-        public String order_id;
+    // ─── RESULT WRAPPER ───────────────────────────────────────────
+    // Each @InvocableVariable field name becomes an action output
+    // name in the .agent file. Must match character-for-character.
 
-        @InvocableVariable(label='Customer ID')
-        public String customer_id;
+    public class DiscountResult {
+        @InvocableVariable(
+            label='Discount Percentage'
+            description='Applied discount percentage'
+        )
+        public Decimal discountPercentage;
+
+        @InvocableVariable(
+            label='Final Amount'
+            description='Final order amount after discount'
+        )
+        public Decimal finalAmount;
     }
 
-    public class OrderResult {
-        @InvocableVariable(label='Status')
-        public String status;
+    @InvocableMethod(
+        label='Calculate Discount'
+        description='Calculates discount based on order amount and customer tier'
+    )
+    public static List<DiscountResult> calculateDiscount(List<DiscountRequest> requests) {
+        List<DiscountResult> results = new List<DiscountResult>();
+        for (DiscountRequest req : requests) {
+            DiscountResult result = new DiscountResult();
+            result.discountPercentage = getTierDiscount(req.customerTier);
+            result.finalAmount = req.orderAmount * (1 - result.discountPercentage / 100);
+            results.add(result);
+        }
+        return results;
+    }
 
-        @InvocableVariable(label='Confirmation Number')
-        public String confirmation_number;
+    private static Decimal getTierDiscount(String tier) {
+        Map<String, Decimal> tierDiscounts = new Map<String, Decimal>{
+            'Bronze' => 5, 'Silver' => 10, 'Gold' => 15, 'Platinum' => 20
+        };
+        return tierDiscounts.containsKey(tier) ? tierDiscounts.get(tier) : 0;
     }
 }
 ```
 
-Agent Script definition:
+#### Step 2: Reference DIRECTLY in Agent Script via `apex://`
 
+```yaml
+topic discount_calculator:
+   description: "Calculates discount for customer order"
+
+   # Level 1: Action DEFINITION with target
+   actions:
+      calculate_discount:
+         description: "Calculates discount based on order amount and customer tier"
+         inputs:
+            orderAmount: number
+               description: "The total order amount before discount"
+            customerTier: string
+               description: "Customer membership tier"
+         outputs:
+            discountPercentage: number
+               description: "Applied discount percentage"
+            finalAmount: number
+               description: "Final order amount after discount"
+         target: "apex://CalculateDiscountAction"
+
+   reasoning:
+      instructions: |
+         Help the customer calculate their discount.
+      # Level 2: Action INVOCATION referencing the Level 1 definition
+      actions:
+         calc: @actions.calculate_discount
+            with orderAmount=...
+            with customerTier=@variables.tier
+            set @variables.final_amount = @outputs.finalAmount
 ```
-actions:
-   process_order:
-      description: "Process a customer order"
-      target: "apex://OrderProcessor"
-      inputs:
-         order_id: string
-            description: "Order ID"
-            is_required: True
-         customer_id: string
-            description: "Customer ID"
-      outputs:
-         status: string
-            description: "Processing status"
-            is_displayable: True
-         confirmation_number: string
-            description: "Order confirmation number"
-            is_displayable: True
+
+#### I/O Name Matching Rules
+
+Action `inputs:` and `outputs:` names in Agent Script must **exactly match** the `@InvocableVariable` field names in the Apex class:
+
+```agentscript
+# Given this Apex field:
+#   @InvocableVariable
+#   public Decimal orderAmount;
+
+# ❌ WRONG — snake_case doesn't match camelCase field name
+inputs:
+   order_amount: number
+
+# ❌ WRONG — different name entirely
+inputs:
+   amount: number
+
+# ✅ CORRECT — exact match to Apex field name
+inputs:
+   orderAmount: number
 ```
 
-### Path B: GenAiPlannerBundle (Legacy)
+> **Partial Output Pattern**: You can declare a **subset** of the target's outputs in your action definition — you don't need to map every output parameter. This is useful when you only need one field from a multi-output action.
 
-The older GenAiPlannerBundle path requires registering Apex actions as `GenAiFunction` records in Setup > Einstein > Generative AI > Functions. This path is used by agents created in the UI (Agent Builder) rather than via Agent Script.
+#### Bare @InvocableMethod Pattern (NOT Compatible)
 
-**Key differences from Path A:**
-- Requires a `GenAiFunction` metadata record per action
-- I/O schemas are defined in the `GenAiFunction`, not in Agent Script
-- The planner reads metadata from `GenAiFunction` rather than the `.agent` file
-- More complex to maintain (two sources of truth for I/O schemas)
+Apex classes using bare `List<String>` parameters without `@InvocableVariable` wrapper classes are **incompatible** with Agent Script. The framework cannot discover bindable parameter names without `@InvocableVariable` annotations.
 
-**Recommendation**: Use Path A (AiAuthoringBundle) for all new agent development. Path B is only needed when integrating with legacy agents created before Agent Script was available.
+```apex
+// ❌ WRONG — bare parameters, no wrappers (Agent Script cannot bind inputs/outputs)
+public class BareAction {
+    @InvocableMethod(label='Bare Action')
+    public static List<String> execute(List<String> inputs) {
+        return inputs;
+    }
+}
+
+// ✅ CORRECT — wrapper classes with @InvocableVariable
+public class WrappedAction {
+    public class Request {
+        @InvocableVariable(
+            label='Input Text'
+            description='Text to process'
+            required=true
+        )
+        public String inputText;
+    }
+    public class Response {
+        @InvocableVariable(
+            label='Output Text'
+            description='Processed result'
+        )
+        public String outputText;
+    }
+    @InvocableMethod(label='Wrapped Action')
+    public static List<Response> execute(List<Request> requests) { ... }
+}
+```
+
+> ⚠️ **Namespace Warning (Unresolved)**: In namespaced packages, `apex://ClassName` may fail at publish time with "invocable action does not exist," even when the Apex class is confirmed deployed via SOQL. It is unclear whether namespace prefix syntax is required (e.g., `apex://ns__ClassName`). If you encounter this in a namespaced org, try: (1) `apex://ns__ClassName` format, (2) wrapping the Apex in a Flow and using `flow://` instead. See [known-issues.md](known-issues.md#issue-2-sf-agent-publish-fails-with-namespace-prefix-on-apex-targets) for tracking.
 
 ---
 
-## 6. I/O Name Matching Rules
-
-Action input and output names must follow specific rules to work correctly across the Agent Script compiler, the planner, and the action target (Flow/Apex).
-
-### Naming Rules
-
-| Rule | Details |
-|---|---|
-| Case-sensitive | `order_id` and `Order_Id` are different names |
-| Must match target | The input/output name in Agent Script must match the variable name in the Flow or `@InvocableVariable` name in Apex |
-| No reserved words | Cannot use `description`, `label`, `is_required`, `is_displayable`, `is_used_by_planner` as I/O field names |
-| Valid characters | Letters, numbers, underscores only. Must start with a letter. |
-| No consecutive underscores | `order__id` is invalid; use `order_id` |
-| Maximum 80 characters | Applies to both input and output names |
-
-### Common Mismatches
-
-| Agent Script | Flow Variable | Result |
-|---|---|---|
-| `order_id: string` | `order_id` (Text) | Correct -- names match |
-| `order_id: string` | `OrderId` (Text) | **FAIL** -- case mismatch |
-| `order_id: string` | `orderId` (Text) | **FAIL** -- underscore vs camelCase |
-| `desc_text: string` | `desc_text` (Text) | Correct |
-| `description: string` | `description` (Text) | **FAIL** -- `description` is a reserved word |
-
-### I/O Type Coercion
-
-The planner performs limited type coercion:
-
-| Agent Script Type | Actual Value | Result |
-|---|---|---|
-| `string` | `123` (number) | Coerced to `"123"` |
-| `number` | `"42"` (string) | Coerced to `42` |
-| `boolean` | `"true"` (string) | Coerced to `True` |
-| `string` | `null` | Passed as `""` (empty string) |
-| `number` | `null` | Passed as `0` |
-
----
-
-## 7. API Actions (External Service)
-
-External Service actions call REST APIs through Named Credentials.
+## Action Type 3: API Actions (External System Integration)
 
 ### Architecture
 
 ```
-Agent Script target: "externalService://ServiceName.operationName"
-       |
-       v
-Named Credential (auth, base URL)
-       |
-       v
-External Service Registration (OpenAPI schema)
-       |
-       v
-External REST API
+┌─────────────────────────────────────────────────────────────┐
+│                  API ACTION ARCHITECTURE                    │
+├─────────────────────────────────────────────────────────────┤
+│  Agent Script                                               │
+│       │                                                     │
+│       ▼                                                     │
+│  flow://HTTP_Callout_Flow                                   │
+│       │                                                     │
+│       ▼                                                     │
+│  HTTP Callout Action (in Flow)                              │
+│       │                                                     │
+│       ▼                                                     │
+│  Named Credential (Authentication)                          │
+│       │                                                     │
+│       ▼                                                     │
+│  External API                                               │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-### Setup Requirements
+### Implementation Steps
 
-1. **Named Credential**: Configured in Setup with the API's base URL and authentication method (OAuth, API Key, etc.)
-2. **External Service**: Registered in Setup > External Services by uploading the API's OpenAPI (Swagger) spec
-3. **Permission Set**: The Einstein Agent User must have permission to call the External Service
+1. **Create Named Credential** (via sf-integration skill)
+2. **Create HTTP Callout Flow** wrapping the external call
+3. **Reference Flow in Agent Script** with `flow://` target
 
-### Agent Script Example
+### Security Considerations
 
-```
-actions:
-   check_inventory:
-      description: "Check product inventory from external warehouse system"
-      target: "externalService://WarehouseAPI.getInventory"
-      inputs:
-         product_sku: string
-            description: "Product SKU"
-            is_required: True
-      outputs:
-         quantity_available: object
-            description: "Available stock quantity"
-            complex_data_type_name: "lightning__integerType"
-            is_displayable: True
-         warehouse_location: string
-            description: "Warehouse where stock is located"
-```
+| Consideration | Implementation |
+|---------------|----------------|
+| Authentication | Always use Named Credentials (never hardcode secrets) |
+| Permissions | Use Permission Sets to grant Named Principal access |
+| Error handling | Implement fault paths in Flow |
+| Logging | Log callout details for debugging |
+| Timeouts | Set appropriate timeout values |
 
 ---
 
-## 8. Connection Block (Escalation Routing)
+## Connection Block (Escalation Routing)
 
-The `connection` block defines how the agent routes to human agents. This is specific to service agents (`AgentforceServiceAgent`).
+The `connection` block enables escalation to human agents via Omni-Channel. Always use `connection messaging:` (singular).
 
-### Basic Connection
+> **Service agents only.** The `connection messaging:` block and `@utils.escalate` are only valid for `AgentforceServiceAgent`. Employee agents (`AgentforceEmployeeAgent`) MUST NOT include a `connection` block or `@utils.escalate` actions — including them causes silent failures or "unknown error" at publish time. For employee agents, use `@utils.transition` to a help topic or an action that creates a support case instead.
 
-```
+### Basic Syntax
+
+```agentscript
+# ❌ WRONG — plural wrapper block (invalid syntax)
+connections:
+   messaging:
+      escalation_message: "Transferring you to a human agent..."
+      outbound_route_type: "OmniChannelFlow"
+      outbound_route_name: "flow://Support_Queue_Flow"
+
+# ✅ CORRECT — singular with channel type
 connection messaging:
+   outbound_route_type: "OmniChannelFlow"
+   outbound_route_name: "flow://Support_Queue_Flow"
+   escalation_message: "Transferring you to a human agent..."
    adaptive_response_allowed: True
 ```
 
-This enables the agent to respond over messaging channels with adaptive formatting.
+### Multiple Channels
 
-### Escalation Routing (with Omni-Channel Flow)
+Each channel gets its own top-level `connection <channel>:` block:
 
-```
+```agentscript
 connection messaging:
+   escalation_message: "Transferring to messaging agent..."
    outbound_route_type: "OmniChannelFlow"
-   outbound_route_name: "flow://Route_From_Agent"
-   escalation_message: "Let me connect you with a specialist who can help."
-   adaptive_response_allowed: False
+   outbound_route_name: "flow://Agent_Support_Flow"
+   adaptive_response_allowed: True
 ```
 
-When `outbound_route_type` is present, ALL three route properties are required:
-- `outbound_route_type` -- must be `"OmniChannelFlow"`
-- `outbound_route_name` -- must reference a valid Omni-Channel routing Flow
-- `escalation_message` -- the message shown to the user when escalating
+### Connection Block Properties
+
+| Property | Type | Required | Description |
+|----------|------|----------|-------------|
+| `outbound_route_type` | String | Yes | `"OmniChannelFlow"` is the only validated value. |
+| `outbound_route_name` | String | Yes | API name of Omni-Channel Flow (must exist in org) |
+| `escalation_message` | String | Yes | Message shown to user during transfer |
+| `adaptive_response_allowed` | Boolean | No | Allow agent to adapt responses during escalation (default: False) |
+
+### Supported Channels
+
+| Channel | Description | Use Case |
+|---------|-------------|----------|
+| `messaging` | Chat/messaging channels | Enhanced Chat, Web Chat, In-App |
+| `telephony` | Voice/phone channels | Service Cloud Voice, phone support |
+
+**CRITICAL**: Values like `"queue"`, `"skill"`, `"agent"` for `outbound_route_type` cause validation errors!
 
 ### Escalation Action
 
-In reasoning actions, use `@utils.escalate` to trigger escalation:
-
-```
-reasoning:
-   actions:
-      transfer_to_human: @utils.escalate
-         description: "Transfer to a human agent"
-         available when @variables.needs_human == True
+```agentscript
+actions:
+   transfer_to_human: @utils.escalate
+      description: "Transfer to human agent"
 ```
 
-Valid channel types for the `connection` block: `messaging`, `voice`, `web`.
+### Prerequisites for Escalation
+
+1. Omni-Channel configured in Salesforce
+2. Omni-Channel Flow created and deployed
+3. Connection block in agent script
+4. Messaging channel active (Enhanced Chat, etc.)
 
 ---
 
-## 9. GenAiFunction Metadata Summary
+## Cross-Skill Integration
 
-For reference, the `GenAiFunction` metadata object is the Salesforce-internal representation of an action. When using Agent Script (AiAuthoringBundle path), you generally do not interact with `GenAiFunction` directly -- the compiler generates it from your action definitions. However, understanding the structure helps with debugging.
+### Orchestration Order for API Actions
 
-| Field | Maps To | Notes |
-|---|---|---|
-| `DeveloperName` | Action definition name | Auto-generated by compiler |
-| `MasterLabel` | Action `label:` or `description:` | Display name |
-| `Description` | Action `description:` | LLM reads this for routing |
-| `FunctionType` | Target protocol | `Flow`, `Apex`, `ExternalService`, etc. |
-| `FunctionTarget` | Target API name | e.g., `Get_Order_Status` for `flow://Get_Order_Status` |
-| `IsConfirmationRequired` | `require_user_confirmation:` | Boolean |
-| Input Parameters | `inputs:` block | Stored as `GenAiFnParameter` child records |
-| Output Parameters | `outputs:` block | Stored as `GenAiFnParameter` child records |
+When building agents with external API integrations, follow this order:
 
-### Querying GenAiFunction (debugging)
-
-```bash
-# Find all actions for a specific agent
-sf data query \
-  --query "SELECT Id, DeveloperName, MasterLabel, Description FROM GenAiFunction WHERE DeveloperName LIKE '%MyAgent%'" \
-  -o TargetOrg --json
-
-# Find action parameters
-sf data query \
-  --query "SELECT Id, Name, DataType, IsInput, IsOutput FROM GenAiFnParameter WHERE GenAiFunctionId = '<action_id>'" \
-  -o TargetOrg --json
+```
+┌──────────────────────────────────────────────────────────────┐
+│  INTEGRATION + AGENTFORCE ORCHESTRATION ORDER                │
+├──────────────────────────────────────────────────────────────┤
+│  1. sf-connected-apps  → Connected App (if OAuth needed)     │
+│  2. sf-integration     → Named Credential + External Service │
+│  3. sf-apex            → @InvocableMethod (if custom logic)  │
+│  4. sf-flow            → Flow wrapper (HTTP Callout / Apex)  │
+│  5. sf-deploy          → Deploy all metadata to org          │
+│  6. sf-ai-agentscript  → Agent with flow:// target           │
+│  7. sf-deploy          → Publish (sf agent publish           │
+│                           authoring-bundle)                  │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 10. Troubleshooting
+## Troubleshooting
 
-| Symptom | Likely Cause | Fix |
-|---|---|---|
-| "Internal Error" on publish | Missing `inputs:` or `outputs:` on a Level 1 action definition | Add complete I/O schemas to all action definitions with targets |
-| Action compiles but never invoked by LLM | Action `description:` too vague or overlaps with another action | Make description specific: "Use this for X but not for Y" |
-| Action invoked but returns empty outputs | I/O name mismatch between Agent Script and Flow/Apex | Ensure exact case-sensitive name match |
-| `ACTION_ERROR` in trace | Flow/Apex runtime error (null pointer, validation rule, etc.) | Check the Flow's error handling; add fault paths |
-| Wrong action selected | Multiple actions with similar descriptions | Add exclusion language to each description; use `available when` guards |
-| Action visible when it shouldn't be | Missing or incorrect `available when` guard | Add `available when @variables.prerequisite == True` |
-| `set` clause ignored on `@utils.transition` | `set` only works on `@actions.X` references | Move the variable assignment to a separate action or use `@utils.setVariables` |
-| `with param = @inputs.X` compile error | Cannot reference `@inputs` in `set` or `with` clauses | Use `@outputs.X` for outputs or `@variables.X` for variables |
-| Prompt Template action maps inputs incorrectly | Known issue with `Input:Query` format in chained actions | Use a separate (non-chained) action invocation for Prompt Templates |
-| `duplicate value found: GenAiPluginDefinition` on publish | Orphaned draft from a previous failed publish | Use `sf project deploy start --metadata "AiAuthoringBundle:X"` as a fallback, then retry publish |
-| Action I/O uses reserved word as name | `description`, `label`, etc. cannot be field names | Rename to `desc_text`, `label_text`, etc. |
-| `is_required: True` not enforced | Runtime may not enforce required inputs | Add explicit checks in your Flow/Apex for null/empty values |
+| Issue | Cause | Solution |
+|-------|-------|----------|
+| `Tool target 'X' is not an action definition` | Action not defined in topic `actions:` block, or target doesn't exist in org | Define action with `target:` in topic-level `actions:` block; ensure Apex class/Flow is deployed |
+| `invalid input 'X'` or `invalid output 'X'` | I/O name doesn't match `@InvocableVariable` field name in Apex | Use exact field names from the Apex wrapper class (case-sensitive) |
+| `Internal Error` with inputs-only action | Action has `inputs:` but no `outputs:` block | Add `outputs:` block — the server-side compiler requires it (see known-issues.md Issue 15) |
+| `Internal Error` with bare @InvocableMethod | Apex uses `List<String>` without `@InvocableVariable` wrappers | Refactor Apex to use wrapper classes with `@InvocableVariable` annotations |
+| `apex://` target not found | Apex class not deployed or missing `@InvocableMethod` | Deploy class first, ensure it has `@InvocableMethod` annotation |
+| Flow action fails | Flow not active or not Autolaunched | Activate the Flow; ensure it's Autolaunched (not Screen) |
+| API action timeout | External system slow | Increase timeout, add retry logic |
+| Permission denied | Missing Named Principal access | Grant Permission Set |
+
+### Debugging Tips
+
+1. **Check deployment status:** `sf project deploy report`
+2. **Test Flow independently:** Use Flow debugger in Setup with sample inputs
+3. **Check agent logs:** Agent Builder → Logs
+
+---
+
+## Related Documentation
+
+- [action-patterns.md](action-patterns.md) — Context-aware descriptions, instruction references, binding strategies
+- [action-prompt-templates.md](action-prompt-templates.md) — Prompt template invocation (`generatePromptResponse://`)
+- [fsm-architecture.md](fsm-architecture.md) — FSM design and node patterns

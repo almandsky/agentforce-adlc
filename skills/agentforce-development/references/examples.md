@@ -60,6 +60,129 @@ Companion `bundle-meta.xml` (MUST be this exact content -- no extra fields):
 
 ---
 
+## Minimal Employee Agent
+
+Employee agents differ from service agents in their config, variables, and connection blocks. This example shows a 2-topic IT Knowledge agent deployed to internal employees.
+
+```
+system:
+	instructions: |
+		You are an AI-powered IT assistant for Acme Corp employees.
+		Help employees find answers to common IT questions and
+		look up knowledge articles.
+		You are an AI assistant, not a human.
+	messages:
+		welcome: "Hi! I'm the IT Help assistant. What can I help you with?"
+		error: "Something went wrong. Please try again."
+
+config:
+	developer_name: "IT_Knowledge_Agent"
+	agent_label: "IT Knowledge Agent"
+	description: "Internal IT knowledge base assistant for employees"
+	agent_type: "AgentforceEmployeeAgent"
+	# NOTE: No default_agent_user — employee agents run as the logged-in user.
+	# No connection messaging: block — employee agents have no messaging channel.
+	# No MessagingSession linked variables — those are service-agent-only.
+
+variables:
+	search_query: mutable string = ""
+		description: "Current search query"
+	article_id: mutable string = ""
+		description: "Selected knowledge article ID"
+
+language:
+	default_locale: "en_US"
+	additional_locales: ""
+	all_additional_locales: False
+
+start_agent topic_selector:
+	description: "Route employees to the right IT support topic"
+	reasoning:
+		instructions: |
+			You are a router only. Do NOT answer questions directly.
+			Always use a transition action to route immediately.
+			- IT questions, troubleshooting, how-to -> use to_knowledge
+			- Password reset, account access -> use to_account
+		actions:
+			to_knowledge: @utils.transition to @topic.knowledge_search
+				description: "Search IT knowledge base"
+			to_account: @utils.transition to @topic.account_support
+				description: "Account and password help"
+
+topic knowledge_search:
+	label: "Knowledge Search"
+	description: "Search and retrieve IT knowledge articles"
+
+	actions:
+		search_articles:
+			description: "Search knowledge base for articles"
+			target: "apex://ITKnowledge.searchArticles"
+			inputs:
+				query: string
+					description: "Search query"
+			outputs:
+				articles: string
+					description: "Matching articles as JSON"
+					is_displayable: True
+
+	reasoning:
+		instructions: ->
+			if @variables.article_id != "":
+				| Found article {!@variables.article_id}. Here are the details.
+
+			| Search the knowledge base using the search_articles action.
+			| Present results clearly. Do not fabricate article content.
+
+		actions:
+			search: @actions.search_articles
+				description: "Search knowledge base"
+				with query = ...
+				set @variables.search_query = @outputs.articles
+
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
+
+topic account_support:
+	label: "Account Support"
+	description: "Help with password resets and account access"
+
+	actions:
+		reset_password:
+			description: "Initiate password reset for employee"
+			target: "flow://IT_Password_Reset"
+			inputs:
+				employee_email: string
+					description: "Employee email address"
+			outputs:
+				status: string
+					description: "Reset status"
+					is_displayable: True
+
+	reasoning:
+		instructions: ->
+			| I can help with password resets and account access.
+			| Ask for the employee's email, then use the reset_password action.
+
+		actions:
+			reset: @actions.reset_password
+				description: "Reset employee password"
+				with employee_email = ...
+
+			# NOTE: No @utils.escalate — employee agents cannot escalate to
+			# human agents via messaging. Use a transition or case-creation
+			# action instead.
+			back: @utils.transition to @topic.topic_selector
+				description: "Route to a different topic"
+```
+
+**What's deliberately absent (vs. service agents):**
+- No `default_agent_user` in config (agent runs as logged-in employee)
+- No `connection messaging:` block (no messaging channel)
+- No `EndUserId`/`RoutableId`/`ContactId` linked variables (no `@MessagingSession`)
+- No `@utils.escalate` action (requires `connection messaging:`)
+
+---
+
 ## Multi-Topic Agent with Actions
 
 ```

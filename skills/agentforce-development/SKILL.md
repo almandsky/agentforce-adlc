@@ -459,6 +459,7 @@ Planner validates ALL actions across ALL topics at startup. One missing permissi
 - `after_reasoning:` has NO `instructions:` wrapper
 - No `else if` — use compound `if x and y:` or sequential flat ifs
 - Reserved `@InvocableVariable` names: `model`, `description`, `label` — cannot be used as Apex parameter names
+- `@inputs` and `@outputs` are ephemeral: `@inputs` is only available in `with` directives; `@outputs` is only available in `set`/`if` directives immediately after the action. Do NOT use `@inputs` in `set` — it causes silent runtime failure.
 
 See [Complex Data Types](references/complex-data-types.md) for the full Lightning type mapping decision tree. See [Instruction Resolution](references/instruction-resolution.md) for the 3-phase runtime model.
 

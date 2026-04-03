@@ -254,6 +254,27 @@ sf project retrieve start -m AiAuthoringBundle:MyAgent
 sf agent publish authoring-bundle --api-name MyAgent -o TARGET_ORG
 ```
 
+## `@inputs` Scope Lifecycle (Silent Failure)
+
+`@inputs` is only available inside `with` directives during action invocation. Using `@inputs` in a `set` directive after action execution causes **silent runtime failure** — the action executes but the `set` assignment silently fails, leaving the target variable unchanged. No error is raised in the trace; the FunctionStep simply shows no output capture.
+
+```agentscript
+# WRONG — silent failure, @inputs out of scope after action executes
+run @actions.get_station_status
+    with station_name = ...
+    set @variables.station = @inputs.station_name   # FAILS SILENTLY
+
+# RIGHT — use @outputs (if action echoes the value) or capture input before the call
+set @variables.station = @variables.selected_station  # capture before
+run @actions.get_station_status
+    with station_name = @variables.station
+    set @variables.status = @outputs.status           # @outputs is valid here
+```
+
+**How to diagnose:** In session traces, a FunctionStep that completes but produces no output capture (set directives silently dropped) indicates an `@inputs` scope violation. The action itself succeeds — only the variable assignment fails.
+
+Similarly, `@outputs` is only available in `set` and `if` directives immediately following the action invocation — not in instructions, pipe lines, or later actions.
+
 ## Reserved `@InvocableVariable` Keywords
 
 Certain common words cannot be used as `@InvocableVariable` names in Apex classes called by Agent Script. Using them causes "SyntaxError: Unexpected '{keyword}'" during agent script compilation. (Validated March 2026)

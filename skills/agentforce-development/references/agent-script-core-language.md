@@ -192,8 +192,8 @@ The expression inside `{! ... }` is evaluated by the runtime during deterministi
 - `@topic.<name>` — reference a topic by name
 - `@variables.<name>` — reference a variable (use in logic)
 - `{!@variables.<name>}` — reference a variable in prompt text (template injection)
-- `@outputs.<name>` — reference an action output (only in post-action context)
-- `@inputs.<name>` — reference an action input (in action definition)
+- `@outputs.<name>` — reference an action output (only in `set` and `if` directives immediately after an action invocation — NOT available elsewhere)
+- `@inputs.<name>` — reference an action input (only in `with` directives during action invocation — NOT available in `set` directives or after action execution)
 - `@utils.<function>` — reference a utility (escalate, transition to, setVariables)
 
 **Do NOT use `<>` as inequality operator.** Use `!=` instead.
@@ -547,6 +547,23 @@ run @actions.process_order
 ```
 
 After an action completes, you can check outputs and transition.
+
+**Scope lifecycle — `@inputs` and `@outputs` are ephemeral:**
+- `@inputs` is ONLY available inside `with` directives during action invocation. It is NOT available in `set` directives or `if` blocks after the action executes.
+- `@outputs` is ONLY available in `set` and `if` directives immediately following the action invocation. It is NOT available in instructions, pipe lines, or later actions.
+- To reuse an input value after action execution, bind it to a `@variables` member BEFORE the action call, then reference `@variables` in the `set` directive.
+
+```agentscript
+# WRONG — @inputs is not available in set (silent runtime failure)
+run @actions.get_station_status
+    with station_name = ...
+    set @variables.station = @inputs.station_name   # FAILS — @inputs out of scope
+
+# RIGHT — capture the input into a variable first, or use @outputs
+run @actions.get_station_status
+    with station_name = ...
+    set @variables.station = @outputs.station_name  # Use @outputs if the action echoes it back
+```
 
 **How pipe sections become the LLM prompt**:
 

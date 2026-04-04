@@ -192,8 +192,8 @@ The expression inside `{! ... }` is evaluated by the runtime during deterministi
 - `@topic.<name>` — reference a topic by name
 - `@variables.<name>` — reference a variable (use in logic)
 - `{!@variables.<name>}` — reference a variable in prompt text (template injection)
-- `@outputs.<name>` — reference an action output (only in post-action context)
-- `@inputs.<name>` — reference an action input (in action definition)
+- `@outputs.<name>` — action output (only in `set`/`if` immediately after the action — unavailable elsewhere)
+- `@inputs.<name>` — action input (only in `with` during invocation — NOT in `set` or post-execution)
 - `@utils.<function>` — reference a utility (escalate, transition to, setVariables)
 
 **Do NOT use `<>` as inequality operator.** Use `!=` instead.
@@ -547,6 +547,23 @@ run @actions.process_order
 ```
 
 After an action completes, you can check outputs and transition.
+
+**Scope lifecycle — `@inputs` and `@outputs` are ephemeral:**
+- `@inputs`: only in `with` directives during invocation. NOT in `set`/`if` after execution.
+- `@outputs`: only in `set`/`if` immediately after invocation. NOT in instructions or later actions.
+- To reuse an input value post-execution, capture it in `@variables` BEFORE the action call.
+
+```agentscript
+# WRONG — silent failure, @inputs out of scope in set
+run @actions.get_station_status
+    with station_name = ...
+    set @variables.station = @inputs.station_name   # FAILS SILENTLY
+
+# RIGHT — use @outputs (if action echoes value) or capture input beforehand
+run @actions.get_station_status
+    with station_name = ...
+    set @variables.station = @outputs.station_name
+```
 
 **How pipe sections become the LLM prompt**:
 

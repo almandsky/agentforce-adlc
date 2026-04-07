@@ -278,7 +278,7 @@ Only needed if `--wait` was not used or timed out.
 ### Generate a test spec from existing metadata
 
 ```bash
-sf agent generate test-spec --from-definition path/to/AiEvaluationDefinition-meta.xml --output-file specs/Agent_API_Name-testSpec.yaml
+sf agent generate test-spec --json --from-definition path/to/AiEvaluationDefinition-meta.xml --output-file specs/Agent_API_Name-testSpec.yaml
 ```
 
 Reverse-engineers a YAML test spec from an existing AiEvaluationDefinition. Do NOT use `sf agent generate test-spec` without `--from-definition` — the bare command is interactive and cannot be used programmatically.

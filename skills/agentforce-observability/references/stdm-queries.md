@@ -50,7 +50,7 @@ cp ~/.claude/skills/agentforce-observability/apex/AgentforceOptimizeService.cls-
 **Step 3 -- deploy to the org:**
 
 ```bash
-sf project deploy start \
+sf project deploy start --json \
   --metadata ApexClass:AgentforceOptimizeService \
   -o <org>
 ```
@@ -59,9 +59,9 @@ Confirm the deploy succeeds before proceeding. If it fails with a compile error,
 
 **Skip this step if `AgentforceOptimizeService` is already deployed** -- check with:
 ```bash
-sf data query \
+sf data query --json \
   --query "SELECT Id, Name FROM ApexClass WHERE Name = 'AgentforceOptimizeService'" \
-  -o <org> --json
+  -o <org>
 ```
 
 ---
@@ -82,7 +82,7 @@ System.debug('STDM_RESULT:' + result);
 ```
 
 ```bash
-sf apex run --file /tmp/stdm_find.apex -o <org> --json
+sf apex run --json --file /tmp/stdm_find.apex -o <org>
 ```
 
 Parse: search for `DEBUG|STDM_RESULT:` (not `STDM_RESULT:` -- the first occurrence of that string is in the source echo, not the debug output) and extract the JSON that follows on that line:
@@ -119,7 +119,7 @@ The result is a JSON array of `SessionSummary` objects:
 
 **If the debug log shows `Agent not found: <name>`**, no `GenAiPlannerDefinition` matched -- verify the agent name with:
 ```bash
-sf data query --query "SELECT Id, MasterLabel, DeveloperName FROM GenAiPlannerDefinition" -o <org> --json
+sf data query --json --query "SELECT Id, MasterLabel, DeveloperName FROM GenAiPlannerDefinition" -o <org>
 ```
 Use the exact `MasterLabel` value (not `DeveloperName`). `MasterLabel` matches the agent's display name; `DeveloperName` has a version suffix (e.g. `TeslaSupportAgent_v1`).
 
@@ -140,7 +140,7 @@ System.debug('STDM_RESULT:' + result);
 ```
 
 ```bash
-sf apex run --file /tmp/stdm_details.apex -o <org> --json
+sf apex run --json --file /tmp/stdm_details.apex -o <org>
 ```
 
 Parse using the same `DEBUG|STDM_RESULT:` pattern. Each element is a `ConversationData` object:
@@ -200,7 +200,7 @@ System.debug('STDM_RESULT:' + result);
 ```
 
 ```bash
-sf apex run --file /tmp/stdm_llm.apex -o <org> --json
+sf apex run --json --file /tmp/stdm_llm.apex -o <org>
 ```
 
 Returns a JSON array of `LlmStepDetail` objects:
@@ -354,7 +354,7 @@ System.debug('STDM_RESULT:' + results[0].resultJson);
 ```
 
 ```bash
-sf apex run --file /tmp/observability_query.apex -o <org> --json
+sf apex run --json --file /tmp/observability_query.apex -o <org>
 ```
 
 **When to use observability queries vs `getAggregatedMetrics()`:**

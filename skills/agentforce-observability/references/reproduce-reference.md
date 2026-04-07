@@ -32,20 +32,20 @@ Use `--authoring-bundle` to compile from the local `.agent` file and generate lo
 
 ```bash
 # Start a preview session (--authoring-bundle enables local traces)
-sf agent preview start \
+sf agent preview start --json \
   --authoring-bundle <AgentApiName> \
-  -o <org> --json | tee /tmp/preview_start.json
+  -o <org> | tee /tmp/preview_start.json
 
 # Extract the session ID
 SESSION_ID=$(python3 -c "import json,sys; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
 echo "Session ID: $SESSION_ID"
 
 # Send the test utterance (flag is --utterance, not --message)
-sf agent preview send \
+sf agent preview send --json \
   --session-id "$SESSION_ID" \
   --utterance "your test utterance here" \
   --authoring-bundle <AgentApiName> \
-  -o <org> --json | tee /tmp/preview_response.json
+  -o <org> | tee /tmp/preview_response.json
 
 # Extract the agent's response text
 # The message type is "Inform" in current API versions -- print all messages regardless of type
@@ -68,10 +68,10 @@ else:
 "
 
 # End the session when done (--authoring-bundle required on end too)
-sf agent preview end \
+sf agent preview end --json \
   --session-id "$SESSION_ID" \
   --authoring-bundle <AgentApiName> \
-  -o <org> --json
+  -o <org>
 ```
 
 **Trace file location:**

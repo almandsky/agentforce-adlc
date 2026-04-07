@@ -250,8 +250,8 @@ Failed to retrieve components using source tracking:
 [SfError [UnsupportedBundleTypeError]: Unsupported Bundle Type: AiAuthoringBundle
 
 # ✅ WORKAROUND - Use CLI directly:
-sf project retrieve start -m AiAuthoringBundle:MyAgent
-sf agent publish authoring-bundle --api-name MyAgent -o TARGET_ORG
+sf project retrieve start --json -m AiAuthoringBundle:MyAgent
+sf agent publish authoring-bundle --json --api-name MyAgent -o TARGET_ORG
 ```
 
 ## `@inputs` Scope Lifecycle (Silent Failure)

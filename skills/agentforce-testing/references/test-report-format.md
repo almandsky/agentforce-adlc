@@ -79,20 +79,20 @@ jobs:
 
       - name: Deploy test suite
         run: |
-          sf agent test create \
+          sf agent test create --json \
             --spec tests/${{ vars.AGENT_NAME }}-testing-center.yaml \
             --api-name ${{ vars.AGENT_NAME }}_CI \
             --force-overwrite \
-            -o testorg --json
+            -o testorg
 
       - name: Run tests
         run: |
-          sf agent test run \
+          sf agent test run --json \
             --api-name ${{ vars.AGENT_NAME }}_CI \
             --wait 15 \
             --result-format junit \
             --output-dir test-results \
-            -o testorg --json
+            -o testorg
 
       - name: Upload test results
         uses: actions/upload-artifact@v3
@@ -133,18 +133,18 @@ When /agentforce-observability generates test cases, deploy them using Mode B:
 
 ```bash
 # Deploy the regression test suite
-sf agent test create \
+sf agent test create --json \
   --spec tests/<AgentApiName>-regression.yaml \
   --api-name <AgentApiName>_Regression \
   --force-overwrite \
-  -o <org> --json
+  -o <org>
 
 # Run
-sf agent test run \
+sf agent test run --json \
   --api-name <AgentApiName>_Regression \
   --wait 10 \
   --result-format json \
-  -o <org> --json
+  -o <org>
 ```
 
 ### Test File Location Convention

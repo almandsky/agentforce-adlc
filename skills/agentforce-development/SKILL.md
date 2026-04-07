@@ -495,16 +495,11 @@ See [Safety Review](references/safety-review-reference.md) for the complete fram
 
 ## Discover & Scaffold
 
-Validate action targets exist in org and generate stubs for missing ones:
-
-```bash
-python3 scripts/discover.py -o <org-alias> --agent-file <path>
-python3 scripts/scaffold.py --agent-file <path> -o <org-alias> --output-dir force-app/main/default
-```
-
-**CRITICAL:** Stubs must return realistic data, not `'TODO'`. Placeholder responses cause SMALL_TALK grounding because the LLM falls back to training data.
+Validate action targets exist in org and generate stubs for missing ones.
 
 See [Discover Reference](references/discover-reference.md) and [Scaffold Reference](references/scaffold-reference.md).
+
+**CRITICAL:** Stubs must return realistic data, not `'TODO'`. Placeholder responses cause SMALL_TALK grounding because the LLM falls back to training data.
 
 ## Deploy Lifecycle
 

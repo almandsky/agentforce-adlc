@@ -61,7 +61,7 @@ PIPELINE_SKILL_MAP = {
     "discover": "agentforce-development",
     "scaffold": "agentforce-development",
     "deploy": "agentforce-development",
-    "test": "agentforce-test",
+    "test": "agentforce-testing",
     "optimize": "agentforce-observability",
 }
 

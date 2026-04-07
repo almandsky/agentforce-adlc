@@ -104,48 +104,48 @@ for tc in test_cases:
 
 ```bash
 # Step 1: Check if Testing Center is available
-sf agent test list -o <org> --json
+sf agent test list --json -o <org>
 
 # Step 2: Deploy the test suite (writes XML to force-app/ and deploys to org)
-sf agent test create \
+sf agent test create --json \
   --spec /tmp/<AgentApiName>-test-spec.yaml \
   --api-name <TestSuiteName> \
-  -o <org> --json
+  -o <org>
 
 # The deployed metadata is now at:
 # force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
 
 # Step 3: Run the tests (wait for results)
-sf agent test run \
+sf agent test run --json \
   --api-name <TestSuiteName> \
   --wait 10 \
   --result-format json \
-  -o <org> --json | tee /tmp/test_run.json
+  -o <org> | tee /tmp/test_run.json
 
 # Step 4: Extract job ID from run output
 JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/test_run.json'))['result']['runId'])")
 
 # Step 5: Get detailed results (ALWAYS use --job-id, NOT --use-most-recent)
-sf agent test results \
+sf agent test results --json \
   --job-id "$JOB_ID" \
   --result-format json \
-  -o <org> --json | tee /tmp/test_results.json
+  -o <org> | tee /tmp/test_results.json
 ```
 
 ### Updating an Existing Test Suite
 
 ```bash
-sf agent test create \
+sf agent test create --json \
   --spec /tmp/<AgentApiName>-test-spec.yaml \
   --api-name <TestSuiteName> \
   --force-overwrite \
-  -o <org> --json
+  -o <org>
 ```
 
 ### Retrieving Existing Test Definitions
 
 ```bash
-sf project retrieve start --metadata "AiEvaluationDefinition:<TestSuiteName>" -o <org>
+sf project retrieve start --json --metadata "AiEvaluationDefinition:<TestSuiteName>" -o <org>
 # Retrieved to: force-app/main/default/aiEvaluationDefinitions/<TestSuiteName>.aiEvaluationDefinition-meta.xml
 ```
 
@@ -201,10 +201,10 @@ After fixing the `.agent` file, redeploy and re-run:
 
 ```bash
 # Redeploy agent
-sf agent publish authoring-bundle --api-name <AgentApiName> -o <org> --json
+sf agent publish authoring-bundle --json --api-name <AgentApiName> -o <org>
 
 # Re-run the same test suite
-sf agent test run --api-name <TestSuiteName> --wait 10 --result-format json -o <org> --json
+sf agent test run --json --api-name <TestSuiteName> --wait 10 --result-format json -o <org>
 ```
 
 ## Topic Name Resolution

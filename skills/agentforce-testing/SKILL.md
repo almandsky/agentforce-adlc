@@ -1,5 +1,5 @@
 ---
-name: agentforce-test
+name: agentforce-testing
 description: Test Agentforce agents via preview, batch testing, and individual action execution
 allowed-tools: Bash Read Write Edit Glob Grep
 metadata:
@@ -32,16 +32,16 @@ There is no standalone Python script.
 **Quick smoke test (Mode A):**
 ```bash
 # Start preview, send utterance, end session (--authoring-bundle generates local traces)
-sf agent preview start --authoring-bundle MyAgent -o <org-alias> --json
-sf agent preview send --session-id <ID> --utterance "test" --authoring-bundle MyAgent -o <org-alias> --json
-sf agent preview end --session-id <ID> --authoring-bundle MyAgent -o <org-alias> --json
+sf agent preview start --json --authoring-bundle MyAgent -o <org-alias>
+sf agent preview send --json --session-id <ID> --utterance "test" --authoring-bundle MyAgent -o <org-alias>
+sf agent preview end --json --session-id <ID> --authoring-bundle MyAgent -o <org-alias>
 ```
 
 **Batch testing (Mode B):**
 ```bash
 # Deploy and run test suite
-sf agent test create --spec test-spec.yaml --api-name MySuite -o <org-alias> --json
-sf agent test run --api-name MySuite --wait 10 --result-format json -o <org-alias> --json
+sf agent test create --json --spec test-spec.yaml --api-name MySuite -o <org-alias>
+sf agent test run --json --api-name MySuite --wait 10 --result-format json -o <org-alias>
 ```
 
 **Action execution:**
@@ -94,16 +94,16 @@ If no utterances file is provided, auto-derive test cases from the `.agent` file
 Use `--authoring-bundle` to compile from the local `.agent` file (enables local trace files):
 
 ```bash
-SESSION_ID=$(sf agent preview start \
+SESSION_ID=$(sf agent preview start --json \
   --authoring-bundle MyAgent \
-  --target-org <org> --json 2>/dev/null \
+  --target-org <org> 2>/dev/null \
   | jq -r '.result.sessionId')
 
-RESPONSE=$(sf agent preview send \
+RESPONSE=$(sf agent preview send --json \
   --session-id "$SESSION_ID" \
   --authoring-bundle MyAgent \
   --utterance "test utterance" \
-  --target-org <org> --json 2>/dev/null)
+  --target-org <org> 2>/dev/null)
 
 # Strip control characters (required -- CLI output contains control chars)
 PLAN_ID=$(python3 -c "
@@ -115,10 +115,10 @@ msgs = d.get('result', {}).get('messages', [])
 print(msgs[-1].get('planId', '') if msgs else '')
 " <<< "$RESPONSE")
 
-TRACES_PATH=$(sf agent preview end \
+TRACES_PATH=$(sf agent preview end --json \
   --session-id "$SESSION_ID" \
   --authoring-bundle MyAgent \
-  --target-org <org> --json 2>/dev/null \
+  --target-org <org> 2>/dev/null \
   | jq -r '.result.tracesPath')
 ```
 
@@ -216,14 +216,14 @@ testCases:
 
 ```bash
 # Deploy test suite
-sf agent test create --spec /tmp/spec.yaml --api-name MySuite -o <org> --json
+sf agent test create --json --spec /tmp/spec.yaml --api-name MySuite -o <org>
 
 # Run and wait
-sf agent test run --api-name MySuite --wait 10 --result-format json -o <org> --json | tee /tmp/run.json
+sf agent test run --json --api-name MySuite --wait 10 --result-format json -o <org> | tee /tmp/run.json
 
 # Get results (ALWAYS use --job-id, NOT --use-most-recent)
 JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/run.json'))['result']['runId'])")
-sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json | tee /tmp/results.json
+sf agent test results --json --job-id "$JOB_ID" --result-format json -o <org> | tee /tmp/results.json
 ```
 
 ### Parse Results

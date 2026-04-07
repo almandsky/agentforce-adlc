@@ -10,13 +10,10 @@ Full deployment lifecycle for Agentforce agents: validate, deploy metadata, publ
 
 ```bash
 # Validate + publish
-sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
+sf agent publish authoring-bundle --json --api-name MyAgent -o <org-alias>
 
-# Full deployment with activation
-python3 "$ADLC_SCRIPTS/deploy.py" -o <org-alias> --api-name MyAgent --activate
-
-# Dry run
-python3 "$ADLC_SCRIPTS/deploy.py" -o <org-alias> --api-name MyAgent --dry-run
+# Activate after publish
+sf agent activate --json --api-name MyAgent -o <org-alias>
 ```
 
 ## Deployment Phases
@@ -26,7 +23,7 @@ Read the `.agent` file and run safety review (see `safety-review-reference.md`).
 
 ### Phase 1: Pre-Deployment Validation
 ```bash
-sf agent validate authoring-bundle --api-name MyAgent -o <org-alias> --json
+sf agent validate authoring-bundle --json --api-name MyAgent -o <org-alias>
 ```
 
 ### Phase 1b: Target Dependency Check
@@ -34,18 +31,18 @@ Verify all flow/apex targets exist in the org before publishing. If missing, sca
 
 ### Phase 2: Deploy Supporting Metadata
 ```bash
-sf project deploy start --source-dir force-app -o <org-alias> --json
+sf project deploy start --json --source-dir force-app -o <org-alias>
 ```
 
 ### Phase 3: Publish Agent Bundle
 ```bash
-sf agent publish authoring-bundle --api-name MyAgent -o <org-alias> --json
+sf agent publish authoring-bundle --json --api-name MyAgent -o <org-alias>
 ```
 4-step process: Validate (~1-2s) -> Publish (~8-10s) -> Retrieve (~5-7s) -> Deploy (~4-6s)
 
 ### Phase 4: Activate Agent
 ```bash
-sf agent activate --api-name MyAgent -o <org-alias> --json
+sf agent activate --json --api-name MyAgent -o <org-alias>
 ```
 Note: `sf agent activate` may not support `--json` in all CLI versions. If it returns plain text, check for "successfully activated" in the output.
 
@@ -74,9 +71,9 @@ Publishing creates an **inactive** version. Without activation, preview fails wi
 ## Rollback
 
 ```bash
-sf agent deactivate --api-name MyAgent -o <org>
-sf data query --query "SELECT Id, VersionNumber FROM BotVersion WHERE BotDefinition.DeveloperName = 'MyAgent' ORDER BY VersionNumber DESC LIMIT 2" -o <org> --json
-sf agent activate --api-name MyAgent --version-number <previous> -o <org>
+sf agent deactivate --json --api-name MyAgent -o <org>
+sf data query --json --query "SELECT Id, VersionNumber FROM BotVersion WHERE BotDefinition.DeveloperName = 'MyAgent' ORDER BY VersionNumber DESC LIMIT 2" -o <org>
+sf agent activate --json --api-name MyAgent --version-number <previous> -o <org>
 ```
 
 ## CI/CD Integration
@@ -100,14 +97,14 @@ jobs:
           echo "${{ secrets.SFDX_AUTH_URL }}" > auth.txt
           sf org login sfdx-url --sfdx-url-file auth.txt --alias production
       - name: Validate
-        run: sf agent validate authoring-bundle --api-name ${{ vars.AGENT_NAME }} -o production --json
+        run: sf agent validate authoring-bundle --json --api-name ${{ vars.AGENT_NAME }} -o production
       - name: Deploy Metadata
-        run: sf project deploy start --source-dir force-app -o production --json
+        run: sf project deploy start --json --source-dir force-app -o production
       - name: Publish
-        run: sf agent publish authoring-bundle --api-name ${{ vars.AGENT_NAME }} -o production --json
+        run: sf agent publish authoring-bundle --json --api-name ${{ vars.AGENT_NAME }} -o production
       - name: Activate
         if: github.ref == 'refs/heads/main'
-        run: sf agent activate --api-name ${{ vars.AGENT_NAME }} -o production
+        run: sf agent activate --json --api-name ${{ vars.AGENT_NAME }} -o production
 ```
 
 ## Pre-Deployment Checklist

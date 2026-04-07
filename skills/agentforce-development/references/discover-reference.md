@@ -8,15 +8,25 @@ Validates that Agent Script `.agent` file targets actually exist in a Salesforce
 
 ## Usage
 
+**NOTE:** The `discover.py` script requires the ADLC repo to be cloned. It is NOT bundled with the skill. If running from a standalone skill installation, use the CLI-native equivalents below.
+
+### CLI-Native Discovery (Standalone)
+
 ```bash
-# Discover targets for a specific .agent file
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-file force-app/main/default/aiAuthoringBundles/MyAgent/MyAgent.agent
+# List all active autolaunched flows (candidate action targets)
+sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+DeveloperName,ProcessType+FROM+Flow+WHERE+IsActive=true+AND+ProcessType='AutoLaunchedFlow'" -o <org-alias>
 
-# Discover targets for all .agent files in a directory
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
+# List all @InvocableMethod Apex classes
+sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+Name+FROM+ApexClass+WHERE+Body+LIKE+'%25InvocableMethod%25'" -o <org-alias>
+```
 
-# Include I/O parameter validation for found targets
-python3 "$ADLC_SCRIPTS/discover.py" -o <org-alias> --agent-file MyAgent.agent --validate-io
+### Script-Based Discovery (requires ADLC repo clone)
+
+```bash
+# From ADLC repo root:
+python3 scripts/discover.py -o <org-alias> --agent-file <path-to-agent-file>
+python3 scripts/discover.py -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
+python3 scripts/discover.py -o <org-alias> --agent-file MyAgent.agent --validate-io
 ```
 
 ## What it does
@@ -74,7 +84,7 @@ Summary: 2/3 targets found (66.7%)
 
 ## Next Steps
 
-- Missing targets: Run scaffold (`python3 "$ADLC_SCRIPTS/scaffold.py" -o <org-alias> --agent-file <path>`)
+- Missing targets: Run scaffold (requires ADLC repo clone: `python3 scripts/scaffold.py -o <org-alias> --agent-file <path>`)
 - All found: Deploy (`sf agent publish authoring-bundle --api-name <AgentName> -o <org-alias>`)
 
 ## Error Handling

@@ -92,7 +92,7 @@ Add these spec-derived assertions to any assertions already defined in the suite
 
 **Step 2: Skill Discovery**
 1. Run `/skills` to list all available skills
-2. Identify the `agentforce-*` skills that are installed (e.g., `agentforce-development`, `agentforce-test`, `agentforce-observability`)
+2. Identify the `agentforce-*` skills that are installed (e.g., `agentforce-development`, `agentforce-testing`, `agentforce-observability`)
 3. Log the discovered skills — this becomes part of the eval metadata
 4. Record any issues:
    - Were the expected skills found?
@@ -137,7 +137,7 @@ Each scenario turn can specify: `expect_topic`, `expect_action`, `expect_params`
 | `discover` | `/agentforce-development` | Section 16 |
 | `scaffold` | `/agentforce-development` | Section 17 |
 | `deploy` | `/agentforce-development` | Section 18 |
-| `test` | `/agentforce-test` | Preview + batch testing |
+| `test` | `/agentforce-testing` | Preview + batch testing |
 | `optimize` | `/agentforce-observability` | Session trace analysis |
 
 For each test case:
@@ -168,9 +168,9 @@ For each test case:
    - Capture deploy log, component count, publish/activate status
    - Save to `<test-id>/deploy/invocation.json`
 
-   **test** — Run preview tests directly (do NOT delegate to `/agentforce-test` for capture control)
+   **test** — Run preview tests directly (do NOT delegate to `/agentforce-testing` for capture control)
 
-   The eval orchestrator MUST run preview API calls directly to ensure every utterance is captured. Delegating to `/agentforce-test` loses utterance data because the skill's output is a summary, not structured per-utterance data.
+   The eval orchestrator MUST run preview API calls directly to ensure every utterance is captured. Delegating to `/agentforce-testing` loses utterance data because the skill's output is a summary, not structured per-utterance data.
 
    **Step 1: Derive test utterances from the agent spec and .agent file**
 
@@ -673,7 +673,7 @@ If these fields are missing, the report will be thin. Always run the judge skill
   "suite_file": "suites/full-pipeline.json",
   "timestamp": "2026-03-26T14:30:00",
   "duration_ms": 45000,
-  "skills_discovered": ["agentforce-development", "agentforce-test", "agentforce-observability"],
+  "skills_discovered": ["agentforce-development", "agentforce-testing", "agentforce-observability"],
   "skill_routing": {
     "hotel-concierge-e2e": {"skill": "agentforce-development", "method": "auto", "correct": true}
   },

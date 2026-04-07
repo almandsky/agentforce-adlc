@@ -318,7 +318,7 @@ Update `evals/CLAUDE.md` to delegate to eval skills:
 
 ```
 Phase 0: /eval-spec → create spec
-Phase 1: /agentforce-development, /agentforce-test, etc. → run pipeline
+Phase 1: /agentforce-development, /agentforce-testing, etc. → run pipeline
 Phase 2: /eval-author-judge, /eval-test-judge, /eval-optimize-judge → judge
 Phase 3: /eval-report → synthesize and generate HTML
 ```
@@ -372,7 +372,7 @@ Orchestrator:
   5. /agentforce-development (discover) → finds 0/6 targets in org
   6. /agentforce-development (scaffold) → generates 22 stub files
   7. /agentforce-development (deploy) → deploys 71 components, publishes, activates
-  8. /agentforce-test → runs 6 utterances + 5 scenarios
+  8. /agentforce-testing → runs 6 utterances + 5 scenarios
   9. /eval-test-judge → analyzes each conversation turn
      → "3/4 smoke tests pass. Employee HR fails: SMALL_TALK on set_associate."
      → "Root cause: intermediate action produces no factual content."

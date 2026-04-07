@@ -20,7 +20,7 @@ The `sf agent validate` command checks Agent Script files for syntax errors, str
 After modifying any `.agent` file, always run this command:
 
 ```bash
-sf agent validate authoring-bundle --api-name <AGENT_NAME> --json
+sf agent validate authoring-bundle --json --api-name <AGENT_NAME>
 ```
 
 Replace `<AGENT_NAME>` with the directory name under `aiAuthoringBundles/` (without the `.agent` extension). Always include `--json` so the output is machine-readable.
@@ -28,7 +28,7 @@ Replace `<AGENT_NAME>` with the directory name under `aiAuthoringBundles/` (with
 Example:
 
 ```bash
-sf agent validate authoring-bundle --api-name Local_Info_Agent --json
+sf agent validate authoring-bundle --json --api-name Local_Info_Agent
 ```
 
 ### Interpreting Output
@@ -183,7 +183,7 @@ ALWAYS use `--json` when calling from a script or AI assistant (not interactive 
 #### Step 1: Start a Session
 
 ```bash
-sf agent preview start --authoring-bundle <BUNDLE_NAME> --use-live-actions --json
+sf agent preview start --json --authoring-bundle <BUNDLE_NAME> --use-live-actions
 ```
 
 This command returns a session ID. Capture it immediately — you need it for every subsequent command. Use `--use-live-actions` to execute real backing logic (recommended). Omit it only when backing logic doesn't exist yet and you want simulated preview.
@@ -191,13 +191,13 @@ This command returns a session ID. Capture it immediately — you need it for ev
 Example:
 
 ```bash
-sf agent preview start --authoring-bundle Local_Info_Agent --use-live-actions --json
+sf agent preview start --json --authoring-bundle Local_Info_Agent --use-live-actions
 ```
 
 #### Step 2: Send Utterances
 
 ```bash
-sf agent preview send --authoring-bundle <BUNDLE_NAME> --session-id <SESSION_ID> -u "<MESSAGE>" --json
+sf agent preview send --json --authoring-bundle <BUNDLE_NAME> --session-id <SESSION_ID> -u "<MESSAGE>"
 ```
 
 Include the same `--authoring-bundle` name and the session ID from Step 1. You can send multiple utterances in the same session — do not end and restart between turns.
@@ -205,13 +205,13 @@ Include the same `--authoring-bundle` name and the session ID from Step 1. You c
 Example:
 
 ```bash
-sf agent preview send --authoring-bundle Local_Info_Agent --session-id abc123def456 -u "What's the weather?" --json
+sf agent preview send --json --authoring-bundle Local_Info_Agent --session-id abc123def456 -u "What's the weather?"
 ```
 
 #### Step 3: End a Session (Optional)
 
 ```bash
-sf agent preview end --authoring-bundle <BUNDLE_NAME> --session-id <SESSION_ID> --json
+sf agent preview end --json --authoring-bundle <BUNDLE_NAME> --session-id <SESSION_ID>
 ```
 
 This command returns the path to session trace files. Call it when the conversation is complete. Do not end prematurely — if the user may ask follow-up questions, keep the session open.
@@ -229,7 +229,7 @@ Simulated preview mode speeds up inner-loop development but cannot validate real
 **Live Preview Mode.** Real backing code executes and returns real outputs. Pass `--use-live-actions`:
 
 ```bash
-sf agent preview start --authoring-bundle <BUNDLE_NAME> --use-live-actions --json
+sf agent preview start --json --authoring-bundle <BUNDLE_NAME> --use-live-actions
 ```
 
 Use live preview mode when:
@@ -266,7 +266,7 @@ The CLI automatically uses the project's default target org. Always omit `--targ
 sf agent preview --authoring-bundle My_Bundle
 
 # CORRECT — programmatic API
-sf agent preview start --authoring-bundle My_Bundle --json
+sf agent preview start --json --authoring-bundle My_Bundle
 ```
 
 The bare `sf agent preview` command is an interactive REPL for humans. Automation cannot provide terminal input (ESC), so it hangs. Use `start`/`send`/`end` with `--json`.
@@ -275,10 +275,10 @@ The bare `sf agent preview` command is an interactive REPL for humans. Automatio
 
 ```bash
 # WRONG — mutually exclusive flags
-sf agent preview start --authoring-bundle My_Bundle --api-name My_Agent --json
+sf agent preview start --json --authoring-bundle My_Bundle --api-name My_Agent
 
 # CORRECT — choose one
-sf agent preview start --authoring-bundle My_Bundle --json
+sf agent preview start --json --authoring-bundle My_Bundle
 ```
 
 These flags are mutually exclusive. Use the one matching your agent type.
@@ -301,11 +301,11 @@ Use `agent preview` commands with `--api-name` to preview published agents.
 
 ```bash
 # WRONG — no session exists
-sf agent preview send --authoring-bundle My_Bundle -u "Hello" --json
+sf agent preview send --json --authoring-bundle My_Bundle -u "Hello"
 
 # CORRECT — start first, capture session ID
-sf agent preview start --authoring-bundle My_Bundle --json
-sf agent preview send --authoring-bundle My_Bundle --session-id <ID> -u "Hello" --json
+sf agent preview start --json --authoring-bundle My_Bundle
+sf agent preview send --json --authoring-bundle My_Bundle --session-id <ID> -u "Hello"
 ```
 
 Each session has a unique ID. You must start before sending.
@@ -314,10 +314,10 @@ Each session has a unique ID. You must start before sending.
 
 ```bash
 # WRONG — missing --authoring-bundle
-sf agent preview send --session-id <ID> -u "Hello" --json
+sf agent preview send --json --session-id <ID> -u "Hello"
 
 # CORRECT
-sf agent preview send --authoring-bundle My_Bundle --session-id <ID> -u "Hello" --json
+sf agent preview send --json --authoring-bundle My_Bundle --session-id <ID> -u "Hello"
 ```
 
 Every command after `start` must include the same `--authoring-bundle` or `--api-name` flag.
@@ -326,10 +326,10 @@ Every command after `start` must include the same `--authoring-bundle` or `--api
 
 ```bash
 # WRONG — concurrent sessions collide
-sf agent preview send --authoring-bundle My_Bundle -u "Hello" --json
+sf agent preview send --json --authoring-bundle My_Bundle -u "Hello"
 
 # CORRECT — always include session ID
-sf agent preview send --authoring-bundle My_Bundle --session-id <ID> -u "Hello" --json
+sf agent preview send --json --authoring-bundle My_Bundle --session-id <ID> -u "Hello"
 ```
 
 If multiple agents have concurrent sessions against the same agent, omitting the session ID causes them to interfere. Always pass the session ID from `start`.
@@ -701,7 +701,7 @@ Use this systematic 8-step approach when diagnosing any agent behavior issue.
 
 6. **Fix** — Update Agent Script instructions, variable logic, or action definitions based on what you found.
 
-7. **Validate** — Run `sf agent validate authoring-bundle --api-name <AGENT_NAME> --json` to ensure the fix doesn't introduce syntax errors.
+7. **Validate** — Run `sf agent validate authoring-bundle --json --api-name <AGENT_NAME>` to ensure the fix doesn't introduce syntax errors.
 
 8. **Re-Test** — Run a new preview session with the same input and compare traces. Verify the fix resolved the issue.
 

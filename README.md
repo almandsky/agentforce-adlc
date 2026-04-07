@@ -37,7 +37,7 @@ User prompt
 | Safety Gate -> Validate  |<-- Pre-publish check
 | -> Publish -> Activate   |
 +--------+-----------------+
-         |  /agentforce-test
+         |  /agentforce-testing
          v
 +--------------------------+
 | Preview + Batch tests    |<-- Safety probe utterances (adversarial)
@@ -51,7 +51,7 @@ User prompt
 +--------------------------+
 ```
 
-Each skill can be invoked independently. Run `/agentforce-test` on an existing agent without touching the development steps. Run `/agentforce-observability` on production session data without redeploying.
+Each skill can be invoked independently. Run `/agentforce-testing` on an existing agent without touching the development steps. Run `/agentforce-observability` on production session data without redeploying.
 
 ## Installation
 
@@ -142,10 +142,10 @@ The skill will:
 
 Each phase can also be triggered individually (e.g., "just discover targets for OrderService.agent").
 
-### 2. Test the agent (`/agentforce-test`)
+### 2. Test the agent (`/agentforce-testing`)
 
 ```
-/agentforce-test
+/agentforce-testing
 
 Smoke test OrderService against my-org with these utterances:
 - "Where is my order #12345?"
@@ -173,7 +173,7 @@ Extracts STDM session traces from Data Cloud, identifies patterns (wrong topic, 
 | Skill | Description | Covers |
 |-------|-------------|--------|
 | `/agentforce-development` | Build, review, discover, scaffold, deploy, and ensure safety of Agentforce agents | Author, discover, scaffold, deploy, safety review, feedback |
-| `/agentforce-test` | Test Agentforce agents via preview, batch testing, and individual action execution | Preview, batch test, action execution |
+| `/agentforce-testing` | Test Agentforce agents via preview, batch testing, and individual action execution | Preview, batch test, action execution |
 | `/agentforce-observability` | Analyze session traces from Data Cloud, reproduce issues, and improve the .agent file | STDM analysis, reproduce, fix loop |
 
 ### Backward compatibility
@@ -188,8 +188,8 @@ Old skill names still work as aliases:
 | `/adlc-deploy` | `/agentforce-development` |
 | `/adlc-safety` | `/agentforce-development` |
 | `/adlc-feedback` | `/agentforce-development` |
-| `/adlc-test` | `/agentforce-test` |
-| `/adlc-run` | `/agentforce-test` |
+| `/adlc-test` | `/agentforce-testing` |
+| `/adlc-run` | `/agentforce-testing` |
 | `/adlc-optimize` | `/agentforce-observability` |
 
 ## Safety & Responsible AI
@@ -216,7 +216,7 @@ The safety review (Section 15 of `/agentforce-development`) uses Claude's reason
 |-----------------|-------------------|
 | **Author** (`/agentforce-development`) | Phase 0: pre-authoring safety gate. Phase 5: safety scoring (15 of 100 points) |
 | **Deploy** (`/agentforce-development`) | Phase 0: safety gate before publishing to any org |
-| **Test** (`/agentforce-test`) | Auto-generates adversarial safety probe utterances for every test run |
+| **Test** (`/agentforce-testing`) | Auto-generates adversarial safety probe utterances for every test run |
 | **Optimize** (`/agentforce-observability`) | Flags unsafe agent behavior in session traces (prompt leakage, injection compliance, etc.) |
 | **Every `.agent` write** | PostToolUse hook prompts for safety review |
 
@@ -267,7 +267,7 @@ agentforce-adlc/
 │   └── adlc-qa.md             # Testing and optimization specialist
 ├── skills/              # Claude Code skills (3 consolidated, agentskills.io standard)
 │   ├── agentforce-development/  # Author + discover + scaffold + deploy + safety + feedback
-│   ├── agentforce-test/         # Preview testing + batch testing + action execution
+│   ├── agentforce-testing/         # Preview testing + batch testing + action execution
 │   └── agentforce-observability/ # STDM trace analysis + fix loop
 ├── evals/               # Eval framework (project-scoped)
 │   ├── .claude/         # Eval-specific skills and settings

@@ -7,11 +7,11 @@
       "description": "Build, review, discover, scaffold, deploy, and ensure safety of Agentforce agents",
       "aliases": ["adlc-author", "adlc-discover", "adlc-scaffold", "adlc-deploy", "adlc-safety", "adlc-feedback"]
     },
-    "agentforce-test": {
-      "path": "skills/agentforce-test",
+    "agentforce-testing": {
+      "path": "skills/agentforce-testing",
       "triggers": ["test agent", "preview", "smoke test", "batch test", "run action", "execute", "test action", "invoke"],
       "description": "Test Agentforce agents via preview, batch testing, and individual action execution",
-      "aliases": ["adlc-test", "adlc-run"]
+      "aliases": ["adlc-test", "adlc-run", "agentforce-test"]
     },
     "agentforce-observability": {
       "path": "skills/agentforce-observability",

@@ -31,7 +31,7 @@ The eval framework is an **orchestrator and judge** — it delegates all agent g
 |-------|-------------|
 | **0. Spec & Discovery** | Load/generate agent spec, discover installed `/agentforce-*` skills |
 | **1. Load Suite** | Read test suite JSON, validate structure, apply filters |
-| **2. Execute Pipeline** | Invoke `/agentforce-development` (author, discover, scaffold, deploy), `/agentforce-test`, `/agentforce-observability` per test's `pipeline` field |
+| **2. Execute Pipeline** | Invoke `/agentforce-development` (author, discover, scaffold, deploy), `/agentforce-testing`, `/agentforce-observability` per test's `pipeline` field |
 | **3. Judge** | Evaluate outputs against spec-derived + suite-defined assertions using taxonomy labels |
 | **4. Report** | Aggregate scores, generate `summary.json`, produce HTML report |
 

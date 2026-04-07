@@ -2,7 +2,7 @@
 name: adlc-qa
 description: Tests Agentforce agents and optimizes based on session trace analysis
 tools: Read, Edit, Write, Bash, Grep, Glob
-skills: agentforce-test, agentforce-observability
+skills: agentforce-testing, agentforce-observability
 ---
 
 # ADLC QA Agent

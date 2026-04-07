@@ -8,6 +8,16 @@
 # - after_reasoning for post-action routing
 # - available when guards for conditional action visibility
 
+system:
+	instructions: |
+		You are an AI Customer Service Assistant helping customers with their orders.
+		Be helpful, empathetic, and efficient in resolving order-related issues.
+		Always verify customer identity before sharing order details.
+		Do not fabricate data — always use action results.
+	messages:
+		welcome: "Hello! I'm here to help you with your orders. How can I assist you today?"
+		error: "I apologize for the inconvenience. Let me try a different approach."
+
 config:
 	developer_name: "OrderServiceAgent"
 	agent_label: "Order Service Assistant"
@@ -43,16 +53,6 @@ variables:
 		description: "Whether a return has been initiated"
 	return_label_url: mutable string = ""
 		description: "URL for return shipping label"
-
-system:
-	instructions: |
-		You are an AI Customer Service Assistant helping customers with their orders.
-		Be helpful, empathetic, and efficient in resolving order-related issues.
-		Always verify customer identity before sharing order details.
-		Do not fabricate data — always use action results.
-	messages:
-		welcome: "Hello! I'm here to help you with your orders. How can I assist you today?"
-		error: "I apologize for the inconvenience. Let me try a different approach."
 
 language:
 	default_locale: "en_US"

@@ -1,10 +1,12 @@
 ---
 name: agentforce-testing
-description: Test Agentforce agents via preview, batch testing, and individual action execution
+description: "Write, run, and analyze structured test suites for Agentforce agents. TRIGGER when: user writes or modifies test spec YAML (AiEvaluationDefinition); runs sf agent test create, run, run-eval, or results commands; asks about test coverage strategy, metric selection, or custom evaluations; interprets test results or diagnoses test failures; asks about batch testing, regression suites, or CI/CD test integration. DO NOT TRIGGER when: user creates, modifies, previews, or debugs .agent files (use agentforce-development); deploys or publishes agents; writes Agent Script code; uses sf agent preview for development iteration; analyzes production session traces (use agentforce-observability)."
 allowed-tools: Bash Read Write Edit Glob Grep
+license: Apache-2.0
 metadata:
+  version: "0.5.0"
+  last_updated: "2026-04-07"
   argument-hint: "<org-alias> --authoring-bundle <AgentName> [--utterances <file>] | run <org> --target <flow://Name>"
-  license: proprietary
   compatibility: claude-code
 ---
 

@@ -452,7 +452,7 @@ Planner validates ALL actions across ALL topics at startup. One missing permissi
 ## Syntax Quick Reference
 
 - Block order: `system:` → `config:` → `variables:` → `connection:` → `knowledge:` → `language:` → `start_agent topic_selector:` → `topic:` blocks
-- Indentation: **4 spaces** per indent level. Never use tabs. Mixing spaces and tabs breaks the parser.
+- Indentation: **Tabs only** for indentation. Never use spaces. The server rejects space indentation and mixing tabs/spaces breaks the parser.
 - Booleans: `True`/`False` (capitalized)
 - Strings: always double-quoted
 - Numeric action I/O: bare `number` works for variables but **fails at publish** in action I/O. Use `object` + `complex_data_type_name` for numeric action parameters. See [Complex Data Types](references/complex-data-types.md) for the full decision tree.

@@ -8,17 +8,9 @@ Generates stub metadata files (Flow XML, Apex classes) for Agent Script targets 
 
 ## Usage
 
-**NOTE:** The `scaffold.py` script requires the ADLC repo to be cloned. It is NOT bundled with the skill.
+Generate stub metadata files directly using the type mapping and action classification rules below. Parse the `.agent` file to extract action targets and their I/O schemas, then generate Flow XML or Apex classes as appropriate.
 
-```bash
-# From ADLC repo root — scaffold missing targets (runs discover first)
-python3 scripts/scaffold.py \
-  --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
-
-# Scaffold all targets without checking org
-python3 scripts/scaffold.py \
-  --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
-```
+For automated scaffold generation, see the [Advanced](#advanced-requires-adlc-repo-clone) section at the bottom.
 
 ## What it does
 
@@ -125,15 +117,15 @@ Recommended order: `apiVersion` -> `description` -> `label` -> `variables` -> `a
 ## Integration Workflow
 
 ```bash
-# 1. Discover missing targets
-python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
-# 2. Scaffold stubs
-python3 scripts/scaffold.py -o myorg --agent-file MyAgent.agent
+# 1. Discover missing targets (CLI-native)
+sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+DeveloperName+FROM+Flow+WHERE+IsActive=true+AND+ProcessType='AutoLaunchedFlow'" -o myorg
+sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+Name+FROM+ApexClass+WHERE+Body+LIKE+'%25InvocableMethod%25'" -o myorg
+# 2. Generate stubs for missing targets (use type mapping + action classification above)
 # 3. Edit stubs with business logic
 # 4. Deploy to org
 sf project deploy start --json --source-dir force-app/main/default -o myorg
-# 5. Verify
-python3 scripts/discover.py -o myorg --agent-file MyAgent.agent
+# 5. Verify targets exist
+sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+DeveloperName+FROM+Flow+WHERE+IsActive=true+AND+ProcessType='AutoLaunchedFlow'" -o myorg
 # 6. Publish agent
 sf agent publish authoring-bundle --json --api-name MyAgent -o myorg
 ```
@@ -145,3 +137,17 @@ sf agent publish authoring-bundle --json --api-name MyAgent -o myorg
 | 0 | All stubs generated |
 | 1 | Some stubs failed |
 | 2 | Critical failure |
+
+## Advanced (requires ADLC repo clone)
+
+The `scaffold.py` script automates stub generation with SObject-aware field discovery. It is NOT bundled with the skill — requires cloning the ADLC repo.
+
+```bash
+# From ADLC repo root — scaffold missing targets (runs discover first)
+python3 scripts/scaffold.py \
+  --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
+
+# Scaffold all targets without checking org
+python3 scripts/scaffold.py \
+  --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
+```

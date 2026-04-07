@@ -12,6 +12,15 @@
 # - Post-action checks at TOP of instructions: ->
 # - Automatic escalation after 3 failed attempts
 
+system:
+	instructions: |
+		You are an AI secure customer service agent.
+		Always verify identity before sensitive operations.
+		Do not fabricate data — always use action results.
+	messages:
+		welcome: "Welcome! I'll need to verify your identity before we proceed."
+		error: "I apologize, something went wrong. Let me try again."
+
 config:
 	developer_name: "SecureAgent"
 	agent_label: "Secure Customer Agent"
@@ -43,15 +52,6 @@ variables:
 		description: "Refund amount to process"
 	churn_risk_score: mutable number = 0
 		description: "Customer churn risk from Data Cloud"
-
-system:
-	instructions: |
-		You are an AI secure customer service agent.
-		Always verify identity before sensitive operations.
-		Do not fabricate data — always use action results.
-	messages:
-		welcome: "Welcome! I'll need to verify your identity before we proceed."
-		error: "I apologize, something went wrong. Let me try again."
 
 language:
 	default_locale: "en_US"

@@ -18,7 +18,7 @@ grep -oP 'target:\s*"\K[^"]+' "$AGENT_FILE" | sort -u
 **Step 2 -- Query GenAiFunction records in the org:**
 
 ```bash
-sf data query -q "SELECT DeveloperName, MasterLabel, InvocableActionDeveloperName FROM GenAiFunction WHERE IsActive = true" -o <ORG_ALIAS> --json
+sf data query --json -q "SELECT DeveloperName, MasterLabel, InvocableActionDeveloperName FROM GenAiFunction WHERE IsActive = true" -o <ORG_ALIAS>
 ```
 
 **Step 3 -- Compare and flag missing targets:**
@@ -28,7 +28,7 @@ sf data query -q "SELECT DeveloperName, MasterLabel, InvocableActionDeveloperNam
 sf flow list -o <ORG_ALIAS> --json | python3 -c "import json,sys; flows=[f['ApiName'] for f in json.load(sys.stdin)['result']]; print('\n'.join(flows))"
 
 # For apex:// targets
-sf data query -q "SELECT Name FROM ApexClass WHERE Name IN ('ClassName1','ClassName2')" -o <ORG_ALIAS> --json
+sf data query --json -q "SELECT Name FROM ApexClass WHERE Name IN ('ClassName1','ClassName2')" -o <ORG_ALIAS>
 ```
 
 **Step 4 -- Present options to user if targets are missing:**
@@ -218,24 +218,24 @@ After editing the `.agent` file, use this deployment chain. **Never update `GenA
 
 ```bash
 # Step 1: Validate (dry run)
-sf agent validate authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
+sf agent validate authoring-bundle --json --api-name <AGENT_API_NAME> -o <org>
 ```
 
 If validation fails: fix syntax errors, deploy missing targets, or resolve duplicate names.
 
 ```bash
 # Step 2: Publish (compiles, deploys metadata, and activates)
-sf agent publish authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
+sf agent publish authoring-bundle --json --api-name <AGENT_API_NAME> -o <org>
 ```
 
 **If publish fails**, use the deploy + activate fallback:
 
 ```bash
 # Step 3a: Deploy the bundle
-sf project deploy start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org>
+sf project deploy start --json --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org>
 
 # Step 3b: Activate
-sf agent activate --api-name <AGENT_API_NAME> -o <org>
+sf agent activate --json --api-name <AGENT_API_NAME> -o <org>
 ```
 
 > **Warning: deploy + activate is an incomplete fallback.** `sf project deploy start` stores the bundle metadata but does **NOT** propagate topic-level `reasoning: actions:` blocks to live `GenAiPluginDefinition` records. Always verify with `--authoring-bundle` preview.
@@ -249,19 +249,19 @@ sf agent activate --api-name <AGENT_API_NAME> -o <org>
 **Immediate** -- run the Phase 2 scenarios that returned `[CONFIRMED]` before the fix. All should now return `[NOT REPRODUCED]`. Use `--authoring-bundle` to get trace-level verification:
 
 ```bash
-sf agent preview start --authoring-bundle <BundleName> -o <org> --json | tee /tmp/verify_start.json
+sf agent preview start --json --authoring-bundle <BundleName> -o <org> | tee /tmp/verify_start.json
 SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/verify_start.json'))['result']['sessionId'])")
 
-sf agent preview send \
+sf agent preview send --json \
   --session-id "$SESSION_ID" \
   --utterance "<test utterance from Phase 2 scenario>" \
   --authoring-bundle <BundleName> \
-  -o <org> --json | tee /tmp/verify_response.json
+  -o <org> | tee /tmp/verify_response.json
 
 PLAN_ID=$(python3 -c "import json; d=json.load(open('/tmp/verify_response.json')); print(d['result']['messages'][-1]['planId'])")
 TRACE=".sfdx/agents/<BundleName>/sessions/$SESSION_ID/traces/$PLAN_ID.json"
 
-sf agent preview end --session-id "$SESSION_ID" --authoring-bundle <BundleName> -o <org> --json
+sf agent preview end --json --session-id "$SESSION_ID" --authoring-bundle <BundleName> -o <org>
 ```
 
 **Trace-based verification checklist:**
@@ -339,21 +339,21 @@ testCases:
 **Deploy and run:**
 
 ```bash
-sf agent test create \
+sf agent test create --json \
   --spec tests/<AgentApiName>-regression.yaml \
   --api-name <AgentApiName>_Regression \
   --force-overwrite \
-  -o <org> --json
+  -o <org>
 
-sf agent test run \
+sf agent test run --json \
   --api-name <AgentApiName>_Regression \
   --wait 10 \
   --result-format json \
-  -o <org> --json | tee /tmp/regression_run.json
+  -o <org> | tee /tmp/regression_run.json
 
 # ALWAYS use --job-id, NOT --use-most-recent which is broken
 JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/regression_run.json'))['result']['runId'])")
-sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json
+sf agent test results --json --job-id "$JOB_ID" --result-format json -o <org>
 ```
 
 All test cases derived from Phase 2 `[CONFIRMED]` issues should pass after the Phase 3 fix.

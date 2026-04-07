@@ -9,7 +9,7 @@ Before executing ANY action, perform these checks:
 ### 1. Org Safety Check
 Verify the target org is not a production org:
 ```bash
-sf data query -q "SELECT IsSandbox FROM Organization" -o <org-alias> --json
+sf data query --json -q "SELECT IsSandbox FROM Organization" -o <org-alias>
 ```
 If `IsSandbox` is `false`, display a prominent warning:
 ```
@@ -31,14 +31,14 @@ warn the user and recommend using a sandbox or scratch org first.
 
 ```bash
 # Ensure org is authenticated
-sf org display -o <org-alias>
+sf org display --json -o <org-alias>
 
 # If not authenticated, login first
-sf org login web --alias <org-alias>
+sf org login web --json --alias <org-alias>
 
 # Extract credentials for API calls
-TOKEN=$(sf org display -o <org-alias> --json | jq -r '.result.accessToken')
-INSTANCE_URL=$(sf org display -o <org-alias> --json | jq -r '.result.instanceUrl')
+TOKEN=$(sf org display --json -o <org-alias> | jq -r '.result.accessToken')
+INSTANCE_URL=$(sf org display --json -o <org-alias> | jq -r '.result.instanceUrl')
 ```
 
 ## Execute a Flow Action
@@ -172,9 +172,9 @@ Example response:
 
 1. **Prepare test data**:
 ```bash
-RECORD_ID=$(sf data create record -s Account \
+RECORD_ID=$(sf data create record --json -s Account \
   -v "Name='Test Account' Type='Customer'" \
-  -o myorg --json | jq -r '.result.id')
+  -o myorg | jq -r '.result.id')
 ```
 
 2. **Execute action**:
@@ -187,14 +187,14 @@ curl -s "$INSTANCE_URL/services/data/v63.0/actions/custom/flow/Update_Account" \
 
 3. **Verify results**:
 ```bash
-sf data query \
+sf data query --json \
   --query "SELECT Name, Status__c FROM Account WHERE Id = '$RECORD_ID'" \
-  -o myorg --json
+  -o myorg
 ```
 
 4. **Clean up**:
 ```bash
-sf data delete record -s Account -i $RECORD_ID -o myorg
+sf data delete record --json -s Account -i $RECORD_ID -o myorg
 ```
 
 ## Debugging
@@ -204,7 +204,7 @@ sf data delete record -s Account -i $RECORD_ID -o myorg
 After executing an Apex action, fetch the most recent debug log:
 
 ```bash
-sf apex log get --number 1 -o <org-alias>
+sf apex log get --json --number 1 -o <org-alias>
 ```
 
 ### Inspect Available Actions

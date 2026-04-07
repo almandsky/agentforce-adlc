@@ -8,13 +8,15 @@ Generates stub metadata files (Flow XML, Apex classes) for Agent Script targets 
 
 ## Usage
 
+**NOTE:** The `scaffold.py` script requires the ADLC repo to be cloned. It is NOT bundled with the skill.
+
 ```bash
-# Scaffold missing targets (runs discover first)
-python3 "$ADLC_SCRIPTS/scaffold.py" \
+# From ADLC repo root — scaffold missing targets (runs discover first)
+python3 scripts/scaffold.py \
   --agent-file path/to/Agent.agent -o <org-alias> --output-dir force-app/main/default
 
 # Scaffold all targets without checking org
-python3 "$ADLC_SCRIPTS/scaffold.py" \
+python3 scripts/scaffold.py \
   --agent-file path/to/Agent.agent --all --output-dir force-app/main/default
 ```
 

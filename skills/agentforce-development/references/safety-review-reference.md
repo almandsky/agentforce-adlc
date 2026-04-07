@@ -141,5 +141,5 @@ These are NOT safety violations:
 |-------|-------------------|
 | Authoring | Phase 0 (pre-gate) + Phase 5 (review, 15 points of rubric) |
 | Deploy | Pre-publish safety check |
-| /agentforce-test | Adversarial test utterance generation |
+| /agentforce-testing | Adversarial test utterance generation |
 | /agentforce-observability | Session trace safety flagging |

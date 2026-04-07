@@ -51,9 +51,9 @@ Determine intent from user input:
 Before any STDM query, resolve the user-provided agent name against the org to get the exact `MasterLabel` and `DeveloperName`:
 
 ```bash
-sf data query \
+sf data query --json \
   --query "SELECT Id, MasterLabel, DeveloperName FROM GenAiPlannerDefinition WHERE MasterLabel LIKE '%<user-provided-name>%' OR DeveloperName LIKE '%<user-provided-name>%'" \
-  -o <org> --json
+  -o <org>
 ```
 
 - `MasterLabel` = display name used by STDM `findSessions` and Agent Builder UI (e.g. "Order Service")
@@ -78,7 +78,7 @@ If the user provided an agent file path, use that directly. Otherwise, search fo
 **Step 2 -- If not found locally, retrieve from the org:**
 
 ```bash
-sf project retrieve start --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org> --json
+sf project retrieve start --json --metadata "AiAuthoringBundle:<AGENT_API_NAME>" -o <org>
 ```
 
 > **Known bug:** `sf project retrieve start` creates a double-nested path: `force-app/main/default/main/default/aiAuthoringBundles/...`. Fix it immediately after retrieve:
@@ -177,10 +177,10 @@ When STDM is not available, use test suites and `sf agent preview --authoring-bu
 ### 1-ALT.1 Run existing test suite (if available)
 
 ```bash
-sf agent test list -o <org> --json
-sf agent test run --api-name <TestSuiteName> --wait 10 --result-format json -o <org> --json | tee /tmp/test_run.json
+sf agent test list --json -o <org>
+sf agent test run --json --api-name <TestSuiteName> --wait 10 --result-format json -o <org> | tee /tmp/test_run.json
 JOB_ID=$(python3 -c "import json; print(json.load(open('/tmp/test_run.json'))['result']['runId'])")
-sf agent test results --job-id "$JOB_ID" --result-format json -o <org> --json
+sf agent test results --json --job-id "$JOB_ID" --result-format json -o <org>
 ```
 
 ### 1-ALT.2 Derive test utterances from .agent file (if no test suite)
@@ -192,13 +192,13 @@ If no test suite exists, derive utterances: one per non-entry topic (from `descr
 Run each test utterance through preview to generate local trace files:
 
 ```bash
-sf agent preview start --authoring-bundle <BundleName> -o <org> --json | tee /tmp/preview_start.json
+sf agent preview start --json --authoring-bundle <BundleName> -o <org> | tee /tmp/preview_start.json
 SESSION_ID=$(python3 -c "import json; print(json.load(open('/tmp/preview_start.json'))['result']['sessionId'])")
 
-sf agent preview send --session-id "$SESSION_ID" --authoring-bundle <BundleName> \
-  --utterance "$UTT" -o <org> --json | tee /tmp/preview_response.json
+sf agent preview send --json --session-id "$SESSION_ID" --authoring-bundle <BundleName> \
+  --utterance "$UTT" -o <org> | tee /tmp/preview_response.json
 
-sf agent preview end --session-id "$SESSION_ID" --authoring-bundle <BundleName> -o <org> --json
+sf agent preview end --json --session-id "$SESSION_ID" --authoring-bundle <BundleName> -o <org>
 ```
 
 **Trace file location:** `.sfdx/agents/{BundleName}/sessions/{sessionId}/traces/{planId}.json`
@@ -232,7 +232,7 @@ Classify issues using the categories in `references/issue-classification.md`. Af
 Deploy `AgentforceOptimizeService` Apex class to the org. Check if already deployed first:
 
 ```bash
-sf data query --query "SELECT Id, Name FROM ApexClass WHERE Name = 'AgentforceOptimizeService'" -o <org> --json
+sf data query --json --query "SELECT Id, Name FROM ApexClass WHERE Name = 'AgentforceOptimizeService'" -o <org>
 ```
 
 If not deployed, copy from skill directory and deploy. See `references/stdm-queries.md` for full steps.
@@ -300,9 +300,9 @@ Only `[CONFIRMED]` and `[INTERMITTENT]` issues proceed to Phase 3.
 **Key commands:**
 
 ```bash
-sf agent preview start --authoring-bundle <Name> -o <org> --json
-sf agent preview send --session-id "$SID" --utterance "<text>" --authoring-bundle <Name> -o <org> --json
-sf agent preview end --session-id "$SID" --authoring-bundle <Name> -o <org> --json
+sf agent preview start --json --authoring-bundle <Name> -o <org>
+sf agent preview send --json --session-id "$SID" --utterance "<text>" --authoring-bundle <Name> -o <org>
+sf agent preview end --json --session-id "$SID" --authoring-bundle <Name> -o <org>
 ```
 
 **Trace location:** `.sfdx/agents/{Name}/sessions/{sessionId}/traces/{planId}.json`
@@ -333,10 +333,10 @@ Read the `.agent` file, edit with the Edit tool (tabs for indentation), show the
 
 ```bash
 # Validate (dry run)
-sf agent validate authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
+sf agent validate authoring-bundle --json --api-name <AGENT_API_NAME> -o <org>
 
 # Publish (compile + deploy + activate)
-sf agent publish authoring-bundle --api-name <AGENT_API_NAME> -o <org> --json
+sf agent publish authoring-bundle --json --api-name <AGENT_API_NAME> -o <org>
 ```
 
 If publish fails, use deploy + activate fallback (note: incomplete -- does not propagate `reasoning: actions:` to live metadata).

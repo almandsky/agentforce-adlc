@@ -93,7 +93,7 @@ OLD_SKILL_PREFIX = "adlc-"
 # Skills to install (relative to repo root)
 SKILL_DIRS = [
     "skills/agentforce-development",
-    "skills/agentforce-test",
+    "skills/agentforce-testing",
     "skills/agentforce-observability",
 ]
 

@@ -9,7 +9,7 @@ agentforce-adlc/
 ├── agents/           # Claude Code agent definitions (.md)
 ├── skills/           # Claude Code skills (SKILL.md-driven)
 │   ├── agentforce-development/  # Author + discover + scaffold + deploy + safety + feedback
-│   ├── agentforce-test/         # Preview testing + batch testing + action execution
+│   ├── agentforce-testing/         # Preview testing + batch testing + action execution
 │   └── agentforce-observability/ # STDM trace analysis + fix loop
 ├── evals/            # Eval framework (project-scoped)
 │   ├── .claude/      # Eval-specific skills and settings
@@ -31,7 +31,7 @@ agentforce-adlc/
 | Skill | Trigger | Description |
 |---|---|---|
 | `/agentforce-development` | "build agent", "create agent", "write .agent", "new agent", "agentforce agent", "service agent", "employee agent", "build me an agent", "FAQ agent", "discover", "check org", "scaffold", "generate stubs", "deploy", "publish", "activate", "safety review", "security check", "feedback" | **Primary skill** — author .agent files, discover targets, scaffold stubs, deploy, safety review, feedback |
-| `/agentforce-test` | "test agent", "preview", "smoke test", "batch test", "run action", "execute", "test action" | Agent preview + batch testing + individual action execution |
+| `/agentforce-testing` | "test agent", "preview", "smoke test", "batch test", "run action", "execute", "test action" | Agent preview + batch testing + individual action execution |
 | `/agentforce-observability` | "optimize", "analyze sessions", "STDM", "session traces" | Session trace analysis + improvement loop |
 
 ### Backward Compatibility Aliases
@@ -44,8 +44,8 @@ agentforce-adlc/
 | `/adlc-deploy` | `/agentforce-development` (Section 18) |
 | `/adlc-safety` | `/agentforce-development` (Section 15) |
 | `/adlc-feedback` | `/agentforce-development` (Section 19) |
-| `/adlc-test` | `/agentforce-test` |
-| `/adlc-run` | `/agentforce-test` (Action Execution section) |
+| `/adlc-test` | `/agentforce-testing` |
+| `/adlc-run` | `/agentforce-testing` (Action Execution section) |
 | `/adlc-optimize` | `/agentforce-observability` |
 
 ## Important: Agent Creation Routing
@@ -104,8 +104,8 @@ ADLC enforces safety across the full lifecycle via two layers:
 
 Key safety behaviors:
 - `/agentforce-development` blocks unsafe requests at Phase 0 and adds AI disclosure, scope boundaries, and escalation paths to all agents
-- `/agentforce-test` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
-- `/agentforce-test` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
+- `/agentforce-testing` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
+- `/agentforce-testing` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
 - `/agentforce-development` (Section 18 — Deploy) requires explicit user acknowledgment for warnings before proceeding
 
 ## Evals

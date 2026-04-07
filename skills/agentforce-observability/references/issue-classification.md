@@ -154,7 +154,7 @@ done
 
 ```bash
 # Does a knowledge space exist?
-sf data query --query "SELECT Id, Name FROM DataKnowledgeSpace" -o <org> --json
+sf data query --json --query "SELECT Id, Name FROM DataKnowledgeSpace" -o <org>
 ```
 
 Also check the `.agent` file for any action with `retriever://` target -- if none exists, knowledge infrastructure is not wired to the agent.

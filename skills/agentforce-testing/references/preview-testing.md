@@ -146,18 +146,18 @@ Execute tests using `sf agent preview` programmatically. Use `--authoring-bundle
 
 ```bash
 # Start preview session (--authoring-bundle for local traces)
-SESSION_ID=$(sf agent preview start \
+SESSION_ID=$(sf agent preview start --json \
   --authoring-bundle MyAgent \
-  --target-org <org> --json 2>/dev/null \
+  --target-org <org> 2>/dev/null \
   | jq -r '.result.sessionId')
 
 # Send each test utterance
 for UTTERANCE in "${TEST_UTTERANCES[@]}"; do
-  RESPONSE=$(sf agent preview send \
+  RESPONSE=$(sf agent preview send --json \
     --session-id "$SESSION_ID" \
     --authoring-bundle MyAgent \
     --utterance "$UTTERANCE" \
-    --target-org <org> --json 2>/dev/null)
+    --target-org <org> 2>/dev/null)
 
   # Strip control characters with Python (more reliable than tr through bash pipes)
   PLAN_ID=$(python3 -c "
@@ -172,10 +172,10 @@ print(msgs[-1].get('planId', '') if msgs else '')
 done
 
 # End session and get traces (--authoring-bundle is required on end too)
-TRACES_PATH=$(sf agent preview end \
+TRACES_PATH=$(sf agent preview end --json \
   --session-id "$SESSION_ID" \
   --authoring-bundle MyAgent \
-  --target-org <org> --json 2>/dev/null \
+  --target-org <org> 2>/dev/null \
   | jq -r '.result.tracesPath')
 ```
 

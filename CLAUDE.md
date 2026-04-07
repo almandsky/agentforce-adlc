@@ -58,7 +58,7 @@ Do NOT use `sf agent generate` CLI commands or the `sf-ai-agentforce` skill for 
 
 ## Key Conventions
 
-- **Indentation**: Tabs in `.agent` files (Agent Script compiler requirement)
+- **Indentation**: 4 spaces in `.agent` files (tabs break the Agent Script compiler)
 - **Booleans**: `True` / `False` (capitalized — Python-style)
 - **Variables**: `mutable` (read-write) or `linked` (bound to external source)
 - **Actions**: Two-level system — `definitions` (in topic) and `invocations` (in reasoning)

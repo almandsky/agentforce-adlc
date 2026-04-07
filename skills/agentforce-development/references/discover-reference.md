@@ -8,25 +8,12 @@ Validates that Agent Script `.agent` file targets actually exist in a Salesforce
 
 ## Usage
 
-**NOTE:** The `discover.py` script requires the ADLC repo to be cloned. It is NOT bundled with the skill. If running from a standalone skill installation, use the CLI-native equivalents below.
-
-### CLI-Native Discovery (Standalone)
-
 ```bash
 # List all active autolaunched flows (candidate action targets)
 sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+DeveloperName,ProcessType+FROM+Flow+WHERE+IsActive=true+AND+ProcessType='AutoLaunchedFlow'" -o <org-alias>
 
 # List all @InvocableMethod Apex classes
 sf api request rest --json "/services/data/v63.0/tooling/query?q=SELECT+Name+FROM+ApexClass+WHERE+Body+LIKE+'%25InvocableMethod%25'" -o <org-alias>
-```
-
-### Script-Based Discovery (requires ADLC repo clone)
-
-```bash
-# From ADLC repo root:
-python3 scripts/discover.py -o <org-alias> --agent-file <path-to-agent-file>
-python3 scripts/discover.py -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
-python3 scripts/discover.py -o <org-alias> --agent-file MyAgent.agent --validate-io
 ```
 
 ## What it does
@@ -84,8 +71,8 @@ Summary: 2/3 targets found (66.7%)
 
 ## Next Steps
 
-- Missing targets: Run scaffold (requires ADLC repo clone: `python3 scripts/scaffold.py -o <org-alias> --agent-file <path>`)
-- All found: Deploy (`sf agent publish authoring-bundle --api-name <AgentName> -o <org-alias>`)
+- Missing targets: Run scaffold to generate stubs (see `scaffold-reference.md`)
+- All found: Deploy (`sf agent publish authoring-bundle --json --api-name <AgentName> -o <org-alias>`)
 
 ## Error Handling
 
@@ -102,3 +89,14 @@ Summary: 2/3 targets found (66.7%)
 | 0 | All targets found |
 | 1 | Some targets missing |
 | 2 | Critical failure |
+
+## Advanced (requires ADLC repo clone)
+
+The `discover.py` script provides automated discovery with fuzzy matching and I/O validation. It is NOT bundled with the skill — requires cloning the ADLC repo.
+
+```bash
+# From ADLC repo root:
+python3 scripts/discover.py -o <org-alias> --agent-file <path-to-agent-file>
+python3 scripts/discover.py -o <org-alias> --agent-dir force-app/main/default/aiAuthoringBundles
+python3 scripts/discover.py -o <org-alias> --agent-file MyAgent.agent --validate-io
+```

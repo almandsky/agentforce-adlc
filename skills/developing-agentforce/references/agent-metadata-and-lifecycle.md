@@ -519,7 +519,7 @@ Agent testing requires a test spec (YAML), which gets compiled into `AiEvaluatio
 
 **Create a test spec from the skill template:**
 
-Copy the test spec template from the **agentforce-testing** skill to `specs/<Agent_API_Name>-testSpec.yaml` in the user's SFDX project. Update `name`, `description`, `subjectName`, and `testCases` to match the agent being tested.
+Copy the test spec template from the **testing-agentforce** skill to `specs/<Agent_API_Name>-testSpec.yaml` in the user's SFDX project. Update `name`, `description`, `subjectName`, and `testCases` to match the agent being tested.
 
 Do NOT use `sf agent generate test-spec` to create a new test spec. This command requires interactive input and cannot be used programmatically. It can reverse-engineer a test spec from an existing `AiEvaluationDefinition` when supplied with the `--from-definition` flag:
 

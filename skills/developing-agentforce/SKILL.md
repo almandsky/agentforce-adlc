@@ -1,5 +1,5 @@
 ---
-name: agentforce-development
+name: developing-agentforce
 description: "Build, modify, debug, and deploy agents with Agentforce Agent Script. TRIGGER when: user creates, modifies, or asks about .agent files or aiAuthoringBundle metadata; changes agent behavior, responses, or conversation logic; designs agent topics, actions, tools, sub-agents, or flow control; writes or reviews an Agent Spec; previews, debugs, deploys, publishes, or tests agents; uses Agent Script CLI commands (sf agent generate/preview/publish/test). DO NOT TRIGGER when: Apex development, Flow building, Prompt Template authoring, Experience Cloud configuration, or general Salesforce CLI tasks unrelated to Agent Script."
 license: Apache-2.0
 compatibility: "Requires Agentforce license, API v66.0+, Einstein Agent User"
@@ -380,8 +380,8 @@ User wants to create automated tests for Agent Script agent. Involves writing `A
 Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command syntax.
 
 1. **Establish coverage baseline** — Read Agent Spec. If no Agent Spec exists, reverse-engineer first by following Comprehend steps. Map every topic, action, and flow control path to identify what needs test coverage.
-2. **Design test scenarios** — For test design methodology, expectations, metrics, test spec YAML format, and templates, use **agentforce-testing** skill. That skill owns all testing content. For each coverage target, write one or more test scenarios: user utterance, expected topic routing, expected action invocations, and expected agent response. Include both happy paths and edge cases.
-3. **Write test spec YAML** — Use template and reference files from **agentforce-testing** skill. Save to `specs/<Agent_API_Name>-testSpec.yaml` in SFDX project.
+2. **Design test scenarios** — For test design methodology, expectations, metrics, test spec YAML format, and templates, use **testing-agentforce** skill. That skill owns all testing content. For each coverage target, write one or more test scenarios: user utterance, expected topic routing, expected action invocations, and expected agent response. Include both happy paths and edge cases.
+3. **Write test spec YAML** — Use template and reference files from **testing-agentforce** skill. Save to `specs/<Agent_API_Name>-testSpec.yaml` in SFDX project.
 4. **Create test metadata** — Generate `AiEvaluationDefinition` from test spec using CLI.
 5. **Deploy test** — Deploy `AiEvaluationDefinition` to org.
 6. **Run tests** — Execute test run using CLI. Capture results.
@@ -396,7 +396,7 @@ Read [CLI for Agents](references/salesforce-cli-for-agents.md) for exact command
    structure for designing meaningful tests
 3. [Design & Agent Spec](references/agent-design-and-spec-creation.md) —
    Agent Spec as test coverage baseline
-4. **agentforce-testing** skill — test spec YAML format, expectations,
+4. **testing-agentforce** skill — test spec YAML format, expectations,
    metrics, test design methodology, and test spec template
 
 ## The Agent Spec

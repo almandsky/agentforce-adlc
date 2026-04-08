@@ -86,19 +86,20 @@ META_FILE = CLAUDE_DIR / ".adlc.json"
 INSTALLER_DEST = CLAUDE_DIR / "adlc-install.py"
 SETTINGS_FILE = CLAUDE_DIR / "settings.json"
 
-# Prefixes (only manage our own files, never touch sf-* or agentforce-md-*)
-SKILL_PREFIX = "agentforce-"
-OLD_SKILL_PREFIX = "adlc-"
+# Suffixes/prefixes for detecting ADLC-managed skills during orphan cleanup
+SKILL_SUFFIX = "-agentforce"
+OLD_SKILL_PREFIXES = ("adlc-", "agentforce-")
 
 # Skills to install (relative to repo root)
 SKILL_DIRS = [
-    "skills/agentforce-development",
-    "skills/agentforce-testing",
-    "skills/agentforce-observability",
+    "skills/developing-agentforce",
+    "skills/testing-agentforce",
+    "skills/observing-agentforce",
 ]
 
 # Old skill dirs to clean up during install
 OLD_SKILL_DIRS = [
+    # v0.1.x names
     "adlc-author",
     "adlc-discover",
     "adlc-scaffold",
@@ -108,6 +109,10 @@ OLD_SKILL_DIRS = [
     "adlc-optimize",
     "adlc-feedback",
     "adlc-safety",
+    # v0.2.0–v0.4.x names
+    "agentforce-development",
+    "agentforce-testing",
+    "agentforce-observability",
 ]
 
 # Agent definitions to install
@@ -130,6 +135,23 @@ HOOK_REGISTRY = "shared/hooks/skills-registry.json"
 
 # Supported installation targets
 TARGETS = ["claude", "cursor", "both"]
+
+# Agent definition prefix
+AGENT_PREFIX = "adlc-"
+
+
+def _is_adlc_skill(name: str) -> bool:
+    """Check if a directory name is an ADLC-managed skill."""
+    if name in OLD_SKILL_DIRS:
+        return True
+    # Current naming: {verb}-agentforce (e.g., developing-agentforce)
+    # Exclude unrelated skills like sf-ai-agentforce
+    return name.endswith(SKILL_SUFFIX) and name.count("-") == 1
+
+
+def _is_adlc_agent(name: str) -> bool:
+    """Check if a file is an ADLC-managed agent definition."""
+    return name.startswith(AGENT_PREFIX) and name.endswith(".md")
 
 
 def get_target_dirs(target: str) -> list:
@@ -540,16 +562,16 @@ def prune_orphan_skills(tgt: Dict, current_skills: List[str], dry_run: bool = Fa
     for item in sorted(skills_dir.iterdir()):
         if not item.is_dir():
             continue
-        # Remove old adlc-* skill dirs (consolidated into agentforce-* skills)
-        if item.name.startswith(OLD_SKILL_PREFIX):
+        # Remove explicitly listed old skill dirs
+        if item.name in OLD_SKILL_DIRS:
             if dry_run:
                 print_info(f"Would remove old skill: {item.name}")
             else:
                 safe_rmtree(item)
                 print_substep(f"Removed old skill: {item.name}")
             pruned += 1
-        # Remove orphan agentforce-* skills not in current list
-        elif item.name.startswith(SKILL_PREFIX) and item.name not in current_set:
+        # Remove orphan *-agentforce skills not in current list
+        elif item.name.endswith(SKILL_SUFFIX) and item.name not in current_set:
             if dry_run:
                 print_info(f"Would remove orphan skill: {item.name}")
             else:
@@ -760,7 +782,7 @@ def remove_skills(tgt: Dict, dry_run: bool = False) -> int:
         return removed
 
     for item in sorted(skills_dir.iterdir()):
-        if item.is_dir() and item.name.startswith(SKILL_PREFIX):
+        if item.is_dir() and _is_adlc_skill(item.name):
             if dry_run:
                 print_info(f"Would remove skill: {item.name}")
             else:
@@ -782,7 +804,7 @@ def remove_agents(tgt: Dict, dry_run: bool = False) -> int:
         return removed
 
     for item in sorted(agents_dir.iterdir()):
-        if item.is_file() and item.name.startswith(SKILL_PREFIX) and item.suffix == ".md":
+        if item.is_file() and _is_adlc_agent(item.name):
             if dry_run:
                 print_info(f"Would remove agent: {item.name}")
             else:
@@ -1264,7 +1286,7 @@ def cmd_status(target: str = "claude") -> int:
         if skills_dir.exists():
             found = False
             for item in sorted(skills_dir.iterdir()):
-                if item.is_dir() and item.name.startswith(SKILL_PREFIX):
+                if item.is_dir() and _is_adlc_skill(item.name):
                     skill_md = item / "SKILL.md"
                     status = "ok" if skill_md.exists() else "MISSING SKILL.md"
                     print(f"    - {item.name} ({status})")
@@ -1282,7 +1304,7 @@ def cmd_status(target: str = "claude") -> int:
             if agents_dir.exists():
                 found = False
                 for item in sorted(agents_dir.iterdir()):
-                    if item.is_file() and item.name.startswith(SKILL_PREFIX) and item.suffix == ".md":
+                    if item.is_file() and _is_adlc_agent(item.name):
                         print(f"    - {item.name}")
                         found = True
                 if not found:

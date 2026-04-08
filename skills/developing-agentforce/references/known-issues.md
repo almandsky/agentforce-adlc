@@ -102,14 +102,14 @@ Unresolved platform bugs, limitations, and edge cases that affect Agent Script d
 - **Symptom**: Tests created in the Agent Testing Center UI cannot be retrieved via `sf project retrieve start`. Old test XML format references `bot`/`version` fields that don't exist in Agent Script. No metadata type or CLI command exists for new-style agent tests.
 - **Root Cause**: The Agent Testing Center was originally built for Einstein Bots. The test metadata schema hasn't been updated for Agent Script's `AiAuthoringBundle` structure. The `AiEvaluationDefinition` type exists but doesn't correspond to the Testing Center's UI-created tests.
 - **Workaround**:
-  1. Use YAML test spec files managed in source control (see `/sf-ai-agentforce-testing` skill)
+  1. Use YAML test spec files managed in source control (see `/testing-agentforce` skill)
   2. Treat UI-created tests as ephemeral / org-specific
   3. Use the Connect API directly to run tests programmatically
 - **Open Questions**:
   - Will a new metadata type be introduced for Agent Script tests?
   - Can `AiEvaluationDefinition` be used with Agent Script agents?
   - Is there a roadmap for test portability?
-- **References**: See `references/custom-eval-investigation.md` in `sf-ai-agentforce-testing` for related findings on custom evaluation data structure issues.
+- **References**: See `references/custom-eval-investigation.md` in `testing-agentforce` for related findings on custom evaluation data structure issues.
 
 ---
 

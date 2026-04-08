@@ -57,12 +57,12 @@ EXTRA_RUBRIC_SKILLS = ["outcome", "grounding", "conversation"]
 
 # Map pipeline steps to consolidated skill names
 PIPELINE_SKILL_MAP = {
-    "author": "agentforce-development",
-    "discover": "agentforce-development",
-    "scaffold": "agentforce-development",
-    "deploy": "agentforce-development",
-    "test": "agentforce-testing",
-    "optimize": "agentforce-observability",
+    "author": "developing-agentforce",
+    "discover": "developing-agentforce",
+    "scaffold": "developing-agentforce",
+    "deploy": "developing-agentforce",
+    "test": "testing-agentforce",
+    "optimize": "observing-agentforce",
 }
 
 # Per-skill insight templates keyed by dimension name

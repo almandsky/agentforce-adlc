@@ -92,7 +92,7 @@ Add these spec-derived assertions to any assertions already defined in the suite
 
 **Step 2: Skill Discovery**
 1. Run `/skills` to list all available skills
-2. Identify the `agentforce-*` skills that are installed (e.g., `agentforce-development`, `agentforce-testing`, `agentforce-observability`)
+2. Identify the `agentforce-*` skills that are installed (e.g., `developing-agentforce`, `testing-agentforce`, `observing-agentforce`)
 3. Log the discovered skills — this becomes part of the eval metadata
 4. Record any issues:
    - Were the expected skills found?
@@ -133,12 +133,12 @@ Each scenario turn can specify: `expect_topic`, `expect_action`, `expect_params`
 
 | Pipeline Step | Skill to Invoke | Section |
 |---------------|----------------|---------|
-| `author` | `/agentforce-development` | Authoring (Sections 1-14) |
-| `discover` | `/agentforce-development` | Section 16 |
-| `scaffold` | `/agentforce-development` | Section 17 |
-| `deploy` | `/agentforce-development` | Section 18 |
-| `test` | `/agentforce-testing` | Preview + batch testing |
-| `optimize` | `/agentforce-observability` | Session trace analysis |
+| `author` | `/developing-agentforce` | Authoring (Sections 1-14) |
+| `discover` | `/developing-agentforce` | Section 16 |
+| `scaffold` | `/developing-agentforce` | Section 17 |
+| `deploy` | `/developing-agentforce` | Section 18 |
+| `test` | `/testing-agentforce` | Preview + batch testing |
+| `optimize` | `/observing-agentforce` | Session trace analysis |
 
 For each test case:
 
@@ -146,31 +146,31 @@ For each test case:
 2. Read the test's `pipeline` field (default: `["author"]` for backward compatibility)
 3. For each step in `pipeline`, execute in order:
 
-   **author** — Invoke `/agentforce-development` with the test prompt
+   **author** — Invoke `/developing-agentforce` with the test prompt
    - If the test has a `skill_hint` field, use that skill instead
    - If the test has a `goal` field, follow its instructions for multi-turn interaction
    - Capture generated `.agent` files to `<test-id>/author/artifacts/`
    - **Read the generated .agent file and store its full text** for embedding in summary.json as `agent_file_content`
    - Save invocation metadata to `<test-id>/author/invocation.json`
 
-   **discover** — Invoke `/agentforce-development` (discover mode) with the generated `.agent` file + org
+   **discover** — Invoke `/developing-agentforce` (discover mode) with the generated `.agent` file + org
    - Pass the `.agent` file from the author step
    - Pass the `org` field from the test (or `--org` CLI override)
    - **Capture full target lists**: `found_targets` (array of names), `missing_targets` (array of names), `total_targets` (count)
    - Save to `<test-id>/discover/invocation.json`
 
-   **scaffold** — Invoke `/agentforce-development` (scaffold mode) with the `.agent` file + org
+   **scaffold** — Invoke `/developing-agentforce` (scaffold mode) with the `.agent` file + org
    - Pass the `.agent` file and the discover results
    - **Capture**: `targets_scaffolded` (array of names), `files_generated` (count), `permissionset` (name if generated)
    - Capture generated files (flow XML, apex, tests, permsets) to `<test-id>/scaffold/artifacts/`
 
-   **deploy** — Invoke `/agentforce-development` (deploy mode) with the scaffolded output + org
+   **deploy** — Invoke `/developing-agentforce` (deploy mode) with the scaffolded output + org
    - Capture deploy log, component count, publish/activate status
    - Save to `<test-id>/deploy/invocation.json`
 
-   **test** — Run preview tests directly (do NOT delegate to `/agentforce-testing` for capture control)
+   **test** — Run preview tests directly (do NOT delegate to `/testing-agentforce` for capture control)
 
-   The eval orchestrator MUST run preview API calls directly to ensure every utterance is captured. Delegating to `/agentforce-testing` loses utterance data because the skill's output is a summary, not structured per-utterance data.
+   The eval orchestrator MUST run preview API calls directly to ensure every utterance is captured. Delegating to `/testing-agentforce` loses utterance data because the skill's output is a summary, not structured per-utterance data.
 
    **Step 1: Derive test utterances from the agent spec and .agent file**
 
@@ -381,7 +381,7 @@ For each test case:
 
    **optimize** — Run observability analysis against the agent + org
 
-   The optimize step combines STDM analysis (if available) with local trace analysis from the test step. Do NOT just delegate blindly to `/agentforce-observability` — the eval orchestrator must drive the analysis and capture structured results.
+   The optimize step combines STDM analysis (if available) with local trace analysis from the test step. Do NOT just delegate blindly to `/observing-agentforce` — the eval orchestrator must drive the analysis and capture structured results.
 
    **Step 1: Check STDM availability**
    ```bash
@@ -433,7 +433,7 @@ For each test case:
 
    ```json
    {
-     "skill": "agentforce-observability",
+     "skill": "observing-agentforce",
      "section": "stdm-analysis",
      "status": "success|partial|skipped",
      "org": "<org-alias>",
@@ -662,7 +662,7 @@ If these fields are missing, the report will be thin. Always run the judge skill
    - `skills_discovered`: list of agentforce-* skills found in Phase 0
    - `skill_routing`: per-test record, using this exact format:
      ```json
-     {"test-id": {"skill": "agentforce-development", "method": "auto|hint", "correct": true}}
+     {"test-id": {"skill": "developing-agentforce", "method": "auto|hint", "correct": true}}
      ```
    - `conflicts_detected`: any naming or trigger conflicts observed
 9. Write `results/run-<timestamp>/summary.json`:
@@ -673,9 +673,9 @@ If these fields are missing, the report will be thin. Always run the judge skill
   "suite_file": "suites/full-pipeline.json",
   "timestamp": "2026-03-26T14:30:00",
   "duration_ms": 45000,
-  "skills_discovered": ["agentforce-development", "agentforce-testing", "agentforce-observability"],
+  "skills_discovered": ["developing-agentforce", "testing-agentforce", "observing-agentforce"],
   "skill_routing": {
-    "hotel-concierge-e2e": {"skill": "agentforce-development", "method": "auto", "correct": true}
+    "hotel-concierge-e2e": {"skill": "developing-agentforce", "method": "auto", "correct": true}
   },
   "conflicts_detected": [],
   "total_tests": 3,
@@ -771,7 +771,7 @@ The `assertions_results` field in each test entry in `summary.json` MUST be the 
 Each test entry in `summary.json` MUST include the full `conversations` object (same data written to `test/conversations.json`) and `scenarios` object (same data as `test/scenarios.json`). The HTML report reads conversations from the test entry first — if missing, it falls back to loading from disk, but that only works when the results directory is local. Always embed the data inline.
 
 **CRITICAL — `skill_routing` format:**
-The `skill_routing` field MUST use the per-test format shown in the example above: `{"test-id": {"skill": "agentforce-development", "method": "auto|hint", "correct": true}}`. Do NOT use a flat format like `{"author": "agentforce-development"}`.
+The `skill_routing` field MUST use the per-test format shown in the example above: `{"test-id": {"skill": "developing-agentforce", "method": "auto|hint", "correct": true}}`. Do NOT use a flat format like `{"author": "developing-agentforce"}`.
 
 **CRITICAL — `duration_ms` required:**
 Always compute and include `duration_ms` in summary.json. Parse `start_time`/`end_time` from pipeline_results to calculate total elapsed time.

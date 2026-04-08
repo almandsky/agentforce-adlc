@@ -508,7 +508,7 @@ def main():
         messages.append(f"  {severity}: {msg}")
 
     safety_note = (
-        "\n\n  SAFETY: Run the safety review (Section 15 of /agentforce-development) on this file "
+        "\n\n  SAFETY: Run the safety review (Section 15 of /developing-agentforce) on this file "
         "for LLM-driven safety review (catches impersonation, dark patterns, proxy discrimination, "
         "euphemistic harm, manipulation, and other semantic risks that syntax checks cannot detect)."
     )

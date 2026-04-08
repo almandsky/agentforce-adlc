@@ -23,7 +23,7 @@ The skill covers the full Agent Script lifecycle:
 ## Skill Structure
 
 ```
-agentforce-development/
+developing-agentforce/
 ├── SKILL.md                    # Router — maps user intent to task domains and reference files
 ├── references/                 # Domain knowledge (14 files)
 │   ├── agent-script-core-language.md
@@ -73,13 +73,13 @@ Three rules apply across all domains:
 
 ## Installation
 
-Copy the `agentforce-development` folder into your project's `.claude/skills/` directory:
+Copy the `developing-agentforce` folder into your project's `.claude/skills/` directory:
 
 ```
 your-project/
 └── .claude/
     └── skills/
-        └── agentforce-development/
+        └── developing-agentforce/
             ├── SKILL.md
             ├── references/
             └── assets/

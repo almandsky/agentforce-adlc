@@ -33,7 +33,7 @@ sf data query --json -q "SELECT Name FROM ApexClass WHERE Name IN ('ClassName1',
 
 **Step 4 -- Present options to user if targets are missing:**
 
-1. **Deploy missing targets first** -- Use `Section 17 of /agentforce-development` to generate stubs, then `Section 18 of /agentforce-development` to deploy
+1. **Deploy missing targets first** -- Use `Section 17 of /developing-agentforce` to generate stubs, then `Section 18 of /developing-agentforce` to deploy
 2. **Remove unresolvable actions** -- Delete from `.agent` file and focus on routing/instruction improvements
 3. **Register via Agent Builder UI** -- For targets that exist but aren't registered as `GenAiFunction`
 4. **Proceed anyway** -- If the planned fix only touches routing logic or instructions
@@ -115,8 +115,8 @@ topic entry_topic:
 | Target exists? | Registered as GenAiFunction? | Action |
 |---|---|---|
 | Yes | Yes | Issue is elsewhere (check action bindings, instructions) |
-| Yes | No | Deploy/register: use `Section 18 of /agentforce-development` or register via Agent Builder UI |
-| No | N/A | Scaffold first: use `Section 17 of /agentforce-development` to generate stub, then deploy |
+| Yes | No | Deploy/register: use `Section 18 of /developing-agentforce` or register via Agent Builder UI |
+| No | N/A | Scaffold first: use `Section 17 of /developing-agentforce` to generate stub, then deploy |
 | Can't deploy now | N/A | Pivot to routing fixes: remove action from `.agent`, focus on instructions and transitions |
 
 ---
@@ -299,7 +299,7 @@ After applying fixes, re-run safety review on the modified `.agent` file. Optimi
 - Changing instructions to be more permissive may weaken guardrails
 - Adding literal instructions with tool names may bypass safety boundaries
 
-**Run the safety review** from `Section 15 of /agentforce-development` (Identity, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope). Focus especially on:
+**Run the safety review** from `Section 15 of /developing-agentforce` (Identity, User Safety, Data Handling, Content Safety, Fairness, Deception, Scope). Focus especially on:
 
 1. **Scope boundaries** -- Did the fix widen the agent's scope beyond what's appropriate?
 2. **Guard conditions** -- Did relaxing `available when` expose sensitive actions?

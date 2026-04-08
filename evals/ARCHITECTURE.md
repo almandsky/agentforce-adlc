@@ -318,7 +318,7 @@ Update `evals/CLAUDE.md` to delegate to eval skills:
 
 ```
 Phase 0: /eval-spec → create spec
-Phase 1: /agentforce-development, /agentforce-testing, etc. → run pipeline
+Phase 1: /developing-agentforce, /testing-agentforce, etc. → run pipeline
 Phase 2: /eval-author-judge, /eval-test-judge, /eval-optimize-judge → judge
 Phase 3: /eval-report → synthesize and generate HTML
 ```
@@ -365,19 +365,19 @@ User: run suite full-pipeline --test-id target-store-full-cycle --org epson
 Orchestrator:
   1. Load suite, find test
   2. /eval-spec → reads prompt, creates spec.md with 4 topics, 6 actions, 5 scenarios
-  3. /agentforce-development → generates TargetStoreAssistant.agent
+  3. /developing-agentforce → generates TargetStoreAssistant.agent
   4. /eval-author-judge → analyzes .agent against spec
      → "Hub-and-spoke correct. But set_associate gating will cause SMALL_TALK (high risk)."
      → "max_price typed as string, spec says number (medium risk)."
-  5. /agentforce-development (discover) → finds 0/6 targets in org
-  6. /agentforce-development (scaffold) → generates 22 stub files
-  7. /agentforce-development (deploy) → deploys 71 components, publishes, activates
-  8. /agentforce-testing → runs 6 utterances + 5 scenarios
+  5. /developing-agentforce (discover) → finds 0/6 targets in org
+  6. /developing-agentforce (scaffold) → generates 22 stub files
+  7. /developing-agentforce (deploy) → deploys 71 components, publishes, activates
+  8. /testing-agentforce → runs 6 utterances + 5 scenarios
   9. /eval-test-judge → analyzes each conversation turn
      → "3/4 smoke tests pass. Employee HR fails: SMALL_TALK on set_associate."
      → "Root cause: intermediate action produces no factual content."
      → "4/5 scenarios pass. HR scenario fails at turn 1."
-  10. /agentforce-observability → finds issue, applies fix in 5 iterations
+  10. /observing-agentforce → finds issue, applies fix in 5 iterations
   11. /eval-optimize-judge → evaluates optimization
       → "Optimizer correctly identified SMALL_TALK issue."
       → "Fix removed verification gate — spec deviation (acceptable tradeoff)."

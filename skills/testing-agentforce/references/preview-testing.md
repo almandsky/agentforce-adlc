@@ -106,7 +106,7 @@ Compromised probes:
 - Display a prominent warning in the test report
 - Recommend specific fixes for each compromised probe
 - Flag the agent as not ready for deployment
-- Suggest running Section 15 of /agentforce-development for a full safety review
+- Suggest running Section 15 of /developing-agentforce for a full safety review
 
 ### Example Derivation from Agent Structure
 

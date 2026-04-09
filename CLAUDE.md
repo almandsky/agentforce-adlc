@@ -6,22 +6,23 @@ Generate Agentforce Agent Script `.agent` files **directly** via Claude Code ski
 
 ```
 agentforce-adlc/
+├── .claude-plugin/   # Claude Code plugin manifest
+│   ├── plugin.json       # Plugin definition (name: "adlc")
+│   └── marketplace.json  # Self-hosted marketplace
 ├── agents/           # Claude Code agent definitions (.md)
 ├── skills/           # Claude Code skills (SKILL.md-driven)
 │   ├── developing-agentforce/   # Author + discover + scaffold + deploy + safety + feedback
-│   ├── testing-agentforce/     # Preview testing + batch testing + action execution
-│   └── observing-agentforce/   # STDM trace analysis + fix loop
-├── evals/            # Eval framework (project-scoped)
-│   ├── .claude/      # Eval-specific skills and settings
-│   ├── suites/       # Test suite JSON definitions
-│   ├── specs/        # Agent spec templates
-│   └── templates/    # Report templates
+│   ├── testing-agentforce/      # Preview testing + batch testing + action execution
+│   └── observing-agentforce/    # STDM trace analysis + fix loop
+├── hooks/            # Plugin hook definitions
+│   └── hooks.json        # PreToolUse/PostToolUse hook config
 ├── shared/           # Cross-skill shared code
-│   ├── hooks/        # PreToolUse/PostToolUse hook scripts
-│   └── sf-cli/       # SF CLI subprocess wrapper
+│   ├── hooks/scripts/    # Hook scripts (guardrails.py, agent-validator.py)
+│   └── sf-cli/           # SF CLI subprocess wrapper
 ├── scripts/          # Python helper scripts (standalone)
 │   └── generators/   # Flow XML, Apex, PermSet generators
-├── tools/            # Installer
+├── tools/            # Installer (file-copy for Cursor)
+├── settings.json     # Plugin default settings (agent)
 ├── tests/            # pytest test suite
 └── force-app/        # Example Salesforce DX output
 ```
@@ -92,8 +93,23 @@ pytest tests/ -v
 
 ## Installation
 
+### As a Claude Code plugin (recommended)
+
 ```bash
-# Install skills, agents, and hooks to ~/.claude/
+# Load directly from the repo (development)
+claude --plugin-dir /path/to/agentforce-adlc
+
+# Or install via marketplace
+claude plugin marketplace add /path/to/agentforce-adlc
+claude plugin install adlc@agentforce-adlc
+```
+
+When installed as a plugin, skills are namespaced: `/adlc:developing-agentforce`, `/adlc:testing-agentforce`, `/adlc:observing-agentforce`.
+
+### File-copy install (Cursor or legacy)
+
+```bash
+# Install skills, agents, and hooks to ~/.claude/ or ~/.cursor/
 python3 tools/install.py
 ```
 
@@ -110,18 +126,6 @@ Key safety behaviors:
 - `/testing-agentforce` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
 - `/testing-agentforce` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
 - `/developing-agentforce` (Section 18 — Deploy) requires explicit user acknowledgment for warnings before proceeding
-
-## Evals
-
-The `evals/` directory contains the agent quality evaluation framework. It is project-scoped (not installed globally) and has its own `.claude/` directory with eval-specific skills.
-
-```bash
-# Run evals (from the evals/ directory)
-cd evals && claude
-run suite basic-authoring --test-id hello-world-faq
-```
-
-See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ## Windows Compatibility
 

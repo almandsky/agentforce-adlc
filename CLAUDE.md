@@ -11,11 +11,6 @@ agentforce-adlc/
 │   ├── developing-agentforce/   # Author + discover + scaffold + deploy + safety + feedback
 │   ├── testing-agentforce/     # Preview testing + batch testing + action execution
 │   └── observing-agentforce/   # STDM trace analysis + fix loop
-├── evals/            # Eval framework (project-scoped)
-│   ├── .claude/      # Eval-specific skills and settings
-│   ├── suites/       # Test suite JSON definitions
-│   ├── specs/        # Agent spec templates
-│   └── templates/    # Report templates
 ├── shared/           # Cross-skill shared code
 │   ├── hooks/        # PreToolUse/PostToolUse hook scripts
 │   └── sf-cli/       # SF CLI subprocess wrapper
@@ -110,18 +105,6 @@ Key safety behaviors:
 - `/testing-agentforce` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
 - `/testing-agentforce` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
 - `/developing-agentforce` (Section 18 — Deploy) requires explicit user acknowledgment for warnings before proceeding
-
-## Evals
-
-The `evals/` directory contains the agent quality evaluation framework. It is project-scoped (not installed globally) and has its own `.claude/` directory with eval-specific skills.
-
-```bash
-# Run evals (from the evals/ directory)
-cd evals && claude
-run suite basic-authoring --test-id hello-world-faq
-```
-
-See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ## Windows Compatibility
 

@@ -55,63 +55,59 @@ Each skill can be invoked independently. Run `/testing-agentforce` on an existin
 
 ## Installation
 
-### One-command install (recommended)
+### Claude Code plugin (recommended)
 
 ```bash
-# Install for Claude Code (default if only ~/.claude/ exists)
-curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash
+# Clone the repo
+git clone https://github.com/almandsky/agentforce-adlc.git
 
-# Install for Cursor
-curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash -s -- --target cursor
+# Option A: Load directly (development)
+claude --plugin-dir ./agentforce-adlc
 
-# Install for both Claude Code and Cursor
-curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash -s -- --target both
+# Option B: Install via marketplace
+claude plugin marketplace add ./agentforce-adlc
+claude plugin install adlc@agentforce-adlc
 ```
 
-### From local clone
+When installed as a plugin, skills are namespaced: `/adlc:developing-agentforce`, `/adlc:testing-agentforce`, `/adlc:observing-agentforce`.
+
+### File-copy install (Cursor or legacy Claude Code)
 
 ```bash
-git clone https://github.com/almandsky/agentforce-adlc.git
-cd agentforce-adlc
-python3 tools/install.py                # Auto-detects Claude Code / Cursor
+# One-command install
+curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash
+
+# Or from local clone
+python3 tools/install.py                  # Auto-detects Claude Code / Cursor
 python3 tools/install.py --target cursor  # Cursor only
-python3 tools/install.py --target both    # Both IDEs
 ```
 
 ### Post-install management
 
 ```bash
-# Check what's installed
+# Plugin management
+claude plugin list                         # List installed plugins
+claude plugin update adlc@agentforce-adlc  # Update plugin
+claude plugin uninstall adlc@agentforce-adlc  # Remove plugin
+
+# File-copy management (legacy)
 python3 ~/.claude/adlc-install.py --status
-
-# Update to latest version
 python3 ~/.claude/adlc-install.py --update
-
-# Force reinstall
-python3 ~/.claude/adlc-install.py --force-update
-
-# Remove everything
 python3 ~/.claude/adlc-install.py --uninstall
-
-# Target-specific operations
-python3 ~/.claude/adlc-install.py --status --target cursor
-python3 ~/.claude/adlc-install.py --uninstall --target cursor
 ```
 
 After install, restart your IDE. Skills are available in any project.
 
 ### What installs where
 
-| Component | Claude Code (`~/.claude/`) | Cursor (`~/.cursor/`) |
-|-----------|---------------------------|----------------------|
-| Skills (3 SKILL.md) | `skills/agentforce-*/` | `skills/agentforce-*/` |
-| Agents (.md) | `agents/adlc-*.md` | N/A (not supported) |
-| Hooks | `hooks/scripts/adlc-*.py` | N/A (not supported) |
-| Repo copy | `adlc/` | `adlc/` |
-| Metadata | `.adlc.json` | `.adlc.json` |
-| Self-updater | `adlc-install.py` | `adlc-install.py` |
+| Component | Plugin (Claude Code) | File-copy (`~/.claude/`) | File-copy (`~/.cursor/`) |
+|-----------|---------------------|--------------------------|-------------------------|
+| Skills | Auto-discovered from `skills/` | `skills/*-agentforce/` | `skills/*-agentforce/` |
+| Agents | Auto-discovered from `agents/` | `agents/adlc-*.md` | N/A |
+| Hooks | Via `hooks/hooks.json` | `hooks/scripts/adlc-*.py` | N/A |
+| Settings | `settings.json` (default agent) | `settings.json` entries | N/A |
 
-Skills are 100% portable — the same SKILL.md files work in both IDEs. Agents and hooks are Claude Code-specific features and are only installed there.
+Plugin installation is self-contained — no files are copied to `~/.claude/`. The file-copy installer is for Cursor and legacy Claude Code setups.
 
 ## Prerequisites
 
@@ -260,6 +256,9 @@ See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ```
 agentforce-adlc/
+├── .claude-plugin/      # Claude Code plugin manifest
+│   ├── plugin.json          # Plugin definition (name: "adlc")
+│   └── marketplace.json     # Self-hosted marketplace
 ├── agents/              # Claude Code agent definitions (.md)
 │   ├── adlc-orchestrator.md   # Plan-mode orchestrator
 │   ├── adlc-author.md         # Agent Script authoring specialist
@@ -267,33 +266,34 @@ agentforce-adlc/
 │   └── adlc-qa.md             # Testing and optimization specialist
 ├── skills/              # Claude Code skills (3 consolidated, agentskills.io standard)
 │   ├── developing-agentforce/   # Author + discover + scaffold + deploy + safety + feedback
-│   ├── testing-agentforce/     # Preview testing + batch testing + action execution
-│   └── observing-agentforce/   # STDM trace analysis + fix loop
+│   ├── testing-agentforce/      # Preview testing + batch testing + action execution
+│   └── observing-agentforce/    # STDM trace analysis + fix loop
+├── hooks/               # Plugin hook definitions
+│   └── hooks.json           # PreToolUse/PostToolUse hook config
+├── shared/              # Cross-skill shared code
+│   ├── hooks/scripts/       # Hook scripts (guardrails.py, agent-validator.py)
+│   └── sf-cli/              # SF CLI subprocess wrapper
 ├── evals/               # Eval framework (project-scoped)
 │   ├── .claude/         # Eval-specific skills and settings
 │   ├── suites/          # Test suite JSON definitions
 │   ├── specs/           # Agent spec templates
 │   └── templates/       # Report templates
-├── shared/              # Cross-skill shared code
-│   ├── hooks/           # PreToolUse/PostToolUse hook scripts
-│   │   ├── scripts/     # guardrails.py, agent-validator.py, session-init.py
-│   │   └── skills-registry.json
-│   └── sf-cli/          # SF CLI subprocess wrapper
 ├── scripts/             # Python helper scripts (standalone)
 │   ├── discover.py      # CLI: discover missing targets
 │   ├── scaffold.py      # CLI: scaffold Flow/Apex stubs
 │   ├── org_describe.py  # CLI: describe SObject fields
 │   └── generators/      # Flow XML, Apex, PermSet generators
-├── tools/               # Installer
+├── tools/               # File-copy installer (Cursor + legacy)
 │   ├── install.py       # Python installer (local + remote)
 │   └── install.sh       # Bash bootstrap for curl | bash
+├── settings.json        # Plugin default settings (default agent)
 ├── tests/               # pytest test suite (88 tests)
 └── force-app/           # Example Salesforce DX output
 ```
 
 ## Agent Script conventions
 
-- **Indentation**: Tabs in `.agent` files (compiler requirement)
+- **Indentation**: 4 spaces in `.agent` files (tabs break the Agent Script compiler)
 - **Booleans**: `True` / `False` (capitalized, Python-style)
 - **Variables**: `mutable` (read-write) or `linked` (bound to external source)
 - **Actions**: Two-level system — `definitions` (in topic) and `invocations` (in reasoning)

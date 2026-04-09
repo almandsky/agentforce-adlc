@@ -231,27 +231,6 @@ Regex catches exact keyword patterns but misses intent. These 8 harmful agents a
 
 Claude's reasoning catches all of these because it understands *intent*, not just keywords.
 
-## Eval framework
-
-The `evals/` directory contains a project-scoped evaluation framework for measuring agent quality across the full pipeline.
-
-```bash
-# Run evals (from the evals/ directory)
-cd evals && claude
-
-# Run a specific test case
-run suite enterprise-use-cases --test-id jpmorgan-case-intelligence --org epson
-
-# Generate HTML report from results
-python3 generate-report.py --enrich results/run-xxx/summary.json
-```
-
-The eval pipeline runs: **author -> discover -> scaffold -> deploy -> test -> optimize -> judge -> report**
-
-Each step is scored against a rubric with weighted dimensions (FSM architecture, action quality, safety compliance, instruction quality, etc.) and produces an interactive HTML report with executive summary, key findings, and recommendations.
-
-See `evals/CLAUDE.md` for full eval workflow documentation.
-
 ## Project structure
 
 ```
@@ -273,11 +252,6 @@ agentforce-adlc/
 ├── shared/              # Cross-skill shared code
 │   ├── hooks/scripts/       # Hook scripts (guardrails.py, agent-validator.py)
 │   └── sf-cli/              # SF CLI subprocess wrapper
-├── evals/               # Eval framework (project-scoped)
-│   ├── .claude/         # Eval-specific skills and settings
-│   ├── suites/          # Test suite JSON definitions
-│   ├── specs/           # Agent spec templates
-│   └── templates/       # Report templates
 ├── scripts/             # Python helper scripts (standalone)
 │   ├── discover.py      # CLI: discover missing targets
 │   ├── scaffold.py      # CLI: scaffold Flow/Apex stubs

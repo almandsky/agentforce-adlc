@@ -19,7 +19,6 @@ agentforce-adlc/
 ├── shared/           # Cross-skill shared code
 │   ├── hooks/scripts/    # Hook scripts (guardrails.py, agent-validator.py)
 │   └── sf-cli/           # SF CLI subprocess wrapper
-├── evals/            # Eval framework (project-scoped)
 ├── scripts/          # Python helper scripts (standalone)
 │   └── generators/   # Flow XML, Apex, PermSet generators
 ├── tools/            # Installer (file-copy for Cursor)
@@ -127,18 +126,6 @@ Key safety behaviors:
 - `/testing-agentforce` runs adversarial safety probes and produces a SAFE/UNSAFE/NEEDS_REVIEW verdict
 - `/testing-agentforce` (Action Execution) checks org type (sandbox vs production) and validates inputs before execution
 - `/developing-agentforce` (Section 18 — Deploy) requires explicit user acknowledgment for warnings before proceeding
-
-## Evals
-
-The `evals/` directory contains the agent quality evaluation framework. It is project-scoped (not installed globally) and has its own `.claude/` directory with eval-specific skills.
-
-```bash
-# Run evals (from the evals/ directory)
-cd evals && claude
-run suite basic-authoring --test-id hello-world-faq
-```
-
-See `evals/CLAUDE.md` for full eval workflow documentation.
 
 ## Windows Compatibility
 

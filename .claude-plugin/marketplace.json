@@ -1,7 +1,7 @@
 {
   "name": "agentforce-adlc",
   "owner": {
-    "name": "Authoring-Agent"
+    "name": "SalesforceAIResearch"
   },
   "metadata": {
     "description": "Agentforce Agent Development Life Cycle plugin marketplace"

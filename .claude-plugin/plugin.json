@@ -5,6 +5,6 @@
   "author": {
     "name": "Authoring-Agent"
   },
-  "repository": "https://github.com/Authoring-Agent/agentforce-adlc",
+  "repository": "https://github.com/SalesforceAIResearch/agentforce-adlc",
   "keywords": ["agentforce", "agent-script", "salesforce", "adlc"]
 }

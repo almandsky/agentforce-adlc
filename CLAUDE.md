@@ -1,5 +1,7 @@
 # Agentforce ADLC — Agent Development Life Cycle
 
+> **Deprecated.** This repo has moved to [SalesforceAIResearch/agentforce-adlc](https://github.com/SalesforceAIResearch/agentforce-adlc).
+
 Generate Agentforce Agent Script `.agent` files **directly** via Claude Code skills. No intermediate markdown conversion step.
 
 ## Project Structure

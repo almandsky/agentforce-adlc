@@ -1,5 +1,9 @@
 # agentforce-adlc
 
+> **This repository has been deprecated.** Active development has moved to
+> **[SalesforceAIResearch/agentforce-adlc](https://github.com/SalesforceAIResearch/agentforce-adlc)**.
+> Please use the new repository for issues, contributions, and the latest releases.
+
 **Agent Development Life Cycle** — Build, deploy, test, and optimize Agentforce agents
 using Claude Code skills and Agent Script DSL.
 
@@ -59,7 +63,7 @@ Each skill can be invoked independently. Run `/testing-agentforce` on an existin
 
 ```bash
 # Clone the repo
-git clone https://github.com/almandsky/agentforce-adlc.git
+git clone https://github.com/SalesforceAIResearch/agentforce-adlc.git
 
 # Option A: Load directly (development)
 claude --plugin-dir ./agentforce-adlc
@@ -75,7 +79,7 @@ When installed as a plugin, skills are namespaced: `/adlc:developing-agentforce`
 
 ```bash
 # One-command install
-curl -sSL https://raw.githubusercontent.com/almandsky/agentforce-adlc/main/tools/install.sh | bash
+curl -sSL https://raw.githubusercontent.com/SalesforceAIResearch/agentforce-adlc/main/tools/install.sh | bash
 
 # Or from local clone
 python3 tools/install.py                  # Auto-detects Claude Code / Cursor
@@ -278,7 +282,7 @@ agentforce-adlc/
 
 ```bash
 # Clone and set up dev environment
-git clone https://github.com/almandsky/agentforce-adlc.git
+git clone https://github.com/SalesforceAIResearch/agentforce-adlc.git
 cd agentforce-adlc
 pip install -e ".[dev]"
 

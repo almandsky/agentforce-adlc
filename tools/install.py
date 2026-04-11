@@ -3,7 +3,7 @@
 agentforce-adlc Installer
 
 Usage:
-    curl -sSL https://raw.githubusercontent.com/Authoring-Agent/agentforce-adlc/main/tools/install.py | python3
+    curl -sSL https://raw.githubusercontent.com/SalesforceAIResearch/agentforce-adlc/main/tools/install.py | python3
 
     # Or with options:
     python3 install.py                # Install
